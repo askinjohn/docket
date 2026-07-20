@@ -10,11 +10,18 @@ export interface AuthStatus {
   email: string | null;
 }
 
+export interface PublicAccount {
+  id: number;
+  email: string;
+  provider: string;
+}
+
 export interface HealthResponse {
   ok: boolean;
   service: string;
   googleConfigured: boolean;
-  account: { email: string } | null;
+  account: { id?: number; email: string } | null;
+  accounts?: PublicAccount[];
   aiMode?: string;
   notesDir?: string;
 }
@@ -70,7 +77,34 @@ export class MailApiService {
 
   authStatus() {
     return firstValueFrom(
-      this.http.get<AuthStatus>(`${this.baseUrl}/auth/status`),
+      this.http.get<
+        AuthStatus & { accountId?: number | null; accounts?: PublicAccount[] }
+      >(`${this.baseUrl}/auth/status`),
+    );
+  }
+
+  listAccounts() {
+    return firstValueFrom(
+      this.http.get<{ accounts: PublicAccount[]; activeId: number | null }>(
+        `${this.baseUrl}/accounts`,
+      ),
+    );
+  }
+
+  setActiveAccount(accountId: number) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; account: PublicAccount }>(
+        `${this.baseUrl}/accounts/active`,
+        { accountId },
+      ),
+    );
+  }
+
+  removeAccount(accountId: number) {
+    return firstValueFrom(
+      this.http.delete<{ ok: boolean; accounts: PublicAccount[] }>(
+        `${this.baseUrl}/accounts/${accountId}`,
+      ),
     );
   }
 

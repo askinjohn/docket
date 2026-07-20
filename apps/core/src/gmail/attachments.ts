@@ -1,14 +1,15 @@
 import { google } from 'googleapis';
 
-import { getDb, getPrimaryAccount, type AttachmentRow } from '../db/index.js';
+import { getDb, type AttachmentRow } from '../db/index.js';
 import { getAuthedClient } from './oauth.js';
+import { getActiveAccount } from '../db/accounts.js';
 
 export async function downloadAttachment(attachmentRowId: string): Promise<{
   filename: string;
   mimeType: string;
   data: Buffer;
 }> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
 
   const row = getDb()

@@ -10,6 +10,8 @@ function mockShell() {
     phaseLabel: () => 'Local Mail',
     coreStatus: () => 'online-disconnected' as const,
     accountEmail: () => null,
+    accounts: () => [],
+    activeAccountId: () => null,
     isConnected: () => false,
     listLoading: () => false,
     detailLoading: () => false,
@@ -61,6 +63,9 @@ function mockShell() {
     openAttachment: () => undefined,
     runPaletteCommand: () => undefined,
     toggleTheme: () => undefined,
+    addAccount: () => undefined,
+    switchAccount: async () => undefined,
+    removeActiveAccount: async () => undefined,
   };
 }
 

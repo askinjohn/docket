@@ -29,6 +29,7 @@ export class App implements OnInit {
     { cmd: 'inbox', label: 'Go to inbox', hint: '' },
     { cmd: 'starred', label: 'Go to starred', hint: '' },
     { cmd: 'theme', label: 'Toggle theme', hint: '' },
+    { cmd: 'add-account', label: 'Add Google account', hint: '' },
   ];
 
   ngOnInit(): void {

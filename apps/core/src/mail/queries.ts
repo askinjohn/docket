@@ -1,6 +1,6 @@
+import { getActiveAccount } from '../db/accounts.js';
 import {
   getDb,
-  getPrimaryAccount,
   type AttachmentRow,
   type MessageRow,
   type ThreadRow,
@@ -33,7 +33,7 @@ export function listThreads(options?: {
   q?: string;
   view?: 'inbox' | 'starred' | 'all';
 }) {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) return { account: null, threads: [] as unknown[] };
 
   const view = options?.view ?? 'inbox';
@@ -98,7 +98,7 @@ export function listThreads(options?: {
 }
 
 export function getThreadDetail(threadId: string) {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) return null;
 
   const thread = getDb()

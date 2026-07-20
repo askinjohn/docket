@@ -1,5 +1,6 @@
 import { appConfig } from '../config.js';
-import { getDb, getPrimaryAccount, type MessageRow, type ThreadRow } from '../db/index.js';
+import { getDb, type MessageRow, type ThreadRow } from '../db/index.js';
+import { getActiveAccount } from '../db/accounts.js';
 
 export type AiMode = 'template' | 'ollama' | 'openai';
 
@@ -15,7 +16,7 @@ export function resolveAiMode(): AiMode {
 }
 
 function threadContext(threadId: string): string {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No account');
 
   const thread = getDb()
@@ -43,7 +44,7 @@ function threadContext(threadId: string): string {
 }
 
 function templateSummarize(threadId: string): string {
-  const account = getPrimaryAccount()!;
+  const account = getActiveAccount()!;
   const thread = getDb()
     .prepare(`SELECT * FROM threads WHERE id = ?`)
     .get(threadId) as ThreadRow;

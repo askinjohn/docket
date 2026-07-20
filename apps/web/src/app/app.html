@@ -40,6 +40,42 @@
       }
     </div>
 
+    @if (shell.accounts().length > 0) {
+      <div class="flex flex-col gap-1">
+        <label class="px-0.5 text-[0.65rem] tracking-wide text-lm-muted uppercase"
+          >Accounts</label
+        >
+        @for (acc of shell.accounts(); track acc.id) {
+          <button
+            type="button"
+            class="truncate rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-lm-hover"
+            [class.bg-lm-accent/20]="shell.activeAccountId() === acc.id"
+            [class.font-semibold]="shell.activeAccountId() === acc.id"
+            (click)="shell.switchAccount(acc.id)"
+            [title]="acc.email"
+          >
+            {{ acc.email }}
+          </button>
+        }
+        <button
+          type="button"
+          class="mt-1 rounded-lg border border-dashed border-lm-border px-2.5 py-1.5 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+          (click)="shell.addAccount()"
+        >
+          + Add account
+        </button>
+        @if (shell.activeAccountId() != null) {
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1 text-left text-[0.7rem] text-lm-danger/90 hover:bg-lm-hover"
+            (click)="shell.removeActiveAccount()"
+          >
+            Remove active account
+          </button>
+        }
+      </div>
+    }
+
     @if (shell.coreStatus() === 'online-disconnected' || shell.coreStatus() === 'misconfigured') {
       <button
         type="button"

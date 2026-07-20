@@ -3,7 +3,13 @@ import { streamSSE } from 'hono/streaming';
 
 import { draftReply, resolveAiMode, summarizeThread } from '../ai/provider.js';
 import { appConfig, googleConfigured } from '../config.js';
-import { getPrimaryAccount } from '../db/index.js';
+import {
+  deleteAccount,
+  getActiveAccount,
+  listAccounts,
+  publicAccount,
+  setActiveAccountId,
+} from '../db/accounts.js';
 import { publish, subscribe } from '../events/bus.js';
 import { downloadAttachment } from '../gmail/attachments.js';
 import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
@@ -20,14 +26,16 @@ import { buildDailySummary } from '../summary/daily.js';
 export const api = new Hono();
 
 api.get('/health', (c) => {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
+  const accounts = listAccounts().map(publicAccount);
   return c.json({
     ok: true,
     service: 'local-mail-core',
     host: appConfig.host,
     port: appConfig.port,
     googleConfigured: googleConfigured(),
-    account: account ? { email: account.email } : null,
+    account: account ? { id: account.id, email: account.email } : null,
+    accounts,
     aiMode: resolveAiMode(),
     notesDir: appConfig.notesDir,
     time: new Date().toISOString(),
@@ -35,12 +43,55 @@ api.get('/health', (c) => {
 });
 
 api.get('/auth/status', (c) => {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   return c.json({
     googleConfigured: googleConfigured(),
     connected: Boolean(account),
     email: account?.email ?? null,
+    accountId: account?.id ?? null,
+    accounts: listAccounts().map(publicAccount),
   });
+});
+
+api.get('/accounts', (c) => {
+  const active = getActiveAccount();
+  return c.json({
+    accounts: listAccounts().map(publicAccount),
+    activeId: active?.id ?? null,
+  });
+});
+
+api.post('/accounts/active', async (c) => {
+  const body = await c.req.json().catch(() => ({} as { accountId?: number }));
+  if (body.accountId == null) {
+    return c.json({ error: 'accountId required' }, 400);
+  }
+  try {
+    const account = setActiveAccountId(Number(body.accountId));
+    publish({
+      type: 'mail.changed',
+      reason: 'account-switch',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true, account: publicAccount(account) });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'switch_failed' },
+      400,
+    );
+  }
+});
+
+api.delete('/accounts/:id', async (c) => {
+  try {
+    deleteAccount(Number(c.req.param('id')));
+    return c.json({ ok: true, accounts: listAccounts().map(publicAccount) });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'delete_failed' },
+      400,
+    );
+  }
 });
 
 api.get('/auth/gmail/start', (c) => {

@@ -1,8 +1,8 @@
 import { google, type gmail_v1 } from 'googleapis';
 
+import { getActiveAccount, toGmailThreadId, toLocalThreadId } from '../db/accounts.js';
 import {
   getDb,
-  getPrimaryAccount,
   type AccountRow,
   type AttachmentRow,
 } from '../db/index.js';
@@ -73,8 +73,9 @@ function upsertThreadAndMessages(
 ): void {
   const db = getDb();
   const now = Date.now();
-  const threadId = thread.id;
-  if (!threadId) return;
+  const gmailThreadId = thread.id;
+  if (!gmailThreadId) return;
+  const threadId = toLocalThreadId(account.id, gmailThreadId);
 
   const messages = thread.messages ?? [];
   if (!messages.length) return;
@@ -244,7 +245,7 @@ function upsertThreadAndMessages(
 export async function syncInbox(options?: {
   maxThreads?: number;
 }): Promise<{ synced: number; email: string }> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) {
     throw new Error('No Gmail account connected');
   }
@@ -290,15 +291,18 @@ export async function modifyThreadLabels(
   add: string[],
   remove: string[],
 ): Promise<void> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
+
+  const gmailId = toGmailThreadId(threadId);
+  const localId = toLocalThreadId(account.id, gmailId);
 
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
   await gmail.users.threads.modify({
     userId: 'me',
-    id: threadId,
+    id: gmailId,
     requestBody: {
       addLabelIds: add,
       removeLabelIds: remove,
@@ -306,14 +310,13 @@ export async function modifyThreadLabels(
   });
 
   if (remove.includes('INBOX')) {
-    // Drop from local inbox cache (messages cascade)
-    getDb().prepare(`DELETE FROM threads WHERE id = ?`).run(threadId);
+    getDb().prepare(`DELETE FROM threads WHERE id = ?`).run(localId);
     return;
   }
 
   const full = await gmail.users.threads.get({
     userId: 'me',
-    id: threadId,
+    id: gmailId,
     format: 'full',
   });
   if (full.data) {
@@ -335,7 +338,7 @@ export async function sendReply(input: {
   to?: string;
   subject?: string;
 }): Promise<{ id: string }> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
 
   const db = getDb();
@@ -353,6 +356,7 @@ export async function sendReply(input: {
 
   if (!last) throw new Error('Thread not found locally — sync first');
 
+  const gmailThreadId = toGmailThreadId(input.threadId);
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
@@ -392,13 +396,13 @@ export async function sendReply(input: {
     userId: 'me',
     requestBody: {
       raw: encodeRawMime(raw),
-      threadId: input.threadId,
+      threadId: gmailThreadId,
     },
   });
 
   const full = await gmail.users.threads.get({
     userId: 'me',
-    id: input.threadId,
+    id: gmailThreadId,
     format: 'full',
   });
   if (full.data) upsertThreadAndMessages(account, full.data);
@@ -411,7 +415,7 @@ export async function sendNewMessage(input: {
   subject: string;
   bodyText: string;
 }): Promise<{ id: string }> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
   if (!input.to.trim()) throw new Error('to required');
 
@@ -439,7 +443,7 @@ export async function sendNewMessage(input: {
 export async function syncIncremental(options?: {
   maxThreads?: number;
 }): Promise<{ synced: number; email: string; mode: 'history' | 'full' }> {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
 
   const auth = await getAuthedClient(account);
@@ -468,7 +472,7 @@ export async function syncIncremental(options?: {
           if (m.message?.threadId && m.labelIds?.includes('INBOX')) {
             getDb()
               .prepare(`DELETE FROM threads WHERE id = ?`)
-              .run(m.message.threadId);
+              .run(toLocalThreadId(account.id, m.message.threadId));
           }
         }
         for (const m of h.labelsAdded ?? []) {
@@ -481,7 +485,7 @@ export async function syncIncremental(options?: {
         try {
           const full = await gmail.users.threads.get({
             userId: 'me',
-            id: tid,
+            id: tid, // Gmail id
             format: 'full',
           });
           if (full.data) {
@@ -492,6 +496,10 @@ export async function syncIncremental(options?: {
           /* thread may be gone */
         }
       }
+
+      // purge local threads for deleted inbox labels using composite ids
+      // (handled per-event above with gmail ids — fix deletes to use local ids)
+
 
       const profile = await gmail.users.getProfile({ userId: 'me' });
       if (profile.data.historyId) {

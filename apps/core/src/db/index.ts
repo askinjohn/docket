@@ -17,8 +17,36 @@ export function getDb(): Db {
       `INSERT INTO meta(key, value) VALUES('schema_version', '1')
        ON CONFLICT(key) DO NOTHING`,
     ).run();
+    migrateCompositeThreadIds(db);
   }
   return db;
+}
+
+/** Prefix bare Gmail thread ids with accountId: for multi-account isolation. */
+function migrateCompositeThreadIds(database: Db): void {
+  const accounts = database
+    .prepare(`SELECT id FROM accounts`)
+    .all() as { id: number }[];
+  if (!accounts.length) return;
+
+  for (const a of accounts) {
+    const bare = database
+      .prepare(
+        `SELECT id FROM threads WHERE account_id = ? AND id NOT LIKE ?`,
+      )
+      .all(a.id, `${a.id}:%`) as { id: string }[];
+    for (const t of bare) {
+      const next = `${a.id}:${t.id}`;
+      database.transaction(() => {
+        database
+          .prepare(`UPDATE messages SET thread_id = ? WHERE thread_id = ?`)
+          .run(next, t.id);
+        database
+          .prepare(`UPDATE threads SET id = ? WHERE id = ? AND account_id = ?`)
+          .run(next, t.id, a.id);
+      })();
+    }
+  }
 }
 
 export function closeDb(): void {
@@ -83,10 +111,16 @@ export interface AttachmentRow {
   is_inline: number;
 }
 
-export function getPrimaryAccount(database: Db = getDb()): AccountRow | null {
-  return (
-    database
-      .prepare(`SELECT * FROM accounts ORDER BY id ASC LIMIT 1`)
-      .get() as AccountRow | undefined
-  ) ?? null;
-}
+export {
+  getActiveAccount,
+  getActiveAccountId,
+  listAccounts,
+  setActiveAccountId,
+  deleteAccount,
+  toLocalThreadId,
+  toGmailThreadId,
+  publicAccount,
+} from './accounts.js';
+
+/** @deprecated use getActiveAccount */
+export { getActiveAccount as getPrimaryAccount } from './accounts.js';

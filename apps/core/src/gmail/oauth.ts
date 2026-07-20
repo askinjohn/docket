@@ -79,6 +79,13 @@ export async function exchangeCode(code: string): Promise<AccountRow> {
   const row = db
     .prepare(`SELECT * FROM accounts WHERE email = ?`)
     .get(email) as AccountRow;
+
+  // New or reconnected account becomes active
+  db.prepare(
+    `INSERT INTO meta(key, value) VALUES('active_account_id', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(String(row.id));
+
   return row;
 }
 

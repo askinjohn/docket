@@ -4,6 +4,7 @@ import {
   MailApiService,
   type ApiThread,
   type ApiThreadDetail,
+  type PublicAccount,
 } from './mail-api.service';
 import { openExternalUrl } from './open-external';
 
@@ -70,6 +71,8 @@ export class UiShellService {
   readonly summaryBusy = signal(false);
   readonly coreStatus = signal<CoreStatus>('checking');
   readonly accountEmail = signal<string | null>(null);
+  readonly accounts = signal<PublicAccount[]>([]);
+  readonly activeAccountId = signal<number | null>(null);
   readonly phaseLabel = signal('Local Mail');
   private eventsAbort: AbortController | null = null;
 
@@ -113,8 +116,10 @@ export class UiShellService {
         );
         return;
       }
+      this.accounts.set(health.accounts ?? []);
       if (health.account?.email) {
         this.accountEmail.set(health.account.email);
+        this.activeAccountId.set(health.account.id ?? null);
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
         this.connectLiveEvents();
@@ -122,6 +127,7 @@ export class UiShellService {
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
+        this.activeAccountId.set(null);
         this.statusMessage.set(
           'Core online — connect Gmail (opens your browser).',
         );
@@ -358,10 +364,13 @@ export class UiShellService {
         const status = await this.api.authStatus();
         if (status.connected && status.email) {
           this.accountEmail.set(status.email);
+          this.activeAccountId.set(status.accountId ?? null);
+          this.accounts.set(status.accounts ?? []);
           this.coreStatus.set('online-connected');
           this.statusMessage.set(
             `Connected as ${status.email}. Syncing inbox…`,
           );
+          this.connectLiveEvents();
           await this.syncNow();
           return;
         }
@@ -546,6 +555,49 @@ export class UiShellService {
     }
   }
 
+  /** OAuth add/connect another Google account (becomes active). */
+  addAccount(): void {
+    void this.connectGmail();
+  }
+
+  async switchAccount(accountId: number): Promise<void> {
+    if (accountId === this.activeAccountId()) return;
+    this.statusMessage.set('Switching account…');
+    try {
+      const res = await this.api.setActiveAccount(accountId);
+      this.activeAccountId.set(res.account.id);
+      this.accountEmail.set(res.account.email);
+      this.clearMailbox();
+      await this.refreshThreads();
+      this.statusMessage.set(`Switched to ${res.account.email}`);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Switch failed');
+    }
+  }
+
+  async removeActiveAccount(): Promise<void> {
+    const id = this.activeAccountId();
+    if (id == null) return;
+    if (!confirm(`Remove account ${this.accountEmail()} from Local Mail?`)) {
+      return;
+    }
+    try {
+      const res = await this.api.removeAccount(id);
+      this.accounts.set(res.accounts);
+      if (res.accounts.length) {
+        await this.switchAccount(res.accounts[0]!.id);
+      } else {
+        this.coreStatus.set('online-disconnected');
+        this.accountEmail.set(null);
+        this.activeAccountId.set(null);
+        this.clearMailbox();
+        this.statusMessage.set('No accounts — connect Gmail.');
+      }
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Remove failed');
+    }
+  }
+
   runPaletteCommand(cmd: string): void {
     this.closeCommandPalette();
     switch (cmd) {
@@ -581,6 +633,9 @@ export class UiShellService {
         break;
       case 'starred':
         void this.setMailView('starred');
+        break;
+      case 'add-account':
+        this.addAccount();
         break;
       default:
         break;

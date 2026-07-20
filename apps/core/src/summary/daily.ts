@@ -2,14 +2,15 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { appConfig } from '../config.js';
-import { getDb, getPrimaryAccount, type ThreadRow } from '../db/index.js';
+import { getDb, type ThreadRow } from '../db/index.js';
+import { getActiveAccount } from '../db/accounts.js';
 
 export function buildDailySummary(options?: { date?: Date }): {
   markdown: string;
   path: string;
   threadCount: number;
 } {
-  const account = getPrimaryAccount();
+  const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
 
   const day = options?.date ?? new Date();
