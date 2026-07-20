@@ -22,30 +22,63 @@ export function getDb(): Db {
   return db;
 }
 
-/** Prefix bare Gmail thread ids with accountId: for multi-account isolation. */
+/**
+ * Prefix bare Gmail thread ids with accountId: for multi-account isolation.
+ * Must disable FKs while rewriting PKs/FKs (SQLite cannot retarget children first).
+ */
 function migrateCompositeThreadIds(database: Db): void {
   const accounts = database
     .prepare(`SELECT id FROM accounts`)
     .all() as { id: number }[];
   if (!accounts.length) return;
 
-  for (const a of accounts) {
-    const bare = database
-      .prepare(
-        `SELECT id FROM threads WHERE account_id = ? AND id NOT LIKE ?`,
-      )
-      .all(a.id, `${a.id}:%`) as { id: string }[];
-    for (const t of bare) {
-      const next = `${a.id}:${t.id}`;
-      database.transaction(() => {
+  const bare = database
+    .prepare(
+      `SELECT id, account_id FROM threads WHERE id NOT LIKE '%:%'`,
+    )
+    .all() as { id: string; account_id: number }[];
+  if (!bare.length) return;
+
+  database.pragma('foreign_keys = OFF');
+  try {
+    const migrateOne = database.transaction(
+      (oldId: string, accountId: number, next: string) => {
+        // Copy thread row under new id, re-point messages, drop old row
+        database
+          .prepare(
+            `INSERT OR IGNORE INTO threads (
+              id, account_id, subject, snippet, from_name, from_email,
+              last_message_at, unread, starred, has_attachments, label_ids, updated_at
+            )
+            SELECT ?, account_id, subject, snippet, from_name, from_email,
+              last_message_at, unread, starred, has_attachments, label_ids, updated_at
+            FROM threads WHERE id = ? AND account_id = ?`,
+          )
+          .run(next, oldId, accountId);
+
         database
           .prepare(`UPDATE messages SET thread_id = ? WHERE thread_id = ?`)
-          .run(next, t.id);
+          .run(next, oldId);
+
         database
-          .prepare(`UPDATE threads SET id = ? WHERE id = ? AND account_id = ?`)
-          .run(next, t.id, a.id);
-      })();
+          .prepare(`DELETE FROM threads WHERE id = ? AND account_id = ?`)
+          .run(oldId, accountId);
+      },
+    );
+
+    for (const t of bare) {
+      const next = `${t.account_id}:${t.id}`;
+      try {
+        migrateOne(t.id, t.account_id, next);
+      } catch (e) {
+        console.error(
+          `[db] thread id migration failed for ${t.id} → ${next}`,
+          e,
+        );
+      }
     }
+  } finally {
+    database.pragma('foreign_keys = ON');
   }
 }
 
