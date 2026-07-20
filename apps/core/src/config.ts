@@ -38,7 +38,7 @@ export const appConfig = {
     ],
   },
   /** Where the browser UI lives (for CORS + post-auth redirect) */
-  webOrigin: process.env.LOCAL_MAIL_WEB_ORIGIN ?? 'http://127.0.0.1:4200',
+  webOrigin: process.env.LOCAL_MAIL_WEB_ORIGIN ?? 'http://127.0.0.1:4300',
 } as const;
 
 export function googleConfigured(): boolean {

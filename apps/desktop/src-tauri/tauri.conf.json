@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.localmail.app",
   "build": {
-    "beforeDevCommand": "npm --prefix ../web start -- --host 127.0.0.1 --port 4200",
-    "devUrl": "http://127.0.0.1:4200",
+    "beforeDevCommand": "npm --prefix ../web start -- --host 127.0.0.1 --port 4300",
+    "devUrl": "http://127.0.0.1:4300",
     "beforeBuildCommand": "npm --prefix ../web run build",
     "frontendDist": "../web/dist/web/browser"
   },

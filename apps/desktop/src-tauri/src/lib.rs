@@ -43,7 +43,7 @@ fn start_core_if_needed() -> Option<Child> {
         .current_dir(&dir)
         .env("LOCAL_MAIL_CORE_HOST", "127.0.0.1")
         .env("LOCAL_MAIL_CORE_PORT", "8787")
-        .env("LOCAL_MAIL_WEB_ORIGIN", "http://127.0.0.1:4200")
+        .env("LOCAL_MAIL_WEB_ORIGIN", "http://127.0.0.1:4300")
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 

@@ -43,7 +43,7 @@ cd apps/core && npm install && npm run dev
 cd apps/web && npm start
 ```
 
-1. Open http://127.0.0.1:4200  
+1. Open http://127.0.0.1:4300  
 2. Click **Connect Gmail**  
 3. Consent in Google  
 4. You return to the UI; core starts syncing inbox  

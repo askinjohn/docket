@@ -12,7 +12,7 @@
 
 ### Desktop (Tauri)
 - [x] `apps/desktop` Tauri 2 shell (product name Local Mail)
-- [x] Angular as webview frontend (dev :4200 / prod dist)
+- [x] Angular as webview frontend (dev :4300 / prod dist)
 - [x] Auto-start core sidecar on :8787 (or reuse if running)
 - [x] ADR-013 + README desktop path
 - [x] `npm run desktop:dev`

@@ -55,7 +55,7 @@ npm run install:all
 npm run core:dev       # http://127.0.0.1:8787/health
 
 # terminal 2
-npm run web:start      # http://127.0.0.1:4200
+npm run web:start      # http://127.0.0.1:4300
 ```
 
 Without OAuth credentials the UI still runs with **demo** threads.  

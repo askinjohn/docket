@@ -35,5 +35,5 @@ npm run web:start  # terminal 2
 ```
 
 - Dock: **Local Mail** window  
-- Browser UI: http://127.0.0.1:4200  
+- Browser UI: http://127.0.0.1:4300  
 - Health: http://127.0.0.1:8787/health
