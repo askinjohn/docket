@@ -1,5 +1,12 @@
 import { Component, inject, OnInit } from '@angular/core';
+import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 
+import {
+  formatPlainBody,
+  prefersHtml,
+  wrapEmailHtml,
+} from './core/email-body';
+import type { ShellMessage } from './core/ui-shell.service';
 import { UiShellService } from './core/ui-shell.service';
 
 @Component({
@@ -12,6 +19,7 @@ import { UiShellService } from './core/ui-shell.service';
 })
 export class App implements OnInit {
   protected readonly shell = inject(UiShellService);
+  private readonly sanitizer = inject(DomSanitizer);
 
   ngOnInit(): void {
     void this.shell.bootstrap();
@@ -27,6 +35,33 @@ export class App implements OnInit {
         return '📘';
       default:
         return '📎';
+    }
+  }
+
+  messageUsesHtml(msg: ShellMessage): boolean {
+    return prefersHtml(msg.bodyHtml);
+  }
+
+  /** Safe srcdoc for sandboxed iframe (scripts stripped; no allow-scripts). */
+  messageHtmlSrcdoc(msg: ShellMessage): SafeHtml {
+    const doc = wrapEmailHtml(msg.bodyHtml || '');
+    return this.sanitizer.bypassSecurityTrustHtml(doc);
+  }
+
+  messagePlainText(msg: ShellMessage): string {
+    const raw = msg.body?.trim() ? msg.body : stripTags(msg.bodyHtml || '');
+    return formatPlainBody(raw);
+  }
+
+  onHtmlFrameLoad(event: Event): void {
+    const iframe = event.target as HTMLIFrameElement;
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc?.body) return;
+      const h = doc.body.scrollHeight;
+      iframe.style.height = `${Math.min(Math.max(h + 16, 80), 1600)}px`;
+    } catch {
+      iframe.style.height = '320px';
     }
   }
 
@@ -84,4 +119,13 @@ export class App implements OnInit {
       void this.shell.archiveSelected();
     }
   }
+}
+
+function stripTags(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

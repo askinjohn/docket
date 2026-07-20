@@ -152,7 +152,19 @@
               </div>
               <time class="msg-time">{{ msg.time }}</time>
             </div>
-            <div class="message-body">{{ msg.body }}</div>
+            @if (messageUsesHtml(msg)) {
+              <div class="message-html-wrap">
+                <iframe
+                  class="message-html-frame"
+                  title="Message body"
+                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  [srcdoc]="messageHtmlSrcdoc(msg)"
+                  (load)="onHtmlFrameLoad($event)"
+                ></iframe>
+              </div>
+            } @else {
+              <div class="message-body message-body-plain">{{ messagePlainText(msg) }}</div>
+            }
 
             @if (msg.attachments.length) {
               <div class="attachments" aria-label="Attachments">
@@ -190,15 +202,15 @@
           </div>
           <textarea
             class="reply-textarea"
-            rows="5"
+            rows="4"
             [value]="shell.replyBody()"
             (input)="onReplyInput($event)"
-            placeholder="Write a reply…"
+            placeholder="Write a reply… (⌘↵ to send)"
           ></textarea>
 
           <div class="reply-toolbar">
             <div class="reply-toolbar-left">
-              <span class="hint">Attachments on send: soon</span>
+              <span class="hint">Plain-text send</span>
             </div>
             <div class="reply-toolbar-right">
               <span class="hint mono">⌘↵</span>

@@ -20,6 +20,7 @@ export interface ShellMessage {
   to: string;
   time: string;
   body: string;
+  bodyHtml: string;
   attachments: ShellAttachment[];
 }
 
@@ -182,6 +183,7 @@ export class UiShellService {
                   to: m.to,
                   time: m.time,
                   body: m.body,
+                  bodyHtml: m.bodyHtml ?? '',
                   attachments: m.attachments,
                 })),
               }
