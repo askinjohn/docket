@@ -1,0 +1,17 @@
+{
+  "name": "local-mail",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local-first Gmail client — Angular 22 UI + local core",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "web:start": "npm --prefix apps/web start",
+    "web:build": "npm --prefix apps/web run build",
+    "web:test": "npm --prefix apps/web test",
+    "web:install": "npm --prefix apps/web install",
+    "core:start": "npm --prefix apps/core start",
+    "postinstall": "npm --prefix apps/web install"
+  }
+}

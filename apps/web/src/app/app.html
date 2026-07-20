@@ -1,0 +1,92 @@
+<div class="shell">
+  <aside class="sidebar" aria-label="Navigation">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <div class="brand-title">Local Mail</div>
+        <div class="brand-phase">{{ shell.phaseLabel() }}</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button type="button" class="nav-item active" aria-current="page">Inbox</button>
+      <button type="button" class="nav-item" disabled title="Phase 1+">Starred</button>
+      <button type="button" class="nav-item" disabled title="Phase 1+">Sent</button>
+      <button type="button" class="nav-item" disabled title="Phase 2">Custom views</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <p class="hint">Gmail connect lands in Phase 1.</p>
+      <p class="hint mono">⌘K palette · j/k move</p>
+    </div>
+  </aside>
+
+  <section class="list-pane" aria-label="Thread list">
+    <header class="pane-header">
+      <h1>Inbox</h1>
+      <span class="badge">Demo</span>
+    </header>
+
+    <ul class="thread-list" role="listbox" aria-label="Threads">
+      @for (thread of shell.threads(); track thread.id) {
+        <li>
+          <button
+            type="button"
+            class="thread-row"
+            role="option"
+            [class.selected]="shell.selectedId() === thread.id"
+            [class.unread]="thread.unread"
+            [attr.aria-selected]="shell.selectedId() === thread.id"
+            (click)="shell.selectThread(thread.id)"
+          >
+            <div class="thread-top">
+              <span class="from">{{ thread.from }}</span>
+              <span class="time">{{ thread.time }}</span>
+            </div>
+            <div class="subject">{{ thread.subject }}</div>
+            <div class="snippet">{{ thread.snippet }}</div>
+          </button>
+        </li>
+      }
+    </ul>
+  </section>
+
+  <section class="reading-pane" aria-label="Reading pane">
+    @if (shell.selectedThread(); as thread) {
+      <header class="reading-header">
+        <h2>{{ thread.subject }}</h2>
+        <p class="meta">{{ thread.from }} · {{ thread.time }}</p>
+      </header>
+      <article class="reading-body">
+        <p>{{ thread.snippet }}</p>
+        <hr />
+        <p class="muted">
+          Phase 0 placeholder. Real message bodies will load from the local core
+          (SQLite / Gmail) via <code>httpResource</code> in Phase 1.
+        </p>
+        <ul class="checklist">
+          <li>Local core on 127.0.0.1</li>
+          <li>OAuth + sync</li>
+          <li>Keyboard triage (e archive, r reply)</li>
+        </ul>
+      </article>
+    } @else {
+      <div class="empty">Select a thread</div>
+    }
+  </section>
+</div>
+
+@if (shell.commandPaletteOpen()) {
+  <div class="palette-backdrop" (click)="shell.closeCommandPalette()"></div>
+  <div class="palette" role="dialog" aria-label="Command palette" aria-modal="true">
+    <div class="palette-title">Command palette</div>
+    <p class="muted">Stub UI — full commands in Phase 2 (Angular Aria).</p>
+    <ul>
+      <li><kbd>g</kbd> <kbd>i</kbd> Go inbox</li>
+      <li><kbd>c</kbd> Compose</li>
+      <li><kbd>e</kbd> Archive</li>
+      <li><kbd>/</kbd> Search</li>
+    </ul>
+    <p class="hint">Press Esc to close</p>
+  </div>
+}

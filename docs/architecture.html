@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local Mail — System Mindmap</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #12161f;
+      --panel2: #181d29;
+      --border: #2a3344;
+      --text: #e8ecf4;
+      --muted: #8b95a8;
+      --accent: #7c6af7;
+      --accent2: #3dd6c6;
+      --warn: #f0b429;
+      --danger: #f07178;
+      --gmail: #ea4335;
+      --ai: #c084fc;
+      --mcp: #38bdf8;
+      --db: #4ade80;
+      --ui: #fbbf24;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(12px);
+      background: rgba(11, 13, 18, 0.88);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 1.5rem;
+    }
+
+    header .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.25rem;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    h1 span { color: var(--accent2); }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+
+    nav a:hover {
+      color: var(--text);
+      border-color: var(--border);
+      background: var(--panel);
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem 4rem;
+    }
+
+    section {
+      margin-bottom: 2.75rem;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin: 1.25rem 0 0.5rem;
+      color: var(--accent2);
+    }
+
+    p.lead {
+      color: var(--muted);
+      margin: 0 0 1.25rem;
+      max-width: 62ch;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 800px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+    }
+
+    .card h4 {
+      margin: 0 0 0.4rem;
+      font-size: 0.95rem;
+    }
+
+    .card p, .card li {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 0;
+    }
+
+    .card ul {
+      margin: 0.4rem 0 0;
+      padding-left: 1.1rem;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+    }
+
+    .tag.ui { background: rgba(251, 191, 36, 0.15); color: var(--ui); }
+    .tag.core { background: rgba(124, 106, 247, 0.15); color: var(--accent); }
+    .tag.db { background: rgba(74, 222, 128, 0.12); color: var(--db); }
+    .tag.gmail { background: rgba(234, 67, 53, 0.12); color: #ff7b72; }
+    .tag.ai { background: rgba(192, 132, 252, 0.12); color: var(--ai); }
+    .tag.mcp { background: rgba(56, 189, 248, 0.12); color: var(--mcp); }
+    .tag.os { background: rgba(240, 180, 41, 0.12); color: var(--warn); }
+
+    /* Mindmap */
+    .mindmap {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% 40%, rgba(124, 106, 247, 0.12), transparent 70%),
+        var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem 1rem 2rem;
+      overflow-x: auto;
+    }
+
+    .mm-root {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      min-width: 720px;
+    }
+
+    .mm-node {
+      border-radius: 12px;
+      padding: 0.65rem 1rem;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      text-align: center;
+      max-width: 280px;
+    }
+
+    .mm-node.center {
+      background: linear-gradient(145deg, rgba(124, 106, 247, 0.25), rgba(61, 214, 198, 0.12));
+      border-color: rgba(124, 106, 247, 0.45);
+      max-width: 320px;
+      box-shadow: 0 0 40px rgba(124, 106, 247, 0.15);
+    }
+
+    .mm-node strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .mm-node small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-top: 0.2rem;
+    }
+
+    .mm-branches {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      width: 100%;
+      max-width: 980px;
+    }
+
+    .mm-branch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mm-branch > .mm-node {
+      width: 100%;
+      max-width: none;
+    }
+
+    .mm-kids {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      width: 100%;
+    }
+
+    .mm-kids .mm-node {
+      max-width: none;
+      width: 100%;
+      font-size: 0.85rem;
+      text-align: left;
+      padding: 0.5rem 0.7rem;
+    }
+
+    .connector {
+      width: 2px;
+      height: 14px;
+      background: var(--border);
+    }
+
+    .connector-h {
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      margin: 0.15rem 0;
+    }
+
+    /* Architecture diagram */
+    .arch {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+      line-height: 1.35;
+      background: #0a0c10;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.1rem 1rem;
+      overflow-x: auto;
+      color: #c5cddb;
+      white-space: pre;
+    }
+
+    .arch .c-ui { color: var(--ui); }
+    .arch .c-core { color: var(--accent); }
+    .arch .c-db { color: var(--db); }
+    .arch .c-gmail { color: #ff7b72; }
+    .arch .c-ai { color: var(--ai); }
+    .arch .c-mcp { color: var(--mcp); }
+    .arch .c-muted { color: #5c667a; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel2);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    td { background: var(--panel); color: var(--text); }
+    td.muted { color: var(--muted); }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0.75rem 0;
+    }
+
+    .flow .step {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.45rem 0.7rem;
+      font-size: 0.82rem;
+    }
+
+    .flow .arrow {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .phase {
+      border-left: 3px solid var(--accent);
+      padding-left: 0.9rem;
+      margin: 0.85rem 0;
+    }
+
+    .phase strong { display: block; margin-bottom: 0.2rem; }
+    .phase span { color: var(--muted); font-size: 0.9rem; }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    footer {
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+      margin-top: 2rem;
+    }
+
+    code {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 0.85em;
+      background: rgba(255,255,255,0.06);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+
+    .decision-yes { color: var(--db); }
+    .decision-no { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Local Mail — <span>System Mindmap</span></h1>
+      <nav>
+        <a href="#mindmap">Mindmap</a>
+        <a href="#stack">Stack</a>
+        <a href="#angular22">Angular 22</a>
+        <a href="#arch">Architecture</a>
+        <a href="#flows">Flows</a>
+        <a href="#notifications">Notifications</a>
+        <a href="#mcp-ai">MCP &amp; AI</a>
+        <a href="#swift">Swift?</a>
+        <a href="#phases">Phases</a>
+        <a href="#decisions">Decisions</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>What this product is</h2>
+      <p class="lead">
+        A <strong>local-first Gmail client</strong> you run on your laptop.
+        Humans use an <strong>Angular</strong> UI in the browser on <code>localhost</code>.
+        Agents use <strong>MCP</strong>. Mail, secrets, and index live in a <strong>local DB</strong>.
+        AI is <strong>hybrid</strong> (local models + optional cloud keys).
+        Not a multi-tenant cloud SaaS.
+      </p>
+      <div class="legend">
+        <span class="tag ui">UI</span>
+        <span class="tag core">Local core</span>
+        <span class="tag db">SQLite</span>
+        <span class="tag gmail">Gmail</span>
+        <span class="tag ai">AI</span>
+        <span class="tag mcp">MCP</span>
+        <span class="tag os">OS / optional shell</span>
+      </div>
+    </section>
+
+    <!-- MINDMAP -->
+    <section id="mindmap">
+      <h2>Full mindmap</h2>
+      <p class="lead">Center = local core. Everything else hangs off it.</p>
+
+      <div class="mindmap">
+        <div class="mm-root">
+          <div class="mm-node center">
+            <strong>Local Mail System</strong>
+            <small>Laptop-only · free software · Gmail v1 · Superhuman-like UI</small>
+          </div>
+          <div class="connector"></div>
+          <div class="connector-h"></div>
+
+          <div class="mm-branches">
+            <!-- Humans -->
+            <div class="mm-branch">
+              <div class="mm-node" style="border-color: rgba(251,191,36,0.35)">
+                <span class="tag ui">UI</span>
+                <strong>Human interface</strong>
+                <small>Angular on localhost</small>
+              </div>
+              <div class="connector"></div>
+              <div class="mm-kids">
+                <div class="mm-node"><strong>Shell layout</strong><small>Sidebar · thread list · reading pane</small></div>
+                <div class="mm-node"><strong>Superhuman-like UX</strong><small>Hotkeys · Cmd+K · density · themes</small></div>
+                <div class="mm-node"><strong>Compose / reply</strong><small>Optimistic actions · undo toast</small></div>
+                <div class="mm-node"><strong>Customization</strong><small>Accent · shortcuts · Gmail-query views</small></div>
+                <div class="mm-node"><strong>Web Notifications</strong><small>Permission · new mail banners</small></div>
+              </div>
+            </div>
+
+            <!-- Core -->
+            <div class="mm-branch">
+              <div class="mm-node" style="border-color: rgba(124,106,247,0.45)">
+                <span class="tag core">Core</span>
+                <strong>Local backend</strong>
+                <small>127.0.0.1 only · Node/Bun/etc.</small>
+              </div>
+              <div class="connector"></div>
+              <div class="mm-kids">
+                <div class="mm-node"><strong>HTTP / WS API</strong><small>UI ↔ core · live events</small></div>
+                <div class="mm-node"><strong>Gmail sync engine</strong><small>OAuth · history · labels · send</small></div>
+                <div class="mm-node"><strong>Mail actions</strong><small>Archive · star · read · draft</small></div>
+                <div class="mm-node"><strong>AI orchestrator</strong><small>Summarize · draft · agent tools</small></div>
+                <div class="mm-node"><strong>MCP host</strong><small>Server + client roles</small></div>
+                <div class="mm-node"><strong>Secrets</strong><small>Tokens · API keys · keychain/files</small></div>
+              </div>
+            </div>
+
+            <!-- Data & outside -->
+            <div class="mm-branch">
+              <div class="mm-node" style="border-color: rgba(74,222,128,0.35)">
+                <span class="tag db">Data</span>
+                <strong>On-disk + remote</strong>
+                <small>Local truth + Gmail source</small>
+              </div>
+              <div class="connector"></div>
+              <div class="mm-kids">
+                <div class="mm-node"><strong>SQLite</strong><small>Threads · messages · sync state · config · FTS</small></div>
+                <div class="mm-node"><strong>Gmail API</strong><small>Source of truth for cloud mail</small></div>
+                <div class="mm-node"><strong>LLM providers</strong><small>Ollama local · cloud BYO keys</small></div>
+                <div class="mm-node"><strong>External MCP servers</strong><small>Files · calendar · notes · …</small></div>
+                <div class="mm-node"><strong>Optional native shell</strong><small>Dock app · native notifications later</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- STACK -->
+    <section id="stack">
+      <h2>Stack by layer</h2>
+      <p class="lead">What runs where. Browser is only the UI surface.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Technology</th>
+            <th>Responsibility</th>
+            <th>Not responsible for</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag ui">UI</span></td>
+            <td><strong>Angular 22</strong> + TypeScript (+ Tailwind optional)<br/>
+              <span class="muted" style="font-size:0.8rem">Stable: signals, OnPush default, Signal Forms, resource/httpResource, @Service, zoneless-ready, Angular Aria</span>
+            </td>
+            <td>Layout, hotkeys, themes, sandboxed mail HTML, reactive data via httpResource, Signal Forms for compose/settings</td>
+            <td class="muted">Tokens, MCP stdio, Gmail secrets — stay in core. WebMCP is experimental only (not foundation)</td>
+          </tr>
+          <tr>
+            <td><span class="tag core">Core</span></td>
+            <td>Local server (Node/Bun or similar) on <code>127.0.0.1</code></td>
+            <td>OAuth, sync, actions, AI calls, MCP server/client, events</td>
+            <td class="muted">Pretty pixels (UI owns that)</td>
+          </tr>
+          <tr>
+            <td><span class="tag db">DB</span></td>
+            <td>SQLite (+ FTS5 later)</td>
+            <td>Cache, offline-ish read, search index, settings, sync cursors</td>
+            <td class="muted">Being multi-user cloud DB</td>
+          </tr>
+          <tr>
+            <td><span class="tag gmail">Gmail</span></td>
+            <td>Gmail API + OAuth</td>
+            <td>Authoritative mail in Google’s cloud</td>
+            <td class="muted">Your UI or local preferences</td>
+          </tr>
+          <tr>
+            <td><span class="tag ai">AI</span></td>
+            <td>Hybrid: local (e.g. Ollama) + cloud keys</td>
+            <td>Summaries, drafts, agent reasoning</td>
+            <td class="muted">Owning mail storage</td>
+          </tr>
+          <tr>
+            <td><span class="tag mcp">MCP</span></td>
+            <td>MCP server + MCP client in core</td>
+            <td>Agent access to mail; core access to other tools</td>
+            <td class="muted">Replacing the human UI</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ANGULAR 22 -->
+    <section id="angular22">
+      <h2>Angular 22 — what we use (stable only)</h2>
+      <p class="lead">
+        UI is <strong>Angular 22</strong>. Production code sticks to <strong>stable</strong> APIs.
+        Scaffold with <code>npx @angular/cli@22</code> (or latest 22.x).
+      </p>
+      <table>
+        <thead>
+          <tr><th>Stable in v22</th><th>How it maps to Local Mail</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Signals</strong> (<code>signal</code>, <code>computed</code>, <code>linkedSignal</code>, <code>effect</code>)</td>
+            <td>Selected thread, focus pane, theme, keyboard mode, derived unread counts</td>
+          </tr>
+          <tr>
+            <td><strong>OnPush default</strong> (+ zoneless-ready)</td>
+            <td>Snappy list/reading pane; no zone.js tax; updates via signals/events</td>
+          </tr>
+          <tr>
+            <td><strong>Signal Forms</strong></td>
+            <td>Compose, reply, settings, account connect fields — not classic ReactiveFormsModule first</td>
+          </tr>
+          <tr>
+            <td><strong>resource / httpResource / rxResource</strong></td>
+            <td>Thread list, thread detail, search results from local core API; loading/error as signals</td>
+          </tr>
+          <tr>
+            <td><strong>@Service()</strong> + <code>inject()</code></td>
+            <td>MailApi, UiStore, Hotkeys, NotificationBridge as root services</td>
+          </tr>
+          <tr>
+            <td><strong>injectAsync</strong></td>
+            <td>Lazy-load heavy UI (settings, AI panel, attachment viewer) only when opened</td>
+          </tr>
+          <tr>
+            <td><strong>Angular Aria</strong> (stable)</td>
+            <td>Command palette, menus, listbox-style thread selection — accessible Superhuman chrome</td>
+          </tr>
+          <tr>
+            <td><strong>Control flow</strong> (<code>@if</code>, <code>@for</code>, <code>@switch</code>)</td>
+            <td>List rows, empty states, loading — no NgIf/NgFor in new code</td>
+          </tr>
+          <tr>
+            <td><strong>Standalone components</strong> + modern routing</td>
+            <td>Inbox / starred / custom views / settings routes; params inherit parents (<code>always</code>)</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Do not treat as production foundation</h3>
+      <div class="card">
+        <h4>WebMCP (experimental in Angular 22)</h4>
+        <p>
+          In-browser tools for browser-embedded agents. Interesting later, <strong>not</strong> our agent story.
+          Agents use the <strong>local core MCP server</strong> (search_mail, get_thread, …). Keep those separate.
+        </p>
+      </div>
+      <h3>UI state pattern (Angular-native — no Zustand)</h3>
+      <div class="arch"><span class="c-ui">signal / linkedSignal</span><span class="c-muted">  → selection, layout, theme, command palette open
+</span><span class="c-ui">httpResource / resource</span><span class="c-muted"> → threads, messages from </span><span class="c-core">local core</span><span class="c-muted">
+</span><span class="c-ui">Signal Forms</span><span class="c-muted">           → compose + settings
+</span><span class="c-ui">@Service()</span><span class="c-muted">               → shared stores &amp; API clients
+WebSocket/SSE           → patch signals when core pushes new mail
+</span></div>
+    </section>
+
+    <!-- ARCH ASCII -->
+    <section id="arch">
+      <h2>Architecture (one laptop)</h2>
+      <p class="lead">Everything inside the outer box is yours. Only Gmail and optional cloud LLMs leave the machine.</p>
+      <div class="arch"><span class="c-muted">┌─────────────────────────────────────────────────────────────────────────┐
+│  YOUR LAPTOP (Mac now · Windows later)                                  │
+│                                                                         │
+│   <span class="c-ui">┌─────────────────────┐</span>         <span class="c-core">┌──────────────────────────────────┐</span>  │
+│   <span class="c-ui">│  BROWSER            │</span>  HTTP   <span class="c-core">│  LOCAL CORE (backend)            │</span>  │
+│   <span class="c-ui">│  Angular UI         │</span>◄───────►<span class="c-core">│  REST + WebSocket/SSE            │</span>  │
+│   <span class="c-ui">│  localhost:5173     │</span>  WS     <span class="c-core">│                                  │</span>  │
+│   <span class="c-ui">│  · list / read      │</span>         <span class="c-core">│  · Gmail sync &amp; actions         │</span>  │
+│   <span class="c-ui">│  · compose / keys   │</span>         <span class="c-core">│  · AI orchestrator (hybrid)     │</span>  │
+│   <span class="c-ui">│  · web notify       │</span>         <span class="c-core">│  · MCP server  +  MCP client    │</span>  │
+│   <span class="c-ui">└─────────────────────┘</span>         <span class="c-core">└───────────┬──────────────────────┘</span>  │
+│                                              │                          │
+│                    <span class="c-db">┌─────────────────────────▼──────────────────────┐</span>    │
+│                    <span class="c-db">│  SQLite  · threads · messages · config · FTS   │</span>    │
+│                    <span class="c-db">└────────────────────────────────────────────────┘</span>    │
+│                                                                         │
+│   <span class="c-os">Optional later: Tauri/Electron/Swift shell → Dock icon + native notify</span> │
+└─────────────────────────────────────────────────────────────────────────┘
+          │                         │                        │
+          ▼                         ▼                        ▼
+   <span class="c-gmail">Gmail API</span>                 <span class="c-ai">LLMs</span>                      <span class="c-mcp">Other MCP</span>
+   (OAuth)                   local Ollama              servers
+                             and/or cloud keys         (files, …)
+</div>
+    </section>
+
+    <!-- FLOWS -->
+    <section id="flows">
+      <h2>Key flows</h2>
+
+      <h3>A. First launch &amp; Gmail connect</h3>
+      <div class="flow">
+        <span class="step">Start backend</span><span class="arrow">→</span>
+        <span class="step">Open Angular UI</span><span class="arrow">→</span>
+        <span class="step">Click Connect Gmail</span><span class="arrow">→</span>
+        <span class="step">OAuth in browser</span><span class="arrow">→</span>
+        <span class="step">Redirect to localhost</span><span class="arrow">→</span>
+        <span class="step">Core stores tokens</span><span class="arrow">→</span>
+        <span class="step">Initial sync → SQLite</span>
+      </div>
+
+      <h3>B. Read inbox (human)</h3>
+      <div class="flow">
+        <span class="step">UI requests threads</span><span class="arrow">→</span>
+        <span class="step">Core reads SQLite</span><span class="arrow">→</span>
+        <span class="step">Return list fast</span><span class="arrow">→</span>
+        <span class="step">Open thread</span><span class="arrow">→</span>
+        <span class="step">Body from cache or Gmail fetch</span><span class="arrow">→</span>
+        <span class="step">Sandbox HTML render</span>
+      </div>
+
+      <h3>C. Archive (optimistic Superhuman-style)</h3>
+      <div class="flow">
+        <span class="step">Press <code>e</code></span><span class="arrow">→</span>
+        <span class="step">UI hides thread now</span><span class="arrow">→</span>
+        <span class="step">Core: remove INBOX label via Gmail</span><span class="arrow">→</span>
+        <span class="step">Update SQLite</span><span class="arrow">→</span>
+        <span class="step">Undo window optional</span>
+      </div>
+
+      <h3>D. New mail → notification</h3>
+      <div class="flow">
+        <span class="step">Core poll/history sync</span><span class="arrow">→</span>
+        <span class="step">Detect new thread</span><span class="arrow">→</span>
+        <span class="step">Write SQLite</span><span class="arrow">→</span>
+        <span class="step">Push event over WS/SSE</span><span class="arrow">→</span>
+        <span class="step">Angular shows Web Notification</span>
+      </div>
+
+      <h3>E. AI draft reply (hybrid)</h3>
+      <div class="flow">
+        <span class="step">UI: “Draft reply”</span><span class="arrow">→</span>
+        <span class="step">Core loads thread from DB</span><span class="arrow">→</span>
+        <span class="step">Pick provider (local/cloud)</span><span class="arrow">→</span>
+        <span class="step">Optional MCP context</span><span class="arrow">→</span>
+        <span class="step">LLM returns draft</span><span class="arrow">→</span>
+        <span class="step">UI compose box</span>
+      </div>
+
+      <h3>F. External agent via MCP</h3>
+      <div class="flow">
+        <span class="step">Cursor / Claude / etc.</span><span class="arrow">→</span>
+        <span class="step">MCP: search_mail</span><span class="arrow">→</span>
+        <span class="step">Core queries SQLite / Gmail</span><span class="arrow">→</span>
+        <span class="step">Structured result</span><span class="arrow">→</span>
+        <span class="step">Agent reasons (no browser needed)</span>
+      </div>
+    </section>
+
+    <!-- NOTIFICATIONS -->
+    <section id="notifications">
+      <h2>Notifications</h2>
+      <p class="lead">Yes — quality depends on how “alive” the core and UI are.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h4><span class="tag ui">v1</span> Browser Web Notifications</h4>
+          <ul>
+            <li>User grants permission once</li>
+            <li>Core emits <code>mail.new</code> over WebSocket/SSE</li>
+            <li>Angular calls Notification API</li>
+            <li>Click focuses tab / opens thread</li>
+          </ul>
+          <p style="margin-top:0.6rem">Works well when browser is open. Weaker if browser fully quit.</p>
+        </div>
+        <div class="card">
+          <h4><span class="tag os">Later</span> Native path</h4>
+          <ul>
+            <li>Core stays running (login item / menubar)</li>
+            <li>Native notifier or Tauri/Electron/Swift shell</li>
+            <li>Notification Center even without a tab</li>
+            <li>Optional Dock badge</li>
+          </ul>
+          <p style="margin-top:0.6rem">Same core events; different delivery adapter.</p>
+        </div>
+      </div>
+      <h3>What triggers a notification</h3>
+      <table>
+        <thead>
+          <tr><th>Event</th><th>Source</th><th>User-visible?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>New inbox thread</td><td>Gmail history / poll</td><td>Yes (default)</td></tr>
+          <tr><td>AI job finished</td><td>AI orchestrator</td><td>Optional</td></tr>
+          <tr><td>Sync / auth error</td><td>Core</td><td>Yes</td></tr>
+          <tr><td>Quiet hours / per-view filters</td><td>Config in SQLite</td><td>User-controlled</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- MCP & AI -->
+    <section id="mcp-ai">
+      <h2>MCP &amp; AI (both built into core)</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4><span class="tag mcp">MCP server</span> Expose mail</h4>
+          <p>Other agents call your laptop:</p>
+          <ul>
+            <li><code>search_mail</code> — query / FTS / Gmail q=</li>
+            <li><code>get_thread</code> — full conversation</li>
+            <li><code>list_labels</code> / views</li>
+            <li><code>draft_reply</code> — create draft (confirm policy TBD)</li>
+            <li><code>archive</code> / <code>star</code> — mutations with safeguards</li>
+          </ul>
+          <p style="margin-top:0.6rem">Backed by the <strong>same SQLite + Gmail</strong> as the Angular UI.</p>
+        </div>
+        <div class="card">
+          <h4><span class="tag mcp">MCP client</span> Consume tools</h4>
+          <p>In-app AI can pull external context:</p>
+          <ul>
+            <li>Filesystem / notes MCP</li>
+            <li>Calendar, browser, git, …</li>
+            <li>Configured list of servers in settings</li>
+          </ul>
+          <p style="margin-top:0.6rem">Example: “Draft reply using my project notes” → mail + notes tools.</p>
+        </div>
+      </div>
+
+      <h3>AI hybrid routing</h3>
+      <div class="arch"><span class="c-muted">UI or MCP request
+        │
+        ▼
+</span><span class="c-ai">AI orchestrator</span><span class="c-muted">
+        │  loads thread + policy + optional MCP context
+        ├── privacy/simple  →  </span><span class="c-ai">local model (Ollama…)</span><span class="c-muted">
+        ├── hard/quality    →  </span><span class="c-ai">cloud model (user API key)</span><span class="c-muted">
+        └── offline/no key  →  local only or clear error
+        │
+        ▼
+   result → UI compose / MCP response / notification
+</span></div>
+    </section>
+
+    <!-- SWIFT -->
+    <section id="swift">
+      <h2>Where does Swift fit?</h2>
+      <p class="lead">Swift is optional packaging, not the center of the design you chose.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>Role of Swift</th>
+            <th>Fits AI + MCP + Angular?</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Browser plan (chosen lean)</strong></td>
+            <td class="muted">None required</td>
+            <td class="decision-yes">Best fit</td>
+          </tr>
+          <tr>
+            <td><strong>Swift shell only</strong></td>
+            <td>Window, menu bar, native notifications; embed or open Angular</td>
+            <td class="decision-yes">Good later upgrade</td>
+          </tr>
+          <tr>
+            <td><strong>Full SwiftUI app</strong></td>
+            <td>Entire UI in Swift; core may still be separate</td>
+            <td class="decision-no">Rebuilds Superhuman UI; Windows later hurts; MCP ecosystem thinner</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="lead" style="margin-top:1rem">
+        <strong>Rule of thumb:</strong> keep <em>mail + AI + MCP + DB</em> in the local core.
+        Swift (or Tauri) only if you want a Dock citizen and stronger notifications.
+      </p>
+    </section>
+
+    <!-- PHASES -->
+    <section id="phases">
+      <h2>Build phases (browser + Angular path)</h2>
+
+      <div class="phase">
+        <strong>Phase 0 — Skeleton</strong>
+        <span>Local core health endpoint · Angular app loads on localhost · 3-pane empty shell · bind core to 127.0.0.1 only</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 1 — Gmail MVP</strong>
+        <span>OAuth · sync inbox → SQLite · list/read · mark read · archive · star · send/reply · basic error states</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 2 — Superhuman-ish UX</strong>
+        <span>j/k/e hotkeys · command palette · optimistic archive · themes/density · custom views via Gmail query · safe HTML sandbox</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 3 — Live + notifications</strong>
+        <span>WebSocket/SSE · history poll loop · Web Notifications · click-to-thread</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 4 — AI hybrid</strong>
+        <span>Provider config · summarize · draft reply · local vs cloud routing · never leak tokens to the browser</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 5 — MCP both</strong>
+        <span>Mail MCP server tools · in-app MCP client · shared auth/policy for destructive tools</span>
+      </div>
+      <div class="phase">
+        <strong>Phase 6 — Optional native</strong>
+        <span>Tauri/Electron/Swift shell · auto-start core · native notifications · Windows build of same stack</span>
+      </div>
+    </section>
+
+    <!-- DECISIONS -->
+    <section id="decisions">
+      <h2>Decision log</h2>
+      <table>
+        <thead>
+          <tr><th>Topic</th><th>Decision</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Product</td><td>Local-first personal Gmail client</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>v1 provider</td><td>Gmail only (API, not plain IMAP first)</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>UI framework</td><td><strong>Angular 22</strong> + TypeScript — signal-first, stable APIs only for production</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>Angular data/forms</td><td>Signals + httpResource/resource + Signal Forms (stable in v22)</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>Angular DI</td><td>@Service() / inject(); injectAsync for heavy optional UI chunks</td><td class="decision-yes">Direction</td></tr>
+          <tr><td>Angular Aria</td><td>Stable headless a11y for listbox, combobox, menu (command palette)</td><td class="decision-yes">Direction</td></tr>
+          <tr><td>WebMCP (Angular experimental)</td><td>Not a foundation; backend MCP remains source of truth for agents</td><td class="decision-no">Optional later only</td></tr>
+          <tr><td>Delivery day one</td><td>Browser → localhost + local backend</td><td class="decision-yes">Locked lean</td></tr>
+          <tr><td>Database</td><td>SQLite on disk</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>AI</td><td>Hybrid local + BYO cloud keys</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>MCP</td><td>Both server and client in core</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>Platforms</td><td>Mac now, Windows later (same stack)</td><td class="decision-yes">Locked</td></tr>
+          <tr><td>UX north star</td><td>Superhuman-like (customizable)</td><td class="decision-yes">Direction</td></tr>
+          <tr><td>Notifications v1</td><td>Web Notifications via core events</td><td class="decision-yes">Direction</td></tr>
+          <tr><td>Native Dock / Swift</td><td>Optional later shell, not foundation</td><td class="decision-yes">Direction</td></tr>
+          <tr><td>Backend runtime</td><td>Node vs Bun vs other</td><td class="decision-no">Open</td></tr>
+          <tr><td>Exact MCP tool policy</td><td>Confirm-before-send, etc.</td><td class="decision-no">Open</td></tr>
+          <tr><td>Default local model</td><td>Which Ollama model / hardware</td><td class="decision-no">Open</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- TRUST -->
+    <section>
+      <h2>Trust &amp; security boundaries</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Must stay in core / OS</h4>
+          <ul>
+            <li>Gmail refresh tokens</li>
+            <li>Cloud LLM API keys</li>
+            <li>Destructive mail tools over MCP (policy)</li>
+            <li>DB file permissions (user home)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Browser rules</h4>
+          <ul>
+            <li>Talk only to <code>127.0.0.1</code></li>
+            <li>Sandbox email HTML (no random JS)</li>
+            <li>Remote images: user preference / proxy later</li>
+            <li>Never bind core to public interfaces by default</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Artifact for local discussion — open this file in any browser.
+      Path: <code>local-mail-architecture.html</code> in your gemini-cli projects folder.
+      Update when decisions change.
+    </footer>
+  </main>
+</body>
+</html>

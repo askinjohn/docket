@@ -1,0 +1,14 @@
+{
+  "name": "@local-mail/core",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local Mail core — Gmail sync, SQLite, AI, MCP (Phase 1+)",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  }
+}

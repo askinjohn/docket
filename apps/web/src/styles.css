@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+  --lm-bg: #0b0d12;
+  --lm-panel: #12161f;
+  --lm-hover: #1a2030;
+  --lm-border: #2a3344;
+  --lm-text: #e8ecf4;
+  --lm-muted: #8b95a8;
+  --lm-accent: #7c6af7;
+  --lm-accent-2: #3dd6c6;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--lm-bg);
+  color: var(--lm-text);
+  -webkit-font-smoothing: antialiased;
+}

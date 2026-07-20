@@ -1,0 +1,18 @@
+---
+description: Local Mail project rules for Cursor agents
+globs:
+  - "**/*"
+---
+
+# Local Mail
+
+Follow the repository root `AGENTS.md` and `PRODUCT.md` / `ROADMAP.md` / `TODO.md`.
+
+## Essentials
+
+- Angular 22 UI lives in `apps/web` — stable signal-first APIs only.
+- Local core in `apps/core` owns Gmail, SQLite, AI, MCP, secrets.
+- Core must bind to `127.0.0.1` only by default.
+- Do not implement Phase 4–5 (AI/MCP product features) before Phase 1 mail works unless the user overrides.
+- Never commit tokens, `.env` secrets, or SQLite mail data.
+- After UI changes: `npm run web:build` from repo root (or build in `apps/web`).
