@@ -6,7 +6,7 @@ Read **[AGENTS.md](./AGENTS.md)** first — it is the canonical rule set.
 
 **Local Mail** — local-first Gmail client.
 
-- UI: `apps/web` — Angular 22 + plain CSS  
+- UI: `apps/web` — Angular 22 + Tailwind CSS  
 - Core: `apps/core` — local backend (upcoming)  
 - Plan: `PRODUCT.md`, `ROADMAP.md`, `TODO.md`  
 - Architecture: `docs/architecture.html`, `docs/DECISIONS.md`  
