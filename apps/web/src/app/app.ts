@@ -222,12 +222,24 @@ import { UiShellService } from './core/ui-shell.service';
       />
     </header>
 
-    @if (shell.statusMessage()) {
+    @if (shell.statusMessage() || shell.undoAvailable()) {
       <div
-        class="mx-2.5 mt-2 rounded-lg border border-lm-border bg-lm-accent/10 px-2.5 py-1.5 text-[0.78rem] text-lm-muted"
+        class="mx-2.5 mt-2 flex items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-accent/10 px-2.5 py-1.5 text-[0.78rem] text-lm-muted"
         role="status"
       >
-        {{ shell.statusMessage() }}
+        <span class="min-w-0 flex-1 truncate">{{
+          shell.statusMessage() || (shell.undoAvailable() ? 'Archived' : '')
+        }}</span>
+        @if (shell.undoAvailable()) {
+          <button
+            type="button"
+            class="shrink-0 cursor-pointer rounded-md border border-lm-accent/40 bg-lm-accent/20 px-2 py-0.5 text-[0.72rem] font-semibold text-lm-text hover:bg-lm-accent/30"
+            (click)="shell.undoArchive()"
+            title="Undo archive (z)"
+          >
+            Undo
+          </button>
+        }
       </div>
     }
 
@@ -766,6 +778,7 @@ export class App implements OnInit {
     { cmd: 'compose', label: 'Compose', hint: 'c' },
     { cmd: 'reply', label: 'Reply', hint: 'r' },
     { cmd: 'archive', label: 'Archive', hint: 'e' },
+    { cmd: 'undo', label: 'Undo archive', hint: 'z' },
     { cmd: 'star', label: 'Toggle star', hint: 's' },
     { cmd: 'summary', label: 'Daily summary → notes', hint: '' },
     { cmd: 'ai-summary', label: 'AI summarize thread', hint: '' },
@@ -1000,6 +1013,9 @@ export class App implements OnInit {
     } else if (event.key === 'e') {
       event.preventDefault();
       void this.shell.archiveSelected();
+    } else if (event.key === 'z') {
+      event.preventDefault();
+      void this.shell.undoArchive();
     } else if (event.key === 's') {
       event.preventDefault();
       void this.shell.toggleStarSelected();

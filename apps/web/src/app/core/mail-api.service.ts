@@ -151,6 +151,15 @@ export class MailApiService {
     );
   }
 
+  unarchive(threadId: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean }>(
+        `${this.baseUrl}/threads/${threadId}/unarchive`,
+        {},
+      ),
+    );
+  }
+
   markRead(threadId: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean }>(

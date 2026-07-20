@@ -86,7 +86,15 @@ export class UiShellService {
   readonly activeAccountId = signal<number | null>(null);
   readonly phaseLabel = signal('Local Mail');
   readonly accentPresets = ACCENT_PRESETS;
+  /** True while an archive can still be undone (short window). */
+  readonly undoAvailable = signal(false);
   private eventsAbort: AbortController | null = null;
+  private bgSyncTimer: ReturnType<typeof setInterval> | null = null;
+  private pendingArchiveUndo: {
+    thread: ShellThreadPreview;
+    index: number;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
 
   readonly selectedThread = computed(() => {
     const id = this.selectedId();
@@ -136,19 +144,59 @@ export class UiShellService {
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
         this.connectLiveEvents();
+        this.startBackgroundSync();
         this.requestNotifyPermission();
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
         this.activeAccountId.set(null);
+        this.stopBackgroundSync();
         this.statusMessage.set(
           'Core online — connect Gmail (opens your browser).',
         );
       }
     } catch {
       this.coreStatus.set('offline');
+      this.stopBackgroundSync();
       this.statusMessage.set('Core offline. Run: cd apps/core && npm run dev');
     }
+  }
+
+  /** Quiet history sync every 60s so new mail lands without a manual Sync. */
+  private startBackgroundSync(): void {
+    this.stopBackgroundSync();
+    this.bgSyncTimer = setInterval(() => {
+      if (!this.isConnected() || this.syncing() || this.sending()) return;
+      void this.quietSync();
+    }, 60_000);
+  }
+
+  private stopBackgroundSync(): void {
+    if (this.bgSyncTimer) {
+      clearInterval(this.bgSyncTimer);
+      this.bgSyncTimer = null;
+    }
+  }
+
+  private async quietSync(): Promise<void> {
+    try {
+      const res = await this.api.sync(false);
+      if (res.synced > 0) {
+        await this.refreshThreads();
+        this.notify('Local Mail', `${res.synced} new update(s)`);
+        this.statusMessage.set(`Background sync: ${res.synced} update(s)`);
+      }
+    } catch {
+      /* stay quiet on background failures */
+    }
+  }
+
+  private clearArchiveUndo(): void {
+    if (this.pendingArchiveUndo) {
+      clearTimeout(this.pendingArchiveUndo.timer);
+      this.pendingArchiveUndo = null;
+    }
+    this.undoAvailable.set(false);
   }
 
   private connectLiveEvents(): void {
@@ -423,6 +471,7 @@ export class UiShellService {
             `Connected as ${status.email}. Syncing inbox…`,
           );
           this.connectLiveEvents();
+          this.startBackgroundSync();
           await this.syncNow();
           return;
         }
@@ -463,7 +512,12 @@ export class UiShellService {
     }
     const list = this.threads();
     const idx = list.findIndex((t) => t.id === id);
-    // Optimistic remove
+    if (idx < 0) return;
+    const removed = list[idx]!;
+
+    this.clearArchiveUndo();
+
+    // Optimistic remove + jump to next
     const next = list[idx + 1] ?? list[idx - 1] ?? null;
     this.threads.update((ts) => ts.filter((t) => t.id !== id));
     if (next) void this.selectThread(next.id);
@@ -471,11 +525,59 @@ export class UiShellService {
       this.selectedId.set(null);
       this.replyOpen.set(false);
     }
+
+    // Undo window (~8s), Gmail-style `z`
+    this.pendingArchiveUndo = {
+      thread: removed,
+      index: idx,
+      timer: setTimeout(() => this.clearArchiveUndo(), 8_000),
+    };
+    this.undoAvailable.set(true);
+    this.statusMessage.set('Archived — press z to undo');
+
     try {
       await this.api.archive(id);
-      this.statusMessage.set('Archived');
     } catch (e) {
+      this.clearArchiveUndo();
       this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
+      await this.refreshThreads();
+    }
+  }
+
+  /** Restore the last archived thread to the inbox (hotkey `z`). */
+  async undoArchive(): Promise<void> {
+    const pending = this.pendingArchiveUndo;
+    if (!pending || !this.isConnected()) {
+      if (!this.undoAvailable()) {
+        this.statusMessage.set('Nothing to undo');
+      }
+      return;
+    }
+
+    const { thread, index } = pending;
+    this.clearArchiveUndo();
+
+    // Optimistic restore at original list position
+    this.threads.update((list) => {
+      if (list.some((t) => t.id === thread.id)) return list;
+      const next = [...list];
+      next.splice(Math.min(index, next.length), 0, thread);
+      return next;
+    });
+    this.selectedId.set(thread.id);
+    this.statusMessage.set('Restoring…');
+
+    try {
+      await this.api.unarchive(thread.id);
+      this.statusMessage.set('Restored to inbox');
+      await this.loadThreadDetail(thread.id);
+      // Keep list consistent with server labels / snippet
+      await this.refreshThreads();
+      if (this.threads().some((t) => t.id === thread.id)) {
+        this.selectedId.set(thread.id);
+      }
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Undo failed');
       await this.refreshThreads();
     }
   }
@@ -655,6 +757,9 @@ export class UiShellService {
     switch (cmd) {
       case 'archive':
         void this.archiveSelected();
+        break;
+      case 'undo':
+        void this.undoArchive();
         break;
       case 'reply':
         this.openReply();

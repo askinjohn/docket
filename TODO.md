@@ -18,6 +18,12 @@
 - [x] Optimistic archive, Cmd+K palette commands, theme toggle
 - [x] Smoke script `scripts/smoke.sh`
 
+## Shipped since last pass
+
+- [x] Reading pane auto-scroll to latest message (chat-style)
+- [x] Undo archive (`z` / Undo button, ~8s window) + `POST /threads/:id/unarchive`
+- [x] Quiet background history sync every 60s while connected
+
 ## Still thin / follow-ups
 
 - [ ] Outbound file attachments on send
@@ -26,6 +32,7 @@
 - [ ] Richer HTML sanitizer / remote-image toggle
 - [ ] Production notarized `.app` packaging polish
 - [ ] E2E Playwright against core
+- [ ] Multi-step undo stack (currently last archive only)
 
 ## How to try new features
 

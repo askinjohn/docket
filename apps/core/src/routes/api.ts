@@ -204,6 +204,24 @@ api.post('/threads/:id/archive', async (c) => {
   }
 });
 
+/** Restore a thread to the inbox (undo archive). Re-fetches from Gmail into SQLite. */
+api.post('/threads/:id/unarchive', async (c) => {
+  try {
+    await modifyThreadLabels(c.req.param('id'), ['INBOX'], []);
+    publish({
+      type: 'mail.changed',
+      reason: 'unarchive',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'unarchive_failed' },
+      400,
+    );
+  }
+});
+
 api.post('/threads/:id/read', async (c) => {
   try {
     await modifyThreadLabels(c.req.param('id'), [], ['UNREAD']);
