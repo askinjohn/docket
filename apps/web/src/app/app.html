@@ -306,66 +306,96 @@
           </div>
         }
         @for (msg of thread.messages; track msg.id) {
-          <article
-            class="mb-3 max-w-[min(44rem,100%)] overflow-hidden rounded-xl border border-lm-border bg-lm-panel px-4 py-4"
+          <div
+            class="mb-3 flex w-full"
+            [class.justify-end]="isMine(msg)"
+            [class.justify-start]="!isMine(msg)"
           >
-            <div class="mb-3 flex min-w-0 justify-between gap-4">
-              <div class="min-w-0">
-                <div class="text-sm font-semibold break-words">{{ msg.from }}</div>
-                <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
-              </div>
-              <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
-            </div>
-
-            @if (messageUsesHtml(msg)) {
-              <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
-                <iframe
-                  class="message-html-frame"
-                  title="Message body"
-                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                  [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                  (load)="onHtmlFrameLoad($event)"
-                ></iframe>
-              </div>
-            } @else {
+            <article
+              class="max-w-[min(36rem,92%)] overflow-hidden rounded-xl border px-4 py-4"
+              [class.border-lm-border]="!isMine(msg)"
+              [class.bg-lm-panel]="!isMine(msg)"
+              [class.border-lm-accent/40]="isMine(msg)"
+              [class.bg-lm-accent/15]="isMine(msg)"
+              [class.ml-auto]="isMine(msg)"
+            >
               <div
-                class="max-w-full whitespace-pre-wrap text-[0.9rem] leading-relaxed break-words text-lm-text"
+                class="mb-3 flex min-w-0 justify-between gap-4"
+                [class.flex-row-reverse]="isMine(msg)"
               >
-                {{ messagePlainText(msg) }}
-              </div>
-            }
-
-            @if (msg.attachments.length) {
-              <div class="mt-4 border-t border-lm-border pt-3.5" aria-label="Attachments">
-                <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
-                  Attachments · {{ msg.attachments.length }}
+                <div class="min-w-0" [class.text-right]="isMine(msg)">
+                  <div class="text-sm font-semibold break-words">
+                    @if (isMine(msg)) {
+                      You
+                    } @else {
+                      {{ msg.from }}
+                    }
+                  </div>
+                  <div class="mt-0.5 text-xs text-lm-muted break-words">
+                    @if (isMine(msg)) {
+                      To: {{ msg.to }}
+                    } @else {
+                      To: {{ msg.to }}
+                    }
+                  </div>
                 </div>
-                <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
-                  @for (file of msg.attachments; track file.id) {
-                    <li>
-                      <button
-                        type="button"
-                        class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-inherit hover:border-lm-accent/45 hover:bg-lm-hover"
-                        [attr.data-kind]="file.kind"
-                        (click)="shell.openAttachment(file.id)"
-                        title="Download / open"
-                      >
-                        <span class="text-base leading-none" aria-hidden="true">{{
-                          iconFor(file.kind)
-                        }}</span>
-                        <span class="flex min-w-0 flex-col">
-                          <span class="max-w-40 truncate text-[0.78rem] font-semibold">{{
-                            file.name
-                          }}</span>
-                          <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
-                        </span>
-                      </button>
-                    </li>
-                  }
-                </ul>
+                <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
               </div>
-            }
-          </article>
+
+              @if (messageUsesHtml(msg)) {
+                <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
+                  <iframe
+                    class="message-html-frame"
+                    title="Message body"
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                    [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                    (load)="onHtmlFrameLoad($event)"
+                  ></iframe>
+                </div>
+              } @else {
+                <div
+                  class="max-w-full whitespace-pre-wrap text-[0.9rem] leading-relaxed break-words text-lm-text"
+                  [class.text-right]="isMine(msg)"
+                >
+                  {{ messagePlainText(msg) }}
+                </div>
+              }
+
+              @if (msg.attachments.length) {
+                <div class="mt-4 border-t border-lm-border pt-3.5" aria-label="Attachments">
+                  <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
+                    Attachments · {{ msg.attachments.length }}
+                  </div>
+                  <ul
+                    class="m-0 flex list-none flex-wrap gap-2 p-0"
+                    [class.justify-end]="isMine(msg)"
+                  >
+                    @for (file of msg.attachments; track file.id) {
+                      <li>
+                        <button
+                          type="button"
+                          class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-inherit hover:border-lm-accent/45 hover:bg-lm-hover"
+                          [attr.data-kind]="file.kind"
+                          (click)="shell.openAttachment(file.id)"
+                          title="Download / open"
+                        >
+                          <span class="text-base leading-none" aria-hidden="true">{{
+                            iconFor(file.kind)
+                          }}</span>
+                          <span class="flex min-w-0 flex-col">
+                            <span class="max-w-40 truncate text-[0.78rem] font-semibold">{{
+                              file.name
+                            }}</span>
+                            <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
+                          </span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </article>
+          </div>
         } @empty {
           @if (!shell.detailLoading()) {
             <p class="py-2 text-sm text-lm-muted">No messages loaded for this thread.</p>

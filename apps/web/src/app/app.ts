@@ -69,6 +69,19 @@ export class App implements OnInit {
     return prefersHtml(msg.bodyHtml);
   }
 
+  /** True when From matches the active Gmail account (sent by you). */
+  isMine(msg: ShellMessage): boolean {
+    const me = this.shell.accountEmail()?.toLowerCase().trim();
+    if (!me) return false;
+    const from = (msg.from || '').toLowerCase();
+    // "Name <email@x.com>" or bare email
+    if (from.includes(`<${me}>`)) return true;
+    if (from === me) return true;
+    // bare email at end without brackets
+    const m = from.match(/[\w.+-]+@[\w.-]+\.\w+/);
+    return m?.[0] === me;
+  }
+
   messagePlainText(msg: ShellMessage): string {
     const raw = msg.body?.trim() ? msg.body : stripTags(msg.bodyHtml || '');
     return formatPlainBody(raw);
