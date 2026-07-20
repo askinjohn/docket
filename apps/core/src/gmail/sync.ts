@@ -5,7 +5,10 @@ import {
   getDb,
   type AccountRow,
   type AttachmentRow,
+  type MessageRow,
+  type ThreadRow,
 } from '../db/index.js';
+import { publish } from '../events/bus.js';
 import { getAuthedClient } from './oauth.js';
 
 function decodeBody(data?: string | null): string {
@@ -461,9 +464,22 @@ export async function syncIncremental(options?: {
       });
 
       const threadIds = new Set<string>();
+      /** Messages not yet in SQLite — candidates for mail.new notifications. */
+      const freshMessages: { messageId: string; gmailThreadId: string }[] = [];
+      const existsStmt = getDb().prepare(`SELECT 1 AS ok FROM messages WHERE id = ?`);
+
       for (const h of hist.data.history ?? []) {
         for (const m of h.messagesAdded ?? []) {
           if (m.message?.threadId) threadIds.add(m.message.threadId);
+          if (m.message?.id && m.message.threadId) {
+            const known = existsStmt.get(m.message.id) as { ok: number } | undefined;
+            if (!known) {
+              freshMessages.push({
+                messageId: m.message.id,
+                gmailThreadId: m.message.threadId,
+              });
+            }
+          }
         }
         for (const m of h.messagesDeleted ?? []) {
           if (m.message?.id) {
@@ -499,9 +515,7 @@ export async function syncIncremental(options?: {
         }
       }
 
-      // purge local threads for deleted inbox labels using composite ids
-      // (handled per-event above with gmail ids — fix deletes to use local ids)
-
+      publishNewMailEvents(account, freshMessages);
 
       const profile = await gmail.users.getProfile({ userId: 'me' });
       if (profile.data.historyId) {
@@ -518,4 +532,58 @@ export async function syncIncremental(options?: {
 
   const full = await syncInbox(options);
   return { ...full, mode: 'full' };
+}
+
+/**
+ * Emit mail.new for freshly arrived inbox messages (skip self-sent / non-inbox).
+ * Capped so a large history burst doesn't flood Notification Center.
+ */
+function publishNewMailEvents(
+  account: AccountRow,
+  fresh: { messageId: string; gmailThreadId: string }[],
+): void {
+  if (!fresh.length) return;
+
+  const me = account.email.toLowerCase();
+  const msgStmt = getDb().prepare(`SELECT * FROM messages WHERE id = ?`);
+  const thrStmt = getDb().prepare(`SELECT * FROM threads WHERE id = ?`);
+  const seenThreads = new Set<string>();
+  let emitted = 0;
+  const cap = 5;
+
+  for (const item of fresh) {
+    if (emitted >= cap) break;
+    const localThreadId = toLocalThreadId(account.id, item.gmailThreadId);
+    // One notification per thread in a single sync burst
+    if (seenThreads.has(localThreadId)) continue;
+
+    const msg = msgStmt.get(item.messageId) as MessageRow | undefined;
+    const thr = thrStmt.get(localThreadId) as ThreadRow | undefined;
+    if (!msg || !thr) continue;
+
+    const labels = thr.label_ids || '';
+    if (!labels.includes('INBOX') && labels !== '[]') continue;
+
+    const fromLower = (msg.from_header || '').toLowerCase();
+    if (fromLower.includes(me)) continue; // own outbound
+
+    const from =
+      thr.from_name ||
+      thr.from_email ||
+      msg.from_header ||
+      'New mail';
+    const subject = thr.subject || msg.subject || '(no subject)';
+
+    publish({
+      type: 'mail.new',
+      threadId: localThreadId,
+      messageId: item.messageId,
+      from,
+      subject,
+      snippet: thr.snippet || msg.snippet || '',
+      at: new Date().toISOString(),
+    });
+    seenThreads.add(localThreadId);
+    emitted += 1;
+  }
 }

@@ -6,6 +6,12 @@ import {
   type ApiThreadDetail,
   type PublicAccount,
 } from './mail-api.service';
+import {
+  onNotifyOpenThread,
+  requestNotifyPermission,
+  setDockBadge,
+  showNotification,
+} from './notify';
 import { openExternalUrl } from './open-external';
 import {
   ACCENT_PRESETS,
@@ -106,6 +112,13 @@ export class UiShellService {
     index: number;
     timer: ReturnType<typeof setTimeout>;
   } | null = null;
+  /** Batch mail.new within a short window so bursts don't spam banners. */
+  private pendingNewMail: {
+    threadId: string;
+    from: string;
+    subject: string;
+  }[] = [];
+  private newMailFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly selectedThread = computed(() => {
     const id = this.selectedId();
@@ -194,7 +207,7 @@ export class UiShellService {
       const res = await this.api.sync(false);
       if (res.synced > 0) {
         await this.refreshThreads();
-        this.notify('Local Mail', `${res.synced} new update(s)`);
+        // Per-message banners come from mail.new SSE; keep status subtle.
         this.statusMessage.set(`Background sync: ${res.synced} update(s)`);
       }
     } catch {
@@ -213,6 +226,9 @@ export class UiShellService {
   private connectLiveEvents(): void {
     this.eventsAbort?.abort();
     this.eventsAbort = new AbortController();
+    onNotifyOpenThread((threadId) => {
+      void this.selectThread(threadId);
+    });
     const url = `${this.api.baseUrl}/events`;
     void (async () => {
       try {
@@ -228,9 +244,7 @@ export class UiShellService {
           const parts = buf.split('\n\n');
           buf = parts.pop() ?? '';
           for (const block of parts) {
-            if (block.includes('mail.synced') || block.includes('mail.changed')) {
-              void this.refreshThreads();
-            }
+            this.handleSseBlock(block);
           }
         }
       } catch {
@@ -239,21 +253,88 @@ export class UiShellService {
     })();
   }
 
-  private requestNotifyPermission(): void {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      void Notification.requestPermission();
+  private handleSseBlock(block: string): void {
+    let eventName = '';
+    let dataLine = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim();
+      if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+    }
+    if (!dataLine) return;
+
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = JSON.parse(dataLine) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    const type = (eventName || (payload['type'] as string) || '') as string;
+
+    if (type === 'mail.new') {
+      this.queueNewMailNotification({
+        threadId: String(payload['threadId'] ?? ''),
+        from: String(payload['from'] ?? 'New mail'),
+        subject: String(payload['subject'] ?? '(no subject)'),
+      });
+      void this.refreshThreads();
+      return;
+    }
+
+    if (type === 'mail.synced' || type === 'mail.changed') {
+      void this.refreshThreads();
     }
   }
 
-  private notify(title: string, body: string): void {
-    if (typeof Notification === 'undefined') return;
-    if (Notification.permission === 'granted') {
-      try {
-        new Notification(title, { body });
-      } catch {
-        /* ignore */
-      }
+  private queueNewMailNotification(item: {
+    threadId: string;
+    from: string;
+    subject: string;
+  }): void {
+    if (!item.threadId) return;
+    // Don't notify if user is already reading that thread
+    if (this.selectedId() === item.threadId) return;
+
+    this.pendingNewMail.push(item);
+    if (this.newMailFlushTimer) clearTimeout(this.newMailFlushTimer);
+    this.newMailFlushTimer = setTimeout(() => {
+      this.newMailFlushTimer = null;
+      void this.flushNewMailNotifications();
+    }, 400);
+  }
+
+  private async flushNewMailNotifications(): Promise<void> {
+    const batch = this.pendingNewMail.splice(0, this.pendingNewMail.length);
+    if (!batch.length) return;
+
+    if (batch.length === 1) {
+      const m = batch[0]!;
+      await showNotification({
+        title: m.from,
+        body: m.subject,
+        threadId: m.threadId,
+      });
+      return;
     }
+
+    // Multiple arrivals: one summary + open first
+    const first = batch[0]!;
+    await showNotification({
+      title: `${batch.length} new messages`,
+      body: batch
+        .slice(0, 3)
+        .map((m) => `${m.from}: ${m.subject}`)
+        .join('\n'),
+      threadId: first.threadId,
+    });
+  }
+
+  private requestNotifyPermission(): void {
+    void requestNotifyPermission();
+  }
+
+  private notify(title: string, body: string, threadId?: string): void {
+    void showNotification({ title, body, threadId });
   }
 
   private clearMailbox(): void {
@@ -333,6 +414,7 @@ export class UiShellService {
       }
       if (!res.threads.length) {
         this.clearMailbox();
+        void setDockBadge(0);
         this.statusMessage.set(
           this.searchQuery()
             ? 'No matches.'
@@ -352,6 +434,7 @@ export class UiShellService {
         messages: [],
       }));
       this.threads.set(mapped);
+      void setDockBadge(mapped.filter((t) => t.unread).length);
       const keep = mapped.find((t) => t.id === this.selectedId());
       const nextId = keep?.id ?? mapped[0]?.id ?? null;
       this.selectedId.set(nextId);

@@ -92,6 +92,7 @@ fn core_status() -> serde_json::Value {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(CoreProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![core_status])
         .setup(|app| {

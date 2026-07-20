@@ -25,6 +25,7 @@
 - [x] Quiet background history sync every 60s while connected
 - [x] Compose window polish (From/Cc, docked card, discard confirm, ⌘↵ send)
 - [x] Recipient typeahead from local mail history (`GET /contacts/suggest`)
+- [x] Native Mac notifications (Tauri) + `mail.new` SSE + Dock badge (unread)
 
 ## Still thin / follow-ups
 

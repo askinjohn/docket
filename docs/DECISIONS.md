@@ -11,9 +11,16 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 - **Decision:** Angular **22.x** only. Production uses stable APIs: signals, OnPush default, Signal Forms, `resource`/`httpResource`, `@Service`, Angular Aria, control flow. No experimental WebMCP as foundation.
 - **Consequences:** Fast UI iteration; agent MCP stays on core.
 
-## ADR-009 — Notifications v1 = Web Notifications
+## ADR-011 — Native Mac notifications via Tauri + mail.new
 
 - **Status:** Accepted (2026-07-20)
+- **Context:** Primary reason for a Dock app is Notification Center, not browser banners.
+- **Decision:** History sync emits `mail.new` (from/subject/threadId). UI uses `tauri-plugin-notification` in the Dock shell, Web Notification API in browser. Click opens thread when supported; Dock badge = unread count.
+- **Consequences:** Prefer `npm run desktop:dev` for real Mac notifications; browser remains a dogfood fallback.
+
+## ADR-009 — Notifications v1 = Web Notifications
+
+- **Status:** Superseded by ADR-011 (2026-07-20)
 - **Decision:** Core emits events; Angular shows Web Notifications. Native path deferred to Phase 6.
 - **Consequences:** Requires browser permission and usually an open tab.
 
