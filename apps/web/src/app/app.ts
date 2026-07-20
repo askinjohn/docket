@@ -1,4 +1,13 @@
-import { Component, inject, OnInit } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  OnInit,
+  viewChild,
+} from '@angular/core';
 
 import { formatPlainBody, prefersHtml } from './core/email-body';
 import { SafeSrcdocPipe } from './core/safe-srcdoc.pipe';
@@ -316,7 +325,11 @@ import { UiShellService } from './core/ui-shell.service';
         </div>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5">
+      <div
+        #readingScroll
+        class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5"
+        (scroll)="onReadingScroll()"
+      >
         @if (shell.detailLoading() && thread.messages.length === 0) {
           <div
             class="mb-3 min-h-64 max-w-3xl animate-pulse rounded-2xl border border-lm-border bg-lm-panel px-5 py-4"
@@ -739,6 +752,14 @@ import { UiShellService } from './core/ui-shell.service';
 })
 export class App implements OnInit {
   protected readonly shell = inject(UiShellService);
+  private readonly injector = inject(Injector);
+
+  /** Reading pane scroll container — keep latest message in view (chat-style). */
+  private readonly readingScroll = viewChild<ElementRef<HTMLElement>>('readingScroll');
+
+  /** When true, keep pin to bottom (open thread / new msg / near bottom). Off if user scrolls up. */
+  private stickReadingToBottom = true;
+  private lastReadingThreadId: string | null = null;
 
   protected readonly paletteItems = [
     { cmd: 'sync', label: 'Sync inbox', hint: '' },
@@ -756,8 +777,65 @@ export class App implements OnInit {
     { cmd: 'add-account', label: 'Add Google account', hint: '' },
   ];
 
+  constructor() {
+    // When a thread opens or its messages settle, jump to the latest message.
+    effect(() => {
+      const thread = this.shell.selectedThread();
+      if (!thread) {
+        this.lastReadingThreadId = null;
+        return;
+      }
+
+      // New conversation → always show latest first.
+      const isNewThread = thread.id !== this.lastReadingThreadId;
+      if (isNewThread) {
+        this.lastReadingThreadId = thread.id;
+        this.stickReadingToBottom = true;
+      }
+
+      // Depend on identity + message list so we re-scroll after detail load / send.
+      void thread.messages.length;
+      void thread.messages.at(-1)?.id;
+      void this.shell.detailLoading();
+      void this.shell.replyOpen();
+
+      // Force only on thread switch; later updates respect stick (near bottom / user scrolled up).
+      const force = isNewThread || this.stickReadingToBottom;
+
+      afterNextRender(
+        () => {
+          this.scrollReadingToLatest(force);
+          // Second pass after layout; iframes may still resize later via onHtmlFrameLoad.
+          requestAnimationFrame(() => this.scrollReadingToLatest(force));
+          window.setTimeout(() => this.scrollReadingToLatest(force), 80);
+        },
+        { injector: this.injector },
+      );
+    });
+  }
+
   ngOnInit(): void {
     void this.shell.bootstrap();
+  }
+
+  /** Track whether the user is still following the bottom of the thread. */
+  onReadingScroll(): void {
+    const el = this.readingScroll()?.nativeElement;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    this.stickReadingToBottom = distanceFromBottom < 80;
+  }
+
+  /**
+   * Scroll reading pane so the newest message is in view (bottom of chat).
+   * @param force when true (thread open / new messages), always pin to bottom.
+   */
+  private scrollReadingToLatest(force = false): void {
+    if (!force && !this.stickReadingToBottom) return;
+    const el = this.readingScroll()?.nativeElement;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    this.stickReadingToBottom = true;
   }
 
   onSearchInput(event: Event): void {
@@ -828,6 +906,7 @@ export class App implements OnInit {
         const doc = iframe.contentDocument;
         if (!doc?.body) {
           iframe.style.height = '12rem';
+          this.scrollReadingToLatest();
           return;
         }
         const h = Math.max(
@@ -841,6 +920,8 @@ export class App implements OnInit {
       } catch {
         iframe.style.height = '20rem';
       }
+      // After height changes, keep the latest message pinned if user is at bottom.
+      this.scrollReadingToLatest(false);
     };
 
     measure();
