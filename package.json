@@ -7,11 +7,13 @@
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
-    "web:start": "npm --prefix apps/web start",
+    "web:start": "npm --prefix apps/web start -- --host 127.0.0.1 --port 4200",
     "web:build": "npm --prefix apps/web run build",
-    "web:test": "npm --prefix apps/web test",
+    "web:test": "npm --prefix apps/web test -- --watch=false",
     "web:install": "npm --prefix apps/web install",
+    "core:dev": "npm --prefix apps/core run dev",
     "core:start": "npm --prefix apps/core start",
-    "postinstall": "npm --prefix apps/web install"
+    "core:install": "npm --prefix apps/core install",
+    "install:all": "npm --prefix apps/web install && npm --prefix apps/core install"
   }
 }

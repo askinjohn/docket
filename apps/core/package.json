@@ -1,14 +1,28 @@
 {
   "name": "@local-mail/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
-  "description": "Local Mail core — Gmail sync, SQLite, AI, MCP (Phase 1+)",
+  "description": "Local Mail core — Gmail sync, SQLite, API on 127.0.0.1",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "better-sqlite3": "^11.10.0",
+    "dotenv": "^16.6.1",
+    "googleapis": "^150.0.1",
+    "hono": "^4.8.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.3",
+    "typescript": "~5.8.3"
   }
 }

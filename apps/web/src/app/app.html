@@ -8,24 +8,82 @@
       </div>
     </div>
 
+    <div class="status-card" [attr.data-status]="shell.coreStatus()">
+      @switch (shell.coreStatus()) {
+        @case ('checking') {
+          <span>Checking core…</span>
+        }
+        @case ('offline') {
+          <span>Core offline</span>
+        }
+        @case ('misconfigured') {
+          <span>OAuth not configured</span>
+        }
+        @case ('online-disconnected') {
+          <span>Core online</span>
+        }
+        @case ('online-connected') {
+          <span>{{ shell.accountEmail() }}</span>
+        }
+      }
+    </div>
+
+    @if (shell.coreStatus() === 'online-disconnected' || shell.coreStatus() === 'misconfigured') {
+      <button
+        type="button"
+        class="compose-btn"
+        (click)="shell.connectGmail()"
+        [disabled]="shell.coreStatus() === 'misconfigured'"
+      >
+        Connect Gmail
+      </button>
+    }
+
+    @if (shell.coreStatus() === 'online-connected') {
+      <button
+        type="button"
+        class="sync-btn"
+        (click)="shell.syncNow()"
+        [disabled]="shell.syncing()"
+      >
+        {{ shell.syncing() ? 'Syncing…' : 'Sync inbox' }}
+      </button>
+    }
+
     <nav class="nav">
       <button type="button" class="nav-item active" aria-current="page">Inbox</button>
-      <button type="button" class="nav-item" disabled title="Phase 1+">Starred</button>
-      <button type="button" class="nav-item" disabled title="Phase 1+">Sent</button>
-      <button type="button" class="nav-item" disabled title="Phase 2">Custom views</button>
+      <button type="button" class="nav-item" disabled title="Soon">Starred</button>
+      <button type="button" class="nav-item" disabled title="Soon">Sent</button>
     </nav>
 
+    <button type="button" class="compose-btn secondary" (click)="shell.openCompose()">
+      Compose <kbd>c</kbd>
+    </button>
+
     <div class="sidebar-footer">
-      <p class="hint">Gmail connect lands in Phase 1.</p>
-      <p class="hint mono">⌘K palette · j/k move</p>
+      @if (shell.usingDemo()) {
+        <p class="hint">Showing demo data until Gmail is connected &amp; synced.</p>
+      }
+      <p class="hint mono">j/k · e archive · r reply · ⌘↵ send</p>
     </div>
   </aside>
 
   <section class="list-pane" aria-label="Thread list">
     <header class="pane-header">
       <h1>Inbox</h1>
-      <span class="badge">Demo</span>
+      @if (shell.usingDemo()) {
+        <span class="badge">Demo</span>
+      } @else {
+        <span class="badge live">Live</span>
+      }
+      @if (shell.listLoading()) {
+        <span class="badge">Loading</span>
+      }
     </header>
+
+    @if (shell.statusMessage()) {
+      <div class="banner" role="status">{{ shell.statusMessage() }}</div>
+    }
 
     <ul class="thread-list" role="listbox" aria-label="Threads">
       @for (thread of shell.threads(); track thread.id) {
@@ -43,10 +101,17 @@
               <span class="from">{{ thread.from }}</span>
               <span class="time">{{ thread.time }}</span>
             </div>
-            <div class="subject">{{ thread.subject }}</div>
+            <div class="subject">
+              @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
+                <span class="clip" aria-hidden="true" title="Has attachments">📎</span>
+              }
+              {{ thread.subject }}
+            </div>
             <div class="snippet">{{ thread.snippet }}</div>
           </button>
         </li>
+      } @empty {
+        <li class="empty-list">No threads yet. Sync after connecting Gmail.</li>
       }
     </ul>
   </section>
@@ -54,22 +119,135 @@
   <section class="reading-pane" aria-label="Reading pane">
     @if (shell.selectedThread(); as thread) {
       <header class="reading-header">
-        <h2>{{ thread.subject }}</h2>
-        <p class="meta">{{ thread.from }} · {{ thread.time }}</p>
+        <div class="reading-header-row">
+          <h2>{{ thread.subject }}</h2>
+          <div class="reading-actions">
+            <button type="button" class="btn ghost" (click)="shell.openReply()" title="Reply (r)">
+              Reply
+            </button>
+            <button
+              type="button"
+              class="btn ghost"
+              (click)="shell.archiveSelected()"
+              title="Archive (e)"
+              [disabled]="shell.usingDemo()"
+            >
+              Archive
+            </button>
+          </div>
+        </div>
       </header>
-      <article class="reading-body">
-        <p>{{ thread.snippet }}</p>
-        <hr />
-        <p class="muted">
-          Phase 0 placeholder. Real message bodies will load from the local core
-          (SQLite / Gmail) via <code>httpResource</code> in Phase 1.
-        </p>
-        <ul class="checklist">
-          <li>Local core on 127.0.0.1</li>
-          <li>OAuth + sync</li>
-          <li>Keyboard triage (e archive, r reply)</li>
-        </ul>
-      </article>
+
+      <div class="reading-scroll">
+        @if (shell.detailLoading()) {
+          <p class="muted pad">Loading messages…</p>
+        }
+        @for (msg of thread.messages; track msg.id) {
+          <article class="message-card">
+            <div class="message-meta">
+              <div>
+                <div class="msg-from">{{ msg.from }}</div>
+                <div class="msg-to">To: {{ msg.to }}</div>
+              </div>
+              <time class="msg-time">{{ msg.time }}</time>
+            </div>
+            <div class="message-body">{{ msg.body }}</div>
+
+            @if (msg.attachments.length) {
+              <div class="attachments" aria-label="Attachments">
+                <div class="attachments-label">Attachments · {{ msg.attachments.length }}</div>
+                <ul class="attachment-list">
+                  @for (file of msg.attachments; track file.id) {
+                    <li>
+                      <button type="button" class="attachment-chip" [attr.data-kind]="file.kind">
+                        <span class="att-icon" aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                        <span class="att-text">
+                          <span class="att-name">{{ file.name }}</span>
+                          <span class="att-size">{{ file.sizeLabel }}</span>
+                        </span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+          </article>
+        } @empty {
+          @if (!shell.detailLoading()) {
+            <p class="muted pad">No messages loaded for this thread.</p>
+          }
+        }
+      </div>
+
+      @if (shell.replyOpen()) {
+        <footer class="reply-dock" aria-label="Reply">
+          <div class="reply-dock-head">
+            <span class="reply-label">Reply to {{ thread.from }}</span>
+            <button type="button" class="btn icon" (click)="shell.closeReply()" aria-label="Close reply">
+              ×
+            </button>
+          </div>
+          <textarea
+            class="reply-textarea"
+            rows="5"
+            [value]="shell.replyBody()"
+            (input)="onReplyInput($event)"
+            [placeholder]="
+              shell.usingDemo()
+                ? 'Demo reply (not sent until Gmail is connected)'
+                : 'Write a reply…'
+            "
+          ></textarea>
+
+          @if (shell.composeAttachments().length) {
+            <ul class="attachment-list compose-atts">
+              @for (file of shell.composeAttachments(); track file.id) {
+                <li>
+                  <span class="attachment-chip outbound">
+                    <span class="att-icon" aria-hidden="true">📄</span>
+                    <span class="att-text">
+                      <span class="att-name">{{ file.name }}</span>
+                      <span class="att-size">{{ file.sizeLabel }}</span>
+                    </span>
+                    <button
+                      type="button"
+                      class="att-remove"
+                      (click)="shell.removeComposeAttachment(file.id)"
+                      [attr.aria-label]="'Remove ' + file.name"
+                    >
+                      ×
+                    </button>
+                  </span>
+                </li>
+              }
+            </ul>
+          }
+
+          <div class="reply-toolbar">
+            <div class="reply-toolbar-left">
+              <button type="button" class="btn ghost" (click)="shell.addMockAttachment()">
+                Attach
+              </button>
+              <span class="hint">{{ shell.usingDemo() ? 'Mock files' : 'Outbound attach: soon' }}</span>
+            </div>
+            <div class="reply-toolbar-right">
+              <span class="hint mono">⌘↵</span>
+              <button
+                type="button"
+                class="btn primary"
+                (click)="shell.sendReply()"
+                [disabled]="shell.sending()"
+              >
+                {{ shell.sending() ? 'Sending…' : 'Send' }}
+              </button>
+            </div>
+          </div>
+        </footer>
+      } @else {
+        <button type="button" class="reply-collapsed" (click)="shell.openReply()">
+          Click to reply · <kbd>r</kbd>
+        </button>
+      }
     } @else {
       <div class="empty">Select a thread</div>
     }
@@ -80,13 +258,43 @@
   <div class="palette-backdrop" (click)="shell.closeCommandPalette()"></div>
   <div class="palette" role="dialog" aria-label="Command palette" aria-modal="true">
     <div class="palette-title">Command palette</div>
-    <p class="muted">Stub UI — full commands in Phase 2 (Angular Aria).</p>
+    <p class="muted">Stub — richer palette in Phase 2.</p>
     <ul>
-      <li><kbd>g</kbd> <kbd>i</kbd> Go inbox</li>
-      <li><kbd>c</kbd> Compose</li>
       <li><kbd>e</kbd> Archive</li>
-      <li><kbd>/</kbd> Search</li>
+      <li><kbd>r</kbd> Reply</li>
+      <li><kbd>c</kbd> Compose</li>
+      <li><kbd>j</kbd>/<kbd>k</kbd> Navigate</li>
     </ul>
     <p class="hint">Press Esc to close</p>
+  </div>
+}
+
+@if (shell.composeOpen()) {
+  <div class="palette-backdrop" (click)="shell.closeCompose()"></div>
+  <div class="compose-modal" role="dialog" aria-label="New message" aria-modal="true">
+    <header class="compose-modal-head">
+      <strong>New message</strong>
+      <button type="button" class="btn icon" (click)="shell.closeCompose()" aria-label="Close">
+        ×
+      </button>
+    </header>
+    <p class="muted">New compose (not reply) lands fully in a later slice — use Reply for send today.</p>
+    <div class="compose-fields">
+      <label>
+        <span>To</span>
+        <input type="text" value="" placeholder="email@example.com" />
+      </label>
+      <label>
+        <span>Subject</span>
+        <input type="text" value="" placeholder="Subject" />
+      </label>
+    </div>
+    <textarea class="reply-textarea compose-body" rows="8" placeholder="Write something…"></textarea>
+    <div class="reply-toolbar">
+      <button type="button" class="btn ghost" (click)="shell.closeCompose()">Close</button>
+      <button type="button" class="btn primary" disabled title="Use Reply on a thread for now">
+        Send
+      </button>
+    </div>
   </div>
 }

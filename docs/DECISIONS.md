@@ -67,10 +67,21 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 ---
 
+## ADR-011 — Core runtime is Node 22 + TypeScript
+
+- **Status:** Accepted (2026-07-20)
+- **Decision:** `apps/core` uses Node 22, `tsx`, Hono, better-sqlite3, googleapis.
+- **Consequences:** Matches Angular Node engine; native module build for sqlite.
+
+## ADR-012 — Phase 1 API is REST on loopback
+
+- **Status:** Accepted (2026-07-20)
+- **Decision:** Hono REST (`/health`, `/auth/*`, `/threads`, `/sync`, actions). WebSocket later (Phase 3).
+- **Consequences:** Simple CORS + Angular HttpClient.
+
 ## Open
 
 | ID | Question | Options |
 |----|----------|---------|
-| O-1 | Core runtime | Node 22 vs Bun |
 | O-2 | App display name | “Local Mail” vs brand name |
-| O-3 | Google Cloud project timing | Now vs Phase 1 start |
+| O-3 | Google Cloud OAuth credentials | User must create — see GMAIL_SETUP.md |

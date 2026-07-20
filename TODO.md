@@ -1,68 +1,45 @@
 # Active TODO — Local Mail
 
-Track work here for humans and agents. Check boxes as done.  
-Move completed epics notes into `docs/PROJECT_STATUS.md` when a phase closes.
-
-**Current phase:** 0 complete → kickoff Phase 1  
+**Current phase:** 1 — Core + Gmail (in progress)  
 **Updated:** 2026-07-20
 
 ---
 
-## Done (Phase 0)
+## Done
 
-- [x] Create `local-mail` git repo under Projects
-- [x] Scaffold Angular 22 app at `apps/web`
-- [x] Add Tailwind to web app
-- [x] Write PRODUCT / ROADMAP / TODO / DECISIONS
-- [x] Write root `AGENTS.md` + `CLAUDE.md` + Cursor rules
-- [x] Architecture mindmap in `docs/architecture.html`
-- [x] Add `apps/core` placeholder
-- [x] 3-pane Superhuman-like shell (demo data, j/k, ⌘K stub)
-- [x] Root `package.json` scripts
-- [x] Verify `npm run web:build` + unit tests
+### Phase 0
+- [x] Repo, Angular 22 shell, docs, rules
 
-## Now (Phase 1 kickoff)
+### Phase 1 (built so far)
+- [x] Core HTTP server on `127.0.0.1:8787` (Hono)
+- [x] SQLite schema + `~/.local-mail/mail.sqlite`
+- [x] Gmail OAuth routes + token storage
+- [x] Inbox sync (threads → SQLite)
+- [x] API: list/read/archive/mark read/reply
+- [x] Web: MailApiService, bootstrap, connect/sync UI
+- [x] Demo fallback when core offline / not connected
+- [x] docs/GMAIL_SETUP.md
 
-- [ ] Choose core runtime (Node vs Bun) → log in DECISIONS.md
-- [ ] Core: HTTP server on `127.0.0.1` + `/health`
-- [ ] Core: SQLite bootstrap + schema v1
-- [ ] Core: Gmail OAuth design (scopes list) + Google Cloud project
-- [ ] Web: environment config for core base URL (`http://127.0.0.1:8787`)
-- [ ] Web: replace demo threads with `httpResource` when API ready
-- [ ] Web: Connect Gmail empty / loading states
+## Now (you — to unlock real mail)
 
-## Backlog (do not start early)
+- [ ] Create Google Cloud OAuth client (see `docs/GMAIL_SETUP.md`)
+- [ ] `cp apps/core/.env.example apps/core/.env` and fill secrets
+- [ ] Restart core → **Connect Gmail** in UI → **Sync inbox**
 
-### UX (Phase 2)
-- [ ] Full command palette (Angular Aria)
-- [ ] Full hotkey map (e archive, r reply, c compose)
-- [ ] Theme + density settings
-- [ ] Custom Gmail-query views
+## Next engineering
 
-### Live (Phase 3)
-- [ ] WebSocket/SSE events
-- [ ] Web Notifications
+- [ ] Download attachment bytes (Gmail attachment API + local open)
+- [ ] Outbound attachments on send
+- [ ] HTML body sandboxed iframe (not only plain text)
+- [ ] Proper Message-ID / In-Reply-To headers for threading
+- [ ] Incremental sync via `history.list` (not full inbox pull)
+- [ ] New compose (not only reply)
+- [ ] Star / search endpoints
+- [ ] Smoke test script for `/health` + auth redirect
 
-### AI (Phase 4)
-- [ ] Provider settings UI
-- [ ] Summarize thread
-- [ ] Draft reply
+## Later phases
 
-### MCP (Phase 5)
-- [ ] Tool list + schemas
-- [ ] Mutation confirmation policy
-- [ ] Client config for external servers
-
-### Packaging (Phase 6)
-- [ ] Native notifications helper
-- [ ] Dock wrapper (Tauri/Electron/Swift)
-
-## Bugs
-
-_(none yet)_
-
-## Decisions needed from human
-
-1. Display name / branding for the app  
-2. Node vs Bun for `apps/core`  
-3. Google Cloud project: create now or when Phase 1 coding starts?
+- Phase 2 UX polish (palette, themes, optimistic archive)
+- Phase 3 live events + notifications
+- Phase 4 AI
+- Phase 5 MCP

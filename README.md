@@ -30,20 +30,31 @@ cd local-mail
 nvm use          # or install Node 22.23+
 ```
 
-## Quick start (UI only today)
+## Quick start
+
+**Needs Node ≥ 22.22.3** (`nvm use` from repo root).
 
 ```bash
+# install
+npm run install:all
+
+# terminal 1 — local core
+cd apps/core
+cp .env.example .env   # add Google OAuth when ready
+npm run dev            # http://127.0.0.1:8787/health
+
+# terminal 2 — UI
 cd apps/web
-npm install
-npm start
-# open http://localhost:4200
+npm start              # http://127.0.0.1:4200
 ```
 
-Core API is not implemented yet. The UI shell is Phase 0.
+Without OAuth credentials the UI still runs with **demo** threads.  
+To load real Gmail: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
 
 ## Scripts (from repo root)
 
 ```bash
+npm run core:dev     # Core API (watch)
 npm run web:start    # Angular dev server
 npm run web:build    # Production build of UI
 npm run web:test     # Unit tests

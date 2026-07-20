@@ -1,22 +1,30 @@
 # `@local-mail/core`
 
-Local backend for Local Mail: Gmail, SQLite, hybrid AI, MCP server + client.
+Local backend for Local Mail: Gmail, SQLite, REST API on `127.0.0.1`.
 
-**Status:** Phase 0 placeholder only.
+**Status:** Phase 1 — Gmail OAuth, inbox sync, list/read/archive/reply.
 
-## Planned responsibilities
-
-- Bind **only** to `127.0.0.1`
-- OAuth + Gmail API sync
-- SQLite cache
-- REST + WebSocket/SSE for the Angular UI
-- AI provider routing (local + BYO keys)
-- MCP server (expose mail) and MCP client (call other tools)
-
-See root [ROADMAP.md](../../ROADMAP.md) Phase 1+.
-
-## Run (placeholder)
+## Run
 
 ```bash
-npm start
+cp .env.example .env   # add Google OAuth credentials
+npm install
+npm run dev
+# http://127.0.0.1:8787/health
 ```
+
+See [docs/GMAIL_SETUP.md](../../docs/GMAIL_SETUP.md).
+
+## Main routes
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Status + account |
+| GET | `/auth/gmail/start` | Begin OAuth |
+| GET | `/auth/gmail/callback` | OAuth redirect |
+| POST | `/sync` | Pull inbox threads |
+| GET | `/threads` | List cached threads |
+| GET | `/threads/:id` | Thread + messages |
+| POST | `/threads/:id/archive` | Remove INBOX |
+| POST | `/threads/:id/reply` | Send reply |
+
