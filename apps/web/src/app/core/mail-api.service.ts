@@ -15,6 +15,8 @@ export interface HealthResponse {
   service: string;
   googleConfigured: boolean;
   account: { email: string } | null;
+  aiMode?: string;
+  notesDir?: string;
 }
 
 export interface ApiThread {
@@ -33,6 +35,7 @@ export interface ApiAttachment {
   name: string;
   sizeLabel: string;
   kind: 'pdf' | 'image' | 'doc' | 'other';
+  mimeType?: string;
 }
 
 export interface ApiMessage {
@@ -71,17 +74,20 @@ export class MailApiService {
     );
   }
 
-  /** Start URL for Google OAuth (open in system browser, not in-app). */
   gmailConnectUrl(): string {
     return `${this.baseUrl}/auth/gmail/start`;
   }
 
-  listThreads() {
+  listThreads(opts?: { q?: string; view?: 'inbox' | 'starred' | 'all' }) {
+    const params = new URLSearchParams();
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.view) params.set('view', opts.view);
+    const qs = params.toString();
     return firstValueFrom(
       this.http.get<{
         account: { id: number; email: string } | null;
         threads: ApiThread[];
-      }>(`${this.baseUrl}/threads`),
+      }>(`${this.baseUrl}/threads${qs ? `?${qs}` : ''}`),
     );
   }
 
@@ -91,12 +97,14 @@ export class MailApiService {
     );
   }
 
-  sync() {
+  sync(full = false) {
     return firstValueFrom(
-      this.http.post<{ ok: boolean; synced: number; email: string }>(
-        `${this.baseUrl}/sync`,
-        {},
-      ),
+      this.http.post<{
+        ok: boolean;
+        synced: number;
+        email: string;
+        mode?: string;
+      }>(`${this.baseUrl}/sync`, { full }),
     );
   }
 
@@ -118,11 +126,62 @@ export class MailApiService {
     );
   }
 
+  star(threadId: string, starred: boolean) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; starred: boolean }>(
+        `${this.baseUrl}/threads/${threadId}/star`,
+        { starred },
+      ),
+    );
+  }
+
   reply(threadId: string, bodyText: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; id: string }>(
         `${this.baseUrl}/threads/${threadId}/reply`,
         { bodyText },
+      ),
+    );
+  }
+
+  sendNew(to: string, subject: string, bodyText: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; id: string }>(
+        `${this.baseUrl}/messages/send`,
+        { to, subject, bodyText },
+      ),
+    );
+  }
+
+  attachmentUrl(id: string): string {
+    return `${this.baseUrl}/attachments/${encodeURIComponent(id)}`;
+  }
+
+  dailySummary() {
+    return firstValueFrom(
+      this.http.post<{
+        ok: boolean;
+        path: string;
+        threadCount: number;
+        markdown: string;
+      }>(`${this.baseUrl}/summary/daily`, {}),
+    );
+  }
+
+  aiSummarize(threadId: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; text: string; mode: string }>(
+        `${this.baseUrl}/ai/summarize`,
+        { threadId },
+      ),
+    );
+  }
+
+  aiDraft(threadId: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; text: string; mode: string }>(
+        `${this.baseUrl}/ai/draft`,
+        { threadId },
       ),
     );
   }

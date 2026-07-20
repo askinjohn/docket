@@ -1,52 +1,50 @@
 # Active TODO — Local Mail
 
-**Current phase:** 1 — Core + Gmail (in progress) · **Desktop shell: Tauri**  
-**Updated:** 2026-07-20
+**Updated:** 2026-07-20  
+**Status:** Large product pass landed — dogfood & polish next
 
----
+## Shipped in product pass
 
-## Done
+- [x] Attachment download/open (`GET /attachments/:id` + chip click)
+- [x] Star / unstar + Starred view
+- [x] Search (local cache) + Inbox / Starred / All
+- [x] New compose send (`POST /messages/send`)
+- [x] Better reply Message-ID / References headers
+- [x] Incremental history sync (`POST /sync` default; `full: true` for full pull)
+- [x] Daily summary → `~/.local-mail/notes/YYYY-MM-DD.md`
+- [x] AI summarize / draft (template | Ollama | OpenAI)
+- [x] MCP-style tools over HTTP (`/mcp/tools`, `/mcp/call`)
+- [x] SSE `/events` + optional web notifications
+- [x] Optimistic archive, Cmd+K palette commands, theme toggle
+- [x] Smoke script `scripts/smoke.sh`
 
-### Phase 0
-- [x] Repo, Angular 22 shell, docs, rules
+## Still thin / follow-ups
 
-### Desktop (Tauri)
-- [x] `apps/desktop` Tauri 2 shell (product name Local Mail)
-- [x] Angular as webview frontend (dev :4300 / prod dist)
-- [x] Auto-start core sidecar on :8787 (or reuse if running)
-- [x] ADR-013 + README desktop path
-- [x] `npm run desktop:dev`
+- [ ] Outbound file attachments on send
+- [ ] Full MCP stdio server binary for Cursor (HTTP bridge works today)
+- [ ] Scheduled daily summary (launchd / cron) — manual button works
+- [ ] Richer HTML sanitizer / remote-image toggle
+- [ ] Production notarized `.app` packaging polish
+- [ ] E2E Playwright against core
 
-### Phase 1 (built so far)
-- [x] Core HTTP server on `127.0.0.1:8787` (Hono)
-- [x] SQLite schema + `~/.local-mail/mail.sqlite`
-- [x] Gmail OAuth routes + token storage
-- [x] Inbox sync (threads → SQLite)
-- [x] API: list/read/archive/mark read/reply
-- [x] Web: MailApiService, bootstrap, connect/sync UI
-- [x] Demo fallback when core offline / not connected
-- [x] docs/GMAIL_SETUP.md
+## How to try new features
 
-## Now (you — to unlock real mail)
+```bash
+# restart core after pull
+cd apps/core && npm run dev
 
-- [ ] Create Google Cloud OAuth client (see `docs/GMAIL_SETUP.md`)
-- [ ] `cp apps/core/.env.example apps/core/.env` and fill secrets
-- [ ] Restart core → **Connect Gmail** in UI → **Sync inbox**
+# UI
+cd apps/web && npm start   # :4300
+# or npm run desktop:dev
+```
 
-## Next engineering
-
-- [ ] Download attachment bytes (Gmail attachment API + local open)
-- [ ] Outbound attachments on send
-- [ ] HTML body sandboxed iframe (not only plain text)
-- [ ] Proper Message-ID / In-Reply-To headers for threading
-- [ ] Incremental sync via `history.list` (not full inbox pull)
-- [ ] New compose (not only reply)
-- [ ] Star / search endpoints
-- [ ] Smoke test script for `/health` + auth redirect
-
-## Later phases
-
-- Phase 2 UX polish (palette, themes, optimistic archive)
-- Phase 3 live events + notifications
-- Phase 4 AI
-- Phase 5 MCP
+| Feature | How |
+|---------|-----|
+| Download attachment | Click chip on a message |
+| Search | Search box above thread list + Enter |
+| Star | `s` or Star button |
+| Compose | `c` — fill To/Subject/body → Send |
+| Daily summary | Sidebar **Daily summary → notes** |
+| AI | Thread **Summarize** / **AI draft** (template if no LLM keys) |
+| MCP | `POST http://127.0.0.1:8787/mcp/call` with `{ "name": "search_mail", "arguments": { "q": "invoice" } }` |
+| Palette | `⌘K` |

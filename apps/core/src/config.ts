@@ -20,12 +20,17 @@ if (host !== '127.0.0.1' && host !== 'localhost') {
 const dataDir =
   process.env.LOCAL_MAIL_DATA_DIR ?? join(homedir(), '.local-mail');
 
+const notesDir =
+  process.env.LOCAL_MAIL_NOTES_DIR ?? join(dataDir, 'notes');
+
 mkdirSync(dataDir, { recursive: true });
+mkdirSync(notesDir, { recursive: true });
 
 export const appConfig = {
   host,
   port: Number(process.env.LOCAL_MAIL_CORE_PORT ?? 8787),
   dataDir,
+  notesDir,
   dbPath: process.env.LOCAL_MAIL_DB_PATH ?? join(dataDir, 'mail.sqlite'),
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
@@ -43,6 +48,13 @@ export const appConfig = {
   },
   /** Where the browser UI lives (for CORS + post-auth redirect) */
   webOrigin: process.env.LOCAL_MAIL_WEB_ORIGIN ?? 'http://127.0.0.1:4300',
+  ai: {
+    ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
+    ollamaModel: process.env.OLLAMA_MODEL ?? 'llama3.2',
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+    openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+  },
 } as const;
 
 export function googleConfigured(): boolean {

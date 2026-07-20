@@ -321,6 +321,14 @@ export async function modifyThreadLabels(
   }
 }
 
+function encodeRawMime(raw: string): string {
+  return Buffer.from(raw)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
 export async function sendReply(input: {
   threadId: string;
   bodyText: string;
@@ -345,6 +353,20 @@ export async function sendReply(input: {
 
   if (!last) throw new Error('Thread not found locally — sync first');
 
+  const auth = await getAuthedClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const meta = await gmail.users.messages.get({
+    userId: 'me',
+    id: last.id,
+    format: 'metadata',
+    metadataHeaders: ['Message-ID', 'References', 'Subject', 'From'],
+  });
+  const hmap = new Map<string, string>();
+  for (const h of meta.data.payload?.headers ?? []) {
+    if (h.name && h.value) hmap.set(h.name.toLowerCase(), h.value);
+  }
+
   const to = input.to ?? last.from_header;
   const subject =
     input.subject ??
@@ -352,35 +374,28 @@ export async function sendReply(input: {
       ? last.subject
       : `Re: ${last.subject}`);
 
+  const messageId = hmap.get('message-id') ?? `<${last.id}@mail.gmail.com>`;
+  const references = [hmap.get('references'), messageId].filter(Boolean).join(' ');
+
   const raw = [
     `To: ${to}`,
     `Subject: ${subject}`,
-    `In-Reply-To: ${last.id}`,
-    `References: ${last.id}`,
+    `In-Reply-To: ${messageId}`,
+    `References: ${references}`,
     'Content-Type: text/plain; charset="UTF-8"',
     'MIME-Version: 1.0',
     '',
     input.bodyText,
   ].join('\r\n');
 
-  const encoded = Buffer.from(raw)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
-  const auth = await getAuthedClient(account);
-  const gmail = google.gmail({ version: 'v1', auth });
-
   const res = await gmail.users.messages.send({
     userId: 'me',
     requestBody: {
-      raw: encoded,
+      raw: encodeRawMime(raw),
       threadId: input.threadId,
     },
   });
 
-  // Pull thread again
   const full = await gmail.users.threads.get({
     userId: 'me',
     id: input.threadId,
@@ -389,4 +404,108 @@ export async function sendReply(input: {
   if (full.data) upsertThreadAndMessages(account, full.data);
 
   return { id: res.data.id ?? '' };
+}
+
+export async function sendNewMessage(input: {
+  to: string;
+  subject: string;
+  bodyText: string;
+}): Promise<{ id: string }> {
+  const account = getPrimaryAccount();
+  if (!account) throw new Error('No Gmail account connected');
+  if (!input.to.trim()) throw new Error('to required');
+
+  const auth = await getAuthedClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const raw = [
+    `To: ${input.to.trim()}`,
+    `Subject: ${input.subject || '(no subject)'}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'MIME-Version: 1.0',
+    '',
+    input.bodyText,
+  ].join('\r\n');
+
+  const res = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: encodeRawMime(raw) },
+  });
+
+  return { id: res.data.id ?? '' };
+}
+
+/** Incremental sync using Gmail history when possible. */
+export async function syncIncremental(options?: {
+  maxThreads?: number;
+}): Promise<{ synced: number; email: string; mode: 'history' | 'full' }> {
+  const account = getPrimaryAccount();
+  if (!account) throw new Error('No Gmail account connected');
+
+  const auth = await getAuthedClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  if (account.history_id) {
+    try {
+      const hist = await gmail.users.history.list({
+        userId: 'me',
+        startHistoryId: account.history_id,
+        historyTypes: ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'],
+        maxResults: 100,
+      });
+
+      const threadIds = new Set<string>();
+      for (const h of hist.data.history ?? []) {
+        for (const m of h.messagesAdded ?? []) {
+          if (m.message?.threadId) threadIds.add(m.message.threadId);
+        }
+        for (const m of h.messagesDeleted ?? []) {
+          if (m.message?.id) {
+            getDb().prepare(`DELETE FROM messages WHERE id = ?`).run(m.message.id);
+          }
+        }
+        for (const m of h.labelsRemoved ?? []) {
+          if (m.message?.threadId && m.labelIds?.includes('INBOX')) {
+            getDb()
+              .prepare(`DELETE FROM threads WHERE id = ?`)
+              .run(m.message.threadId);
+          }
+        }
+        for (const m of h.labelsAdded ?? []) {
+          if (m.message?.threadId) threadIds.add(m.message.threadId);
+        }
+      }
+
+      let synced = 0;
+      for (const tid of threadIds) {
+        try {
+          const full = await gmail.users.threads.get({
+            userId: 'me',
+            id: tid,
+            format: 'full',
+          });
+          if (full.data) {
+            upsertThreadAndMessages(account, full.data);
+            synced += 1;
+          }
+        } catch {
+          /* thread may be gone */
+        }
+      }
+
+      const profile = await gmail.users.getProfile({ userId: 'me' });
+      if (profile.data.historyId) {
+        getDb()
+          .prepare(`UPDATE accounts SET history_id = ?, updated_at = ? WHERE id = ?`)
+          .run(profile.data.historyId, Date.now(), account.id);
+      }
+
+      return { synced, email: account.email, mode: 'history' };
+    } catch (e) {
+      console.warn('[sync] history failed, falling back to full', e);
+    }
+  }
+
+  const full = await syncInbox(options);
+  return { ...full, mode: 'full' };
 }

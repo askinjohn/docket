@@ -17,8 +17,38 @@ import { UiShellService } from './core/ui-shell.service';
 export class App implements OnInit {
   protected readonly shell = inject(UiShellService);
 
+  protected readonly paletteItems = [
+    { cmd: 'sync', label: 'Sync inbox', hint: '' },
+    { cmd: 'compose', label: 'Compose', hint: 'c' },
+    { cmd: 'reply', label: 'Reply', hint: 'r' },
+    { cmd: 'archive', label: 'Archive', hint: 'e' },
+    { cmd: 'star', label: 'Toggle star', hint: 's' },
+    { cmd: 'summary', label: 'Daily summary → notes', hint: '' },
+    { cmd: 'ai-summary', label: 'AI summarize thread', hint: '' },
+    { cmd: 'ai-draft', label: 'AI draft reply', hint: '' },
+    { cmd: 'inbox', label: 'Go to inbox', hint: '' },
+    { cmd: 'starred', label: 'Go to starred', hint: '' },
+    { cmd: 'theme', label: 'Toggle theme', hint: '' },
+  ];
+
   ngOnInit(): void {
     void this.shell.bootstrap();
+  }
+
+  onSearchInput(event: Event): void {
+    this.shell.setSearchQuery((event.target as HTMLInputElement).value);
+  }
+
+  onComposeTo(event: Event): void {
+    this.shell.setComposeTo((event.target as HTMLInputElement).value);
+  }
+
+  onComposeSubject(event: Event): void {
+    this.shell.setComposeSubject((event.target as HTMLInputElement).value);
+  }
+
+  onComposeBody(event: Event): void {
+    this.shell.setComposeBody((event.target as HTMLTextAreaElement).value);
   }
 
   iconFor(kind: string): string {
@@ -140,6 +170,9 @@ export class App implements OnInit {
     } else if (event.key === 'e') {
       event.preventDefault();
       void this.shell.archiveSelected();
+    } else if (event.key === 's') {
+      event.preventDefault();
+      void this.shell.toggleStarSelected();
     }
   }
 }

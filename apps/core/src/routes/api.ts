@@ -1,17 +1,21 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 
+import { draftReply, resolveAiMode, summarizeThread } from '../ai/provider.js';
 import { appConfig, googleConfigured } from '../config.js';
 import { getPrimaryAccount } from '../db/index.js';
-import {
-  exchangeCode,
-  getAuthUrl,
-} from '../gmail/oauth.js';
+import { publish, subscribe } from '../events/bus.js';
+import { downloadAttachment } from '../gmail/attachments.js';
+import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
 import {
   modifyThreadLabels,
+  sendNewMessage,
   sendReply,
   syncInbox,
+  syncIncremental,
 } from '../gmail/sync.js';
 import { getThreadDetail, listThreads } from '../mail/queries.js';
+import { buildDailySummary } from '../summary/daily.js';
 
 export const api = new Hono();
 
@@ -24,6 +28,8 @@ api.get('/health', (c) => {
     port: appConfig.port,
     googleConfigured: googleConfigured(),
     account: account ? { email: account.email } : null,
+    aiMode: resolveAiMode(),
+    notesDir: appConfig.notesDir,
     time: new Date().toISOString(),
   });
 });
@@ -42,54 +48,327 @@ api.get('/auth/gmail/start', (c) => {
     return c.json(
       {
         error:
-          'Google OAuth not configured. Copy apps/core/.env.example to apps/core/.env and set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.',
+          'Google OAuth not configured. Set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET in apps/core/.env',
       },
       503,
     );
   }
-  const url = getAuthUrl('local-mail');
-  return c.redirect(url);
+  return c.redirect(getAuthUrl('local-mail'));
 });
 
 api.get('/auth/gmail/callback', async (c) => {
   const code = c.req.query('code');
   const err = c.req.query('error');
   if (err) {
-    return c.html(authResultPage({
-      ok: false,
-      title: 'Sign-in cancelled',
-      body: String(err),
-    }));
+    return c.html(
+      authResultPage({ ok: false, title: 'Sign-in cancelled', body: String(err) }),
+    );
   }
   if (!code) {
-    return c.html(authResultPage({
-      ok: false,
-      title: 'Missing code',
-      body: 'Google did not return an authorization code.',
-    }), 400);
+    return c.html(
+      authResultPage({
+        ok: false,
+        title: 'Missing code',
+        body: 'Google did not return an authorization code.',
+      }),
+      400,
+    );
   }
   try {
     const account = await exchangeCode(code);
-    // Kick off initial sync in background
-    void syncInbox({ maxThreads: 25 }).catch((e) =>
-      console.error('[sync] initial sync failed', e),
+    void syncInbox({ maxThreads: 25 })
+      .then((r) =>
+        publish({
+          type: 'mail.synced',
+          synced: r.synced,
+          at: new Date().toISOString(),
+        }),
+      )
+      .catch((e) => console.error('[sync] initial sync failed', e));
+    return c.html(
+      authResultPage({
+        ok: true,
+        title: 'Connected',
+        body: `Signed in as <strong>${escapeHtml(account.email)}</strong>. Close this tab and return to <strong>Local Mail</strong>.`,
+      }),
     );
-    // Do NOT redirect to localhost UI — that opens a browser tab.
-    // The Dock/Tauri app polls /auth/status and will pick this up.
-    return c.html(authResultPage({
-      ok: true,
-      title: 'Connected',
-      body: `Signed in as <strong>${escapeHtml(account.email)}</strong>. You can close this tab and return to the <strong>Local Mail</strong> app — it will sync automatically.`,
-    }));
   } catch (e) {
     const message = e instanceof Error ? e.message : 'auth_failed';
     console.error('[auth] callback failed', e);
-    return c.html(authResultPage({
-      ok: false,
-      title: 'Connection failed',
-      body: escapeHtml(message),
-    }), 400);
+    return c.html(
+      authResultPage({
+        ok: false,
+        title: 'Connection failed',
+        body: escapeHtml(message),
+      }),
+      400,
+    );
   }
+});
+
+api.post('/sync', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({} as { full?: boolean }));
+    const result = body.full
+      ? { ...(await syncInbox({ maxThreads: 40 })), mode: 'full' as const }
+      : await syncIncremental({ maxThreads: 40 });
+    publish({
+      type: 'mail.synced',
+      synced: result.synced,
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'sync_failed';
+    return c.json({ error: message }, 400);
+  }
+});
+
+api.get('/threads', (c) => {
+  const q = c.req.query('q') ?? undefined;
+  const view = (c.req.query('view') as 'inbox' | 'starred' | 'all') || 'inbox';
+  return c.json(listThreads({ q, view }));
+});
+
+api.get('/threads/:id', (c) => {
+  const detail = getThreadDetail(c.req.param('id'));
+  if (!detail) return c.json({ error: 'not_found' }, 404);
+  return c.json(detail);
+});
+
+api.post('/threads/:id/archive', async (c) => {
+  try {
+    await modifyThreadLabels(c.req.param('id'), [], ['INBOX']);
+    publish({
+      type: 'mail.changed',
+      reason: 'archive',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'archive_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/threads/:id/read', async (c) => {
+  try {
+    await modifyThreadLabels(c.req.param('id'), [], ['UNREAD']);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'read_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/threads/:id/star', async (c) => {
+  const body = await c.req.json().catch(() => ({} as { starred?: boolean }));
+  const starred = body.starred !== false;
+  try {
+    if (starred) await modifyThreadLabels(c.req.param('id'), ['STARRED'], []);
+    else await modifyThreadLabels(c.req.param('id'), [], ['STARRED']);
+    publish({
+      type: 'mail.changed',
+      reason: 'star',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true, starred });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'star_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/threads/:id/reply', async (c) => {
+  const body = await c.req.json().catch(() => ({} as { bodyText?: string }));
+  if (!body.bodyText?.trim()) {
+    return c.json({ error: 'bodyText required' }, 400);
+  }
+  try {
+    const result = await sendReply({
+      threadId: c.req.param('id'),
+      bodyText: body.bodyText,
+    });
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'send_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/messages/send', async (c) => {
+  const body = await c.req
+    .json()
+    .catch(() => ({} as { to?: string; subject?: string; bodyText?: string }));
+  if (!body.to?.trim() || !body.bodyText?.trim()) {
+    return c.json({ error: 'to and bodyText required' }, 400);
+  }
+  try {
+    const result = await sendNewMessage({
+      to: body.to,
+      subject: body.subject ?? '',
+      bodyText: body.bodyText,
+    });
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'send_failed' },
+      400,
+    );
+  }
+});
+
+api.get('/attachments/:id', async (c) => {
+  try {
+    const file = await downloadAttachment(c.req.param('id'));
+    c.header('Content-Type', file.mimeType);
+    c.header(
+      'Content-Disposition',
+      `attachment; filename="${file.filename.replace(/"/g, '')}"`,
+    );
+    return c.body(new Uint8Array(file.data));
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'download_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/summary/daily', (c) => {
+  try {
+    const result = buildDailySummary();
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'summary_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/ai/summarize', async (c) => {
+  const body = await c.req.json().catch(() => ({} as { threadId?: string }));
+  if (!body.threadId) return c.json({ error: 'threadId required' }, 400);
+  try {
+    const result = await summarizeThread(body.threadId);
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'ai_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/ai/draft', async (c) => {
+  const body = await c.req.json().catch(() => ({} as { threadId?: string }));
+  if (!body.threadId) return c.json({ error: 'threadId required' }, 400);
+  try {
+    const result = await draftReply(body.threadId);
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'ai_failed' },
+      400,
+    );
+  }
+});
+
+/** Simple JSON MCP-style tools for agents / notes export */
+api.get('/mcp/tools', (c) => {
+  return c.json({
+    tools: [
+      {
+        name: 'search_mail',
+        description: 'Search local mail cache by query string',
+        input: { q: 'string' },
+      },
+      {
+        name: 'get_thread',
+        description: 'Get a thread by id from local cache',
+        input: { id: 'string' },
+      },
+      {
+        name: 'daily_summary',
+        description: 'Write daily mail summary markdown to notes folder',
+        input: {},
+      },
+    ],
+  });
+});
+
+api.post('/mcp/call', async (c) => {
+  const body = await c.req
+    .json()
+    .catch(() => ({} as { name?: string; arguments?: Record<string, string> }));
+  const name = body.name;
+  const args = body.arguments ?? {};
+  try {
+    if (name === 'search_mail') {
+      return c.json({
+        ok: true,
+        result: listThreads({ q: args.q, view: 'all' }),
+      });
+    }
+    if (name === 'get_thread') {
+      const detail = getThreadDetail(args.id);
+      if (!detail) return c.json({ error: 'not_found' }, 404);
+      return c.json({ ok: true, result: detail });
+    }
+    if (name === 'daily_summary') {
+      return c.json({ ok: true, result: buildDailySummary() });
+    }
+    return c.json({ error: 'unknown_tool' }, 400);
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'mcp_failed' },
+      400,
+    );
+  }
+});
+
+api.get('/events', (c) => {
+  return streamSSE(c, async (stream) => {
+    const unsub = subscribe((event) => {
+      void stream.writeSSE({
+        event: event.type,
+        data: JSON.stringify(event),
+      });
+    });
+
+    const beat = setInterval(() => {
+      void stream.writeSSE({
+        event: 'heartbeat',
+        data: JSON.stringify({
+          type: 'heartbeat',
+          at: new Date().toISOString(),
+        }),
+      });
+    }, 25000);
+
+    try {
+      await stream.writeSSE({
+        event: 'hello',
+        data: JSON.stringify({ ok: true, at: new Date().toISOString() }),
+      });
+      // keep open until client disconnects
+      await new Promise<void>((resolve) => {
+        c.req.raw.signal.addEventListener('abort', () => resolve());
+      });
+    } finally {
+      clearInterval(beat);
+      unsub();
+    }
+  });
 });
 
 function escapeHtml(s: string): string {
@@ -100,8 +379,11 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Success/error page for system-browser OAuth — never navigates away into the app origin. */
-function authResultPage(opts: { ok: boolean; title: string; body: string }): string {
+function authResultPage(opts: {
+  ok: boolean;
+  title: string;
+  body: string;
+}): string {
   const accent = opts.ok ? '#3dd6c6' : '#f07178';
   return `<!DOCTYPE html>
 <html lang="en"><head>
@@ -123,79 +405,5 @@ function authResultPage(opts: { ok: boolean; title: string; body: string }): str
   <p class="hint">This window can be closed. Local Mail stays in the Dock app.</p>
   <button type="button" onclick="window.close()">Close tab</button>
 </div>
-<script>try{window.history.replaceState({},'',location.pathname)}catch(e){}</script>
 </body></html>`;
 }
-
-api.post('/sync', async (c) => {
-  try {
-    const result = await syncInbox({ maxThreads: 40 });
-    return c.json({ ok: true, ...result });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'sync_failed';
-    return c.json({ error: message }, 400);
-  }
-});
-
-api.get('/threads', (c) => {
-  return c.json(listThreads());
-});
-
-api.get('/threads/:id', (c) => {
-  const detail = getThreadDetail(c.req.param('id'));
-  if (!detail) return c.json({ error: 'not_found' }, 404);
-  return c.json(detail);
-});
-
-api.post('/threads/:id/archive', async (c) => {
-  try {
-    await modifyThreadLabels(c.req.param('id'), [], ['INBOX']);
-    return c.json({ ok: true });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'archive_failed';
-    return c.json({ error: message }, 400);
-  }
-});
-
-api.post('/threads/:id/read', async (c) => {
-  try {
-    await modifyThreadLabels(c.req.param('id'), [], ['UNREAD']);
-    return c.json({ ok: true });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'read_failed';
-    return c.json({ error: message }, 400);
-  }
-});
-
-api.post('/threads/:id/star', async (c) => {
-  const body = await c.req.json().catch(() => ({} as { starred?: boolean }));
-  const starred = body.starred !== false;
-  try {
-    if (starred) {
-      await modifyThreadLabels(c.req.param('id'), ['STARRED'], []);
-    } else {
-      await modifyThreadLabels(c.req.param('id'), [], ['STARRED']);
-    }
-    return c.json({ ok: true, starred });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'star_failed';
-    return c.json({ error: message }, 400);
-  }
-});
-
-api.post('/threads/:id/reply', async (c) => {
-  const body = await c.req.json().catch(() => ({} as { bodyText?: string }));
-  if (!body.bodyText?.trim()) {
-    return c.json({ error: 'bodyText required' }, 400);
-  }
-  try {
-    const result = await sendReply({
-      threadId: c.req.param('id'),
-      bodyText: body.bodyText,
-    });
-    return c.json({ ok: true, ...result });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'send_failed';
-    return c.json({ error: message }, 400);
-  }
-});

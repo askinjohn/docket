@@ -29,30 +29,58 @@ function formatTime(ms: number | null): string {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-export function listThreads() {
+export function listThreads(options?: {
+  q?: string;
+  view?: 'inbox' | 'starred' | 'all';
+}) {
   const account = getPrimaryAccount();
   if (!account) return { account: null, threads: [] as unknown[] };
 
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM threads
-       WHERE account_id = ?
-         AND (label_ids LIKE '%INBOX%' OR label_ids = '[]')
-       ORDER BY last_message_at DESC
-       LIMIT 100`,
-    )
-    .all(account.id) as ThreadRow[];
+  const view = options?.view ?? 'inbox';
+  const q = (options?.q ?? '').trim().toLowerCase();
 
-  // Prefer inbox-labeled; if label json missing INBOX after sync quirks, still show recent
-  const threads = (
-    rows.length
-      ? rows
-      : (getDb()
-          .prepare(
-            `SELECT * FROM threads WHERE account_id = ? ORDER BY last_message_at DESC LIMIT 100`,
-          )
-          .all(account.id) as ThreadRow[])
-  ).map((t) => ({
+  let rows: ThreadRow[];
+  if (view === 'starred') {
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads WHERE account_id = ? AND starred = 1
+         ORDER BY last_message_at DESC LIMIT 100`,
+      )
+      .all(account.id) as ThreadRow[];
+  } else if (view === 'all') {
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads WHERE account_id = ?
+         ORDER BY last_message_at DESC LIMIT 100`,
+      )
+      .all(account.id) as ThreadRow[];
+  } else {
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads
+         WHERE account_id = ?
+           AND (label_ids LIKE '%INBOX%' OR label_ids = '[]')
+         ORDER BY last_message_at DESC
+         LIMIT 100`,
+      )
+      .all(account.id) as ThreadRow[];
+    if (!rows.length) {
+      rows = getDb()
+        .prepare(
+          `SELECT * FROM threads WHERE account_id = ? ORDER BY last_message_at DESC LIMIT 100`,
+        )
+        .all(account.id) as ThreadRow[];
+    }
+  }
+
+  if (q) {
+    rows = rows.filter((t) => {
+      const hay = `${t.subject} ${t.snippet} ${t.from_name} ${t.from_email}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  const threads = rows.map((t) => ({
     id: t.id,
     from: t.from_name || t.from_email || 'Unknown',
     subject: t.subject || '(no subject)',

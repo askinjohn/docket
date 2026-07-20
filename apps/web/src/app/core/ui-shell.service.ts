@@ -31,9 +31,12 @@ export interface ShellThreadPreview {
   snippet: string;
   time: string;
   unread: boolean;
+  starred?: boolean;
   messages: ShellMessage[];
   hasAttachments?: boolean;
 }
+
+export type MailView = 'inbox' | 'starred' | 'all';
 
 export type CoreStatus =
   | 'checking'
@@ -57,9 +60,18 @@ export class UiShellService {
   readonly replyOpen = signal(false);
   readonly composeOpen = signal(false);
   readonly replyBody = signal('');
+  readonly composeTo = signal('');
+  readonly composeSubject = signal('');
+  readonly composeBody = signal('');
+  readonly searchQuery = signal('');
+  readonly mailView = signal<MailView>('inbox');
+  readonly themeMode = signal<'dark' | 'light'>('dark');
+  readonly aiBusy = signal(false);
+  readonly summaryBusy = signal(false);
   readonly coreStatus = signal<CoreStatus>('checking');
   readonly accountEmail = signal<string | null>(null);
-  readonly phaseLabel = signal('Phase 1 — Core + Gmail');
+  readonly phaseLabel = signal('Local Mail');
+  private eventsAbort: AbortController | null = null;
 
   readonly selectedThread = computed(() => {
     const id = this.selectedId();
@@ -105,6 +117,8 @@ export class UiShellService {
         this.accountEmail.set(health.account.email);
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
+        this.connectLiveEvents();
+        this.requestNotifyPermission();
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
@@ -118,6 +132,52 @@ export class UiShellService {
     }
   }
 
+  private connectLiveEvents(): void {
+    this.eventsAbort?.abort();
+    this.eventsAbort = new AbortController();
+    const url = `${this.api.baseUrl}/events`;
+    void (async () => {
+      try {
+        const res = await fetch(url, { signal: this.eventsAbort!.signal });
+        if (!res.ok || !res.body) return;
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() ?? '';
+          for (const block of parts) {
+            if (block.includes('mail.synced') || block.includes('mail.changed')) {
+              void this.refreshThreads();
+            }
+          }
+        }
+      } catch {
+        /* aborted or offline */
+      }
+    })();
+  }
+
+  private requestNotifyPermission(): void {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
+  }
+
+  private notify(title: string, body: string): void {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(title, { body });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   private clearMailbox(): void {
     this.threads.set([]);
     this.selectedId.set(null);
@@ -125,16 +185,42 @@ export class UiShellService {
     this.replyBody.set('');
   }
 
+  setSearchQuery(q: string): void {
+    this.searchQuery.set(q);
+  }
+
+  async runSearch(): Promise<void> {
+    await this.refreshThreads();
+  }
+
+  async setMailView(view: MailView): Promise<void> {
+    this.mailView.set(view);
+    await this.refreshThreads();
+  }
+
+  toggleTheme(): void {
+    const next = this.themeMode() === 'dark' ? 'light' : 'dark';
+    this.themeMode.set(next);
+    document.documentElement.dataset['theme'] = next;
+  }
+
   async refreshThreads(): Promise<void> {
     this.listLoading.set(true);
     try {
-      const res = await this.api.listThreads();
+      const res = await this.api.listThreads({
+        q: this.searchQuery() || undefined,
+        view: this.mailView(),
+      });
       if (res.account?.email) {
         this.accountEmail.set(res.account.email);
       }
       if (!res.threads.length) {
         this.clearMailbox();
-        this.statusMessage.set('Inbox empty locally — try Sync.');
+        this.statusMessage.set(
+          this.searchQuery()
+            ? 'No matches.'
+            : 'Inbox empty locally — try Sync.',
+        );
         return;
       }
       const mapped: ShellThreadPreview[] = res.threads.map((t: ApiThread) => ({
@@ -144,6 +230,7 @@ export class UiShellService {
         snippet: t.snippet,
         time: t.time,
         unread: t.unread,
+        starred: t.starred,
         hasAttachments: t.hasAttachments,
         messages: [],
       }));
@@ -288,13 +375,18 @@ export class UiShellService {
     );
   }
 
-  async syncNow(): Promise<void> {
+  async syncNow(full = false): Promise<void> {
     this.syncing.set(true);
     this.statusMessage.set('Syncing…');
     try {
-      const res = await this.api.sync();
-      this.statusMessage.set(`Synced ${res.synced} threads for ${res.email}`);
+      const res = await this.api.sync(full);
+      this.statusMessage.set(
+        `Synced ${res.synced} (${res.mode ?? 'full'}) for ${res.email}`,
+      );
       await this.refreshThreads();
+      if (res.synced > 0) {
+        this.notify('Local Mail', `Synced ${res.synced} thread(s)`);
+      }
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Sync failed');
     } finally {
@@ -310,19 +402,87 @@ export class UiShellService {
     }
     const list = this.threads();
     const idx = list.findIndex((t) => t.id === id);
+    // Optimistic remove
+    const next = list[idx + 1] ?? list[idx - 1] ?? null;
+    this.threads.update((ts) => ts.filter((t) => t.id !== id));
+    if (next) void this.selectThread(next.id);
+    else {
+      this.selectedId.set(null);
+      this.replyOpen.set(false);
+    }
     try {
       await this.api.archive(id);
-      const next = list[idx + 1] ?? list[idx - 1] ?? null;
-      this.threads.update((ts) => ts.filter((t) => t.id !== id));
-      if (next) {
-        await this.selectThread(next.id);
-      } else {
-        this.selectedId.set(null);
-        this.replyOpen.set(false);
-      }
       this.statusMessage.set('Archived');
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
+      await this.refreshThreads();
+    }
+  }
+
+  async toggleStarSelected(): Promise<void> {
+    const id = this.selectedId();
+    const t = this.selectedThread();
+    if (!id || !t || !this.isConnected()) return;
+    const starred = !t.starred;
+    this.threads.update((list) =>
+      list.map((x) => (x.id === id ? { ...x, starred } : x)),
+    );
+    try {
+      await this.api.star(id, starred);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Star failed');
+      await this.refreshThreads();
+    }
+  }
+
+  openAttachment(attId: string): void {
+    window.open(this.api.attachmentUrl(attId), '_blank', 'noopener,noreferrer');
+  }
+
+  async runDailySummary(): Promise<void> {
+    this.summaryBusy.set(true);
+    try {
+      const res = await this.api.dailySummary();
+      this.statusMessage.set(
+        `Summary saved (${res.threadCount} threads): ${res.path}`,
+      );
+      this.notify('Mail summary saved', res.path);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Summary failed');
+    } finally {
+      this.summaryBusy.set(false);
+    }
+  }
+
+  async aiSummarizeSelected(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.aiBusy.set(true);
+    try {
+      const res = await this.api.aiSummarize(id);
+      this.statusMessage.set(`AI summary (${res.mode}) ready — see reply box`);
+      this.replyBody.set(res.text);
+      this.replyOpen.set(true);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'AI failed');
+    } finally {
+      this.aiBusy.set(false);
+    }
+  }
+
+  async aiDraftSelected(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.aiBusy.set(true);
+    try {
+      const res = await this.api.aiDraft(id);
+      this.replyBody.set(res.text);
+      this.replyOpen.set(true);
+      this.statusMessage.set(`Draft ready (${res.mode})`);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'AI failed');
+    } finally {
+      this.aiBusy.set(false);
     }
   }
 
@@ -351,6 +511,80 @@ export class UiShellService {
 
   setReplyBody(value: string): void {
     this.replyBody.set(value);
+  }
+
+  setComposeTo(v: string): void {
+    this.composeTo.set(v);
+  }
+  setComposeSubject(v: string): void {
+    this.composeSubject.set(v);
+  }
+  setComposeBody(v: string): void {
+    this.composeBody.set(v);
+  }
+
+  async sendCompose(): Promise<void> {
+    if (!this.isConnected()) return;
+    const to = this.composeTo().trim();
+    const body = this.composeBody().trim();
+    if (!to || !body) {
+      this.statusMessage.set('To and body required');
+      return;
+    }
+    this.sending.set(true);
+    try {
+      await this.api.sendNew(to, this.composeSubject(), body);
+      this.composeOpen.set(false);
+      this.composeTo.set('');
+      this.composeSubject.set('');
+      this.composeBody.set('');
+      this.statusMessage.set('Message sent');
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
+  runPaletteCommand(cmd: string): void {
+    this.closeCommandPalette();
+    switch (cmd) {
+      case 'archive':
+        void this.archiveSelected();
+        break;
+      case 'reply':
+        this.openReply();
+        break;
+      case 'compose':
+        this.openCompose();
+        break;
+      case 'sync':
+        void this.syncNow();
+        break;
+      case 'star':
+        void this.toggleStarSelected();
+        break;
+      case 'summary':
+        void this.runDailySummary();
+        break;
+      case 'ai-summary':
+        void this.aiSummarizeSelected();
+        break;
+      case 'ai-draft':
+        void this.aiDraftSelected();
+        break;
+      case 'theme':
+        this.toggleTheme();
+        break;
+      case 'inbox':
+        void this.setMailView('inbox');
+        break;
+      case 'starred':
+        void this.setMailView('starred');
+        break;
+      default:
+        break;
+    }
   }
 
   async sendReply(): Promise<void> {
