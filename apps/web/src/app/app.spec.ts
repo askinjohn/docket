@@ -96,7 +96,7 @@ describe('App', () => {
             sendReply: async () => undefined,
             archiveSelected: async () => undefined,
             syncNow: async () => undefined,
-            connectGmail: () => undefined,
+            connectGmail: async () => undefined,
             toggleCommandPalette: () => undefined,
             closeCommandPalette: () => undefined,
           },

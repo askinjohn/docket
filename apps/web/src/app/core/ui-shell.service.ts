@@ -5,6 +5,7 @@ import {
   type ApiThread,
   type ApiThreadDetail,
 } from './mail-api.service';
+import { openExternalUrl } from './open-external';
 
 export interface ShellAttachment {
   id: string;
@@ -284,8 +285,63 @@ export class UiShellService {
     if (prev) void this.selectThread(prev.id);
   }
 
-  connectGmail(): void {
-    window.location.href = this.api.gmailConnectUrl();
+  /**
+   * Opens Google OAuth in the **system browser** (Proton Pass / extensions work).
+   * Polls core until tokens are saved, then refreshes inbox.
+   */
+  async connectGmail(): Promise<void> {
+    if (this.coreStatus() === 'misconfigured') {
+      this.statusMessage.set(
+        'Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to apps/core/.env first.',
+      );
+      return;
+    }
+
+    const url = this.api.gmailConnectUrl();
+    this.statusMessage.set(
+      'Opening your browser for Google sign-in… Finish there, then return here.',
+    );
+
+    try {
+      await openExternalUrl(url);
+    } catch (e) {
+      this.statusMessage.set(
+        e instanceof Error
+          ? e.message
+          : 'Could not open browser. Open this URL manually: ' + url,
+      );
+      return;
+    }
+
+    void this.waitForGmailAuth();
+  }
+
+  /** Poll /auth/status until connected or timeout. */
+  private async waitForGmailAuth(): Promise<void> {
+    const started = Date.now();
+    const timeoutMs = 3 * 60 * 1000;
+
+    while (Date.now() - started < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const status = await this.api.authStatus();
+        if (status.connected && status.email) {
+          this.accountEmail.set(status.email);
+          this.coreStatus.set('online-connected');
+          this.statusMessage.set(
+            `Connected as ${status.email}. Syncing inbox…`,
+          );
+          await this.syncNow();
+          return;
+        }
+      } catch {
+        // core briefly unavailable — keep waiting
+      }
+    }
+
+    this.statusMessage.set(
+      'Still waiting for Google sign-in. After you finish in the browser, click Sync inbox.',
+    );
   }
 
   async syncNow(): Promise<void> {

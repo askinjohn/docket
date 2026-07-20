@@ -71,7 +71,7 @@ export class MailApiService {
     );
   }
 
-  /** Browser navigates here for OAuth. */
+  /** Start URL for Google OAuth (open in system browser, not in-app). */
   gmailConnectUrl(): string {
     return `${this.baseUrl}/auth/gmail/start`;
   }

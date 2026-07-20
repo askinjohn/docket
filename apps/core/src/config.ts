@@ -1,10 +1,14 @@
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { config as loadEnv } from 'dotenv';
 
-loadEnv();
+// Always load apps/core/.env even when process cwd is the monorepo root or Tauri
+const coreRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+loadEnv({ path: join(coreRoot, '.env') });
+loadEnv(); // optional cwd .env as override
 
 const host = process.env.LOCAL_MAIL_CORE_HOST ?? '127.0.0.1';
 if (host !== '127.0.0.1' && host !== 'localhost') {
