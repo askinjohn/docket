@@ -274,9 +274,15 @@ api.post('/threads/:id/reply', async (c) => {
 });
 
 api.post('/messages/send', async (c) => {
-  const body = await c.req
-    .json()
-    .catch(() => ({} as { to?: string; subject?: string; bodyText?: string }));
+  const body = await c.req.json().catch(
+    () =>
+      ({} as {
+        to?: string;
+        subject?: string;
+        bodyText?: string;
+        cc?: string;
+      }),
+  );
   if (!body.to?.trim() || !body.bodyText?.trim()) {
     return c.json({ error: 'to and bodyText required' }, 400);
   }
@@ -285,6 +291,7 @@ api.post('/messages/send', async (c) => {
       to: body.to,
       subject: body.subject ?? '',
       bodyText: body.bodyText,
+      cc: body.cc,
     });
     return c.json({ ok: true, ...result });
   } catch (e) {

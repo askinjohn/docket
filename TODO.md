@@ -23,6 +23,7 @@
 - [x] Reading pane auto-scroll to latest message (chat-style)
 - [x] Undo archive (`z` / Undo button, ~8s window) + `POST /threads/:id/unarchive`
 - [x] Quiet background history sync every 60s while connected
+- [x] Compose window polish (From/Cc, docked card, discard confirm, ⌘↵ send)
 
 ## Still thin / follow-ups
 

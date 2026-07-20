@@ -71,8 +71,11 @@ export class UiShellService {
   readonly composeOpen = signal(false);
   readonly replyBody = signal('');
   readonly composeTo = signal('');
+  readonly composeCc = signal('');
   readonly composeSubject = signal('');
   readonly composeBody = signal('');
+  /** Show Cc field in the compose window. */
+  readonly composeShowCc = signal(false);
   readonly searchQuery = signal('');
   readonly mailView = signal<MailView>('inbox');
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
@@ -664,12 +667,43 @@ export class UiShellService {
       this.statusMessage.set('Connect Gmail first.');
       return;
     }
+    this.replyOpen.set(false);
     this.composeOpen.set(true);
     this.commandPaletteOpen.set(false);
   }
 
-  closeCompose(): void {
+  closeCompose(opts?: { discard?: boolean }): void {
+    if (
+      !opts?.discard &&
+      this.composeIsDirty() &&
+      !confirm('Discard this draft?')
+    ) {
+      return;
+    }
     this.composeOpen.set(false);
+  }
+
+  /** True when compose has any user-entered content. */
+  composeIsDirty(): boolean {
+    return Boolean(
+      this.composeTo().trim() ||
+        this.composeCc().trim() ||
+        this.composeSubject().trim() ||
+        this.composeBody().trim(),
+    );
+  }
+
+  discardCompose(): void {
+    this.composeTo.set('');
+    this.composeCc.set('');
+    this.composeSubject.set('');
+    this.composeBody.set('');
+    this.composeShowCc.set(false);
+    this.composeOpen.set(false);
+  }
+
+  showComposeCc(): void {
+    this.composeShowCc.set(true);
   }
 
   setReplyBody(value: string): void {
@@ -678,6 +712,9 @@ export class UiShellService {
 
   setComposeTo(v: string): void {
     this.composeTo.set(v);
+  }
+  setComposeCc(v: string): void {
+    this.composeCc.set(v);
   }
   setComposeSubject(v: string): void {
     this.composeSubject.set(v);
@@ -690,17 +727,28 @@ export class UiShellService {
     if (!this.isConnected()) return;
     const to = this.composeTo().trim();
     const body = this.composeBody().trim();
-    if (!to || !body) {
-      this.statusMessage.set('To and body required');
+    if (!to) {
+      this.statusMessage.set('Add a recipient in To');
+      return;
+    }
+    if (!body) {
+      this.statusMessage.set('Write a message before sending');
       return;
     }
     this.sending.set(true);
     try {
-      await this.api.sendNew(to, this.composeSubject(), body);
-      this.composeOpen.set(false);
+      await this.api.sendNew(
+        to,
+        this.composeSubject(),
+        body,
+        this.composeCc().trim() || undefined,
+      );
       this.composeTo.set('');
+      this.composeCc.set('');
       this.composeSubject.set('');
       this.composeBody.set('');
+      this.composeShowCc.set(false);
+      this.composeOpen.set(false);
       this.statusMessage.set('Message sent');
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');

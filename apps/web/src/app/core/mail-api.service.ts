@@ -187,11 +187,11 @@ export class MailApiService {
     );
   }
 
-  sendNew(to: string, subject: string, bodyText: string) {
+  sendNew(to: string, subject: string, bodyText: string, cc?: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; id: string }>(
         `${this.baseUrl}/messages/send`,
-        { to, subject, bodyText },
+        { to, subject, bodyText, cc: cc || undefined },
       ),
     );
   }

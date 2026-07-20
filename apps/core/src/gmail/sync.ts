@@ -414,6 +414,7 @@ export async function sendNewMessage(input: {
   to: string;
   subject: string;
   bodyText: string;
+  cc?: string;
 }): Promise<{ id: string }> {
   const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
@@ -422,14 +423,15 @@ export async function sendNewMessage(input: {
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const raw = [
+  const headers = [
     `To: ${input.to.trim()}`,
+    input.cc?.trim() ? `Cc: ${input.cc.trim()}` : null,
     `Subject: ${input.subject || '(no subject)'}`,
     'Content-Type: text/plain; charset="UTF-8"',
     'MIME-Version: 1.0',
-    '',
-    input.bodyText,
-  ].join('\r\n');
+  ].filter((h): h is string => Boolean(h));
+
+  const raw = [...headers, '', input.bodyText].join('\r\n');
 
   const res = await gmail.users.messages.send({
     userId: 'me',
