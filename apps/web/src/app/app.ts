@@ -8,8 +8,727 @@ import { UiShellService } from './core/ui-shell.service';
 @Component({
   selector: 'lm-root',
   imports: [SafeSrcdocPipe],
-  templateUrl: './app.html',
-  styleUrl: './app.css',
+  template: `
+<div
+  class="grid h-full max-h-dvh grid-cols-[200px_minmax(260px,320px)_minmax(0,1fr)] overflow-hidden bg-lm-bg text-lm-text"
+>
+  <!-- Sidebar -->
+  <aside
+    class="flex min-h-0 flex-col gap-5 border-r border-lm-border bg-lm-panel px-3.5 py-4"
+    aria-label="Navigation"
+  >
+    <div class="flex items-center gap-2.5 px-1 py-1">
+      <span
+        class="h-7 w-7 shrink-0 rounded-md bg-linear-to-br from-lm-accent to-lm-accent-2 shadow-[0_0_24px_color-mix(in_srgb,var(--color-lm-accent)_35%,transparent)]"
+        aria-hidden="true"
+      ></span>
+      <div>
+        <div class="text-[0.95rem] font-semibold tracking-tight">Local Mail</div>
+        <div class="text-[0.7rem] text-lm-muted">{{ shell.phaseLabel() }}</div>
+      </div>
+    </div>
+
+    <div
+      class="break-all rounded-lg border border-lm-border px-2.5 py-1.5 text-[0.72rem] leading-snug text-lm-muted data-[status=online-connected]:border-lm-accent-2/50 data-[status=online-connected]:text-lm-accent-2 data-[status=offline]:border-lm-danger/40 data-[status=offline]:text-lm-danger data-[status=misconfigured]:border-lm-danger/40 data-[status=misconfigured]:text-lm-danger"
+      [attr.data-status]="shell.coreStatus()"
+    >
+      @switch (shell.coreStatus()) {
+        @case ('checking') {
+          <span>Checking core…</span>
+        }
+        @case ('offline') {
+          <span>Core offline</span>
+        }
+        @case ('misconfigured') {
+          <span>OAuth not configured</span>
+        }
+        @case ('online-disconnected') {
+          <span>Core online</span>
+        }
+        @case ('online-connected') {
+          <span>{{ shell.accountEmail() }}</span>
+        }
+      }
+    </div>
+
+    @if (shell.accounts().length > 0) {
+      <div class="flex flex-col gap-1">
+        <label class="px-0.5 text-[0.65rem] tracking-wide text-lm-muted uppercase"
+          >Accounts</label
+        >
+        @for (acc of shell.accounts(); track acc.id) {
+          <button
+            type="button"
+            class="truncate rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-lm-hover"
+            [class.bg-lm-accent/20]="shell.activeAccountId() === acc.id"
+            [class.font-semibold]="shell.activeAccountId() === acc.id"
+            (click)="shell.switchAccount(acc.id)"
+            [title]="acc.email"
+          >
+            {{ acc.email }}
+          </button>
+        }
+        <button
+          type="button"
+          class="mt-1 rounded-lg border border-dashed border-lm-border px-2.5 py-1.5 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+          (click)="shell.addAccount()"
+        >
+          + Add account
+        </button>
+        @if (shell.activeAccountId() != null) {
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1 text-left text-[0.7rem] text-lm-danger/90 hover:bg-lm-hover"
+            (click)="shell.removeActiveAccount()"
+          >
+            Remove active account
+          </button>
+        }
+      </div>
+    }
+
+    @if (shell.coreStatus() === 'online-disconnected' || shell.coreStatus() === 'misconfigured') {
+      <button
+        type="button"
+        class="flex w-full items-center justify-between rounded-lg bg-linear-to-br from-lm-accent to-[color-mix(in_srgb,var(--color-lm-accent)_70%,#000)] px-3 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+        (click)="shell.connectGmail()"
+        [disabled]="shell.coreStatus() === 'misconfigured'"
+      >
+        Connect Gmail
+      </button>
+      <p class="m-0 text-[0.72rem] leading-snug text-lm-muted">
+        Opens system browser. Close that tab when done — stay in this app.
+      </p>
+    }
+
+    @if (shell.coreStatus() === 'online-connected') {
+      <button
+        type="button"
+        class="w-full cursor-pointer rounded-lg border border-lm-border bg-lm-hover px-3 py-2 text-[0.82rem] text-lm-text disabled:cursor-wait disabled:opacity-60"
+        (click)="shell.syncNow()"
+        [disabled]="shell.syncing()"
+      >
+        {{ shell.syncing() ? 'Syncing…' : 'Sync inbox' }}
+      </button>
+      <button
+        type="button"
+        class="w-full cursor-pointer rounded-lg border border-lm-border px-3 py-2 text-[0.82rem] text-lm-text hover:bg-lm-hover disabled:opacity-50"
+        (click)="shell.runDailySummary()"
+        [disabled]="shell.summaryBusy()"
+      >
+        {{ shell.summaryBusy() ? 'Writing…' : 'Daily summary → notes' }}
+      </button>
+    }
+
+    <nav class="flex flex-col gap-1">
+      <button
+        type="button"
+        class="rounded-lg px-2.5 py-2 text-left text-sm"
+        [class.bg-lm-accent/20]="shell.mailView() === 'inbox'"
+        [class.font-semibold]="shell.mailView() === 'inbox'"
+        (click)="shell.setMailView('inbox')"
+      >
+        Inbox
+      </button>
+      <button
+        type="button"
+        class="rounded-lg px-2.5 py-2 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        [class.bg-lm-accent/20]="shell.mailView() === 'starred'"
+        [class.font-semibold]="shell.mailView() === 'starred'"
+        [class.text-lm-text]="shell.mailView() === 'starred'"
+        (click)="shell.setMailView('starred')"
+      >
+        Starred
+      </button>
+      <button
+        type="button"
+        class="rounded-lg px-2.5 py-2 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        [class.bg-lm-accent/20]="shell.mailView() === 'all'"
+        [class.font-semibold]="shell.mailView() === 'all'"
+        [class.text-lm-text]="shell.mailView() === 'all'"
+        (click)="shell.setMailView('all')"
+      >
+        All
+      </button>
+    </nav>
+
+    <button
+      type="button"
+      class="flex w-full items-center justify-between rounded-lg border border-lm-border bg-transparent px-3 py-2.5 text-sm font-medium text-lm-text disabled:cursor-not-allowed disabled:opacity-45"
+      (click)="shell.openCompose()"
+      [disabled]="!shell.isConnected()"
+    >
+      Compose
+      <kbd class="rounded border border-lm-border px-1.5 py-0.5 font-mono text-[0.7rem] text-lm-muted"
+        >c</kbd
+      >
+    </button>
+
+    <div class="mt-auto flex flex-col gap-2 px-1">
+      <button
+        type="button"
+        class="w-full rounded-lg border border-lm-border px-3 py-2 text-left text-[0.82rem] text-lm-text hover:bg-lm-hover"
+        (click)="shell.openSettings()"
+      >
+        Appearance
+      </button>
+      <p class="m-0 px-1 font-mono text-[0.68rem] leading-snug text-lm-muted">
+        j/k · e · r · s · ⌘K · ⌘↵
+      </p>
+    </div>
+  </aside>
+
+  <!-- Thread list -->
+  <section
+    class="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-lm-border bg-lm-bg"
+    aria-label="Thread list"
+  >
+    <header class="flex shrink-0 flex-col gap-2 border-b border-lm-border px-4 py-3">
+      <div class="flex items-center gap-2">
+        <h1 class="m-0 text-[0.95rem] font-semibold capitalize">{{ shell.mailView() }}</h1>
+        @if (shell.isConnected()) {
+          <span
+            class="rounded-full border border-lm-accent-2/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wider text-lm-accent-2"
+            >Live</span
+          >
+        }
+        @if (shell.listLoading()) {
+          <span
+            class="rounded-full border border-lm-border px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wider text-lm-muted"
+            >Loading</span
+          >
+        }
+      </div>
+      <input
+        type="search"
+        class="w-full rounded-lg border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/50"
+        placeholder="Search subject, from, snippet…"
+        [value]="shell.searchQuery()"
+        (input)="onSearchInput($event)"
+        (keydown.enter)="shell.runSearch()"
+      />
+    </header>
+
+    @if (shell.statusMessage()) {
+      <div
+        class="mx-2.5 mt-2 rounded-lg border border-lm-border bg-lm-accent/10 px-2.5 py-1.5 text-[0.78rem] text-lm-muted"
+        role="status"
+      >
+        {{ shell.statusMessage() }}
+      </div>
+    }
+
+    <ul class="m-0 min-h-0 flex-1 list-none overflow-auto p-1.5" role="listbox" aria-label="Threads">
+      @for (thread of shell.threads(); track thread.id) {
+        <li>
+          <button
+            type="button"
+            class="mb-0.5 w-full cursor-pointer rounded-lg border border-transparent bg-transparent px-2.5 py-2.5 text-left text-inherit hover:bg-lm-hover data-[selected=true]:border-lm-accent/35 data-[selected=true]:bg-lm-accent/15"
+            role="option"
+            [attr.data-selected]="shell.selectedId() === thread.id"
+            [attr.aria-selected]="shell.selectedId() === thread.id"
+            (click)="shell.selectThread(thread.id)"
+          >
+            <div class="mb-0.5 flex justify-between gap-2">
+              <span
+                class="text-sm text-lm-text"
+                [class.font-semibold]="thread.unread"
+                >{{ thread.from }}</span
+              >
+              <span class="shrink-0 text-[0.72rem] text-lm-muted">{{ thread.time }}</span>
+            </div>
+            <div
+              class="mb-0.5 truncate text-[0.82rem]"
+              [class.font-semibold]="thread.unread"
+            >
+              @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
+                <span class="mr-1 opacity-85" aria-hidden="true" title="Has attachments">📎</span>
+              }
+              {{ thread.subject }}
+            </div>
+            <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
+          </button>
+        </li>
+      } @empty {
+        <li class="list-none px-4 py-4 text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</li>
+      }
+    </ul>
+  </section>
+
+  <!-- Reading pane -->
+  <section class="flex min-h-0 min-w-0 flex-col overflow-hidden bg-lm-bg" aria-label="Reading pane">
+    @if (shell.selectedThread(); as thread) {
+      <header class="shrink-0 border-b border-lm-border px-5 py-3.5">
+        <div class="flex items-start justify-between gap-4">
+          <h2 class="m-0 min-w-0 text-[1.05rem] font-semibold tracking-tight break-words">
+            {{ thread.subject }}
+          </h2>
+          <div class="flex shrink-0 flex-wrap justify-end gap-1">
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+              (click)="shell.toggleStarSelected()"
+              title="Star (s)"
+              [disabled]="!shell.isConnected()"
+            >
+              {{ thread.starred ? '★ Starred' : '☆ Star' }}
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+              (click)="shell.aiSummarizeSelected()"
+              [disabled]="!shell.isConnected() || shell.aiBusy()"
+              title="AI summarize"
+            >
+              Summarize
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+              (click)="shell.aiDraftSelected()"
+              [disabled]="!shell.isConnected() || shell.aiBusy()"
+              title="AI draft reply"
+            >
+              AI draft
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover"
+              (click)="shell.openReply()"
+              title="Reply (r)"
+            >
+              Reply
+            </button>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:cursor-not-allowed disabled:opacity-40"
+              (click)="shell.archiveSelected()"
+              title="Archive (e)"
+              [disabled]="!shell.isConnected()"
+            >
+              Archive
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5">
+        @if (shell.detailLoading() && thread.messages.length === 0) {
+          <div
+            class="mb-3 min-h-64 max-w-3xl animate-pulse rounded-2xl border border-lm-border bg-lm-panel px-5 py-4"
+            aria-busy="true"
+          >
+            <div class="mb-4 h-4 w-1/3 rounded bg-lm-hover"></div>
+            <div class="mb-2 h-3 w-full rounded bg-lm-hover"></div>
+            <div class="mb-2 h-3 w-5/6 rounded bg-lm-hover"></div>
+            <div class="h-3 w-2/3 rounded bg-lm-hover"></div>
+            <p class="mt-6 text-sm text-lm-muted">Loading message…</p>
+          </div>
+        }
+        @for (msg of thread.messages; track msg.id) {
+          <!-- Incoming HTML: wide card. Your plain replies: right bubble. -->
+          @if (messageUsesHtml(msg) && !isMine(msg)) {
+            <article
+              class="msg-incoming mb-4 w-full max-w-3xl overflow-hidden rounded-2xl border border-lm-border bg-lm-panel shadow-sm"
+            >
+              <div class="flex items-start justify-between gap-4 border-b border-lm-border px-5 py-3">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold break-words text-lm-text">{{ msg.from }}</div>
+                  <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
+                </div>
+                <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
+              </div>
+              <div class="message-html-wrap w-full overflow-hidden bg-white">
+                <iframe
+                  class="message-html-frame"
+                  title="Message body"
+                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                  (load)="onHtmlFrameLoad($event)"
+                ></iframe>
+              </div>
+              @if (msg.attachments.length) {
+                <div class="border-t border-lm-border px-5 py-3" aria-label="Attachments">
+                  <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
+                    Attachments · {{ msg.attachments.length }}
+                  </div>
+                  <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
+                    @for (file of msg.attachments; track file.id) {
+                      <li>
+                        <button
+                          type="button"
+                          class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
+                          (click)="shell.openAttachment(file.id)"
+                          title="Download / open"
+                        >
+                          <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                          <span class="flex min-w-0 flex-col">
+                            <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
+                            <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
+                          </span>
+                        </button>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </article>
+          } @else {
+            <div
+              class="mb-3 flex w-full"
+              [class.justify-end]="isMine(msg)"
+              [class.justify-start]="!isMine(msg)"
+            >
+              <article
+                class="overflow-hidden rounded-2xl border px-4 py-3.5 shadow-sm"
+                [class.max-w-xl]="isMine(msg)"
+                [class.max-w-3xl]="!isMine(msg)"
+                [class.w-full]="!isMine(msg)"
+                [class.border-lm-border]="!isMine(msg)"
+                [class.bg-lm-panel]="!isMine(msg)"
+                [class.border-lm-accent/45]="isMine(msg)"
+                [class.bg-lm-accent/15]="isMine(msg)"
+              >
+                <div
+                  class="mb-2 flex min-w-0 justify-between gap-4"
+                  [class.flex-row-reverse]="isMine(msg)"
+                >
+                  <div class="min-w-0" [class.text-right]="isMine(msg)">
+                    <div class="text-sm font-semibold break-words">
+                      @if (isMine(msg)) {
+                        You
+                      } @else {
+                        {{ msg.from }}
+                      }
+                    </div>
+                    <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
+                  </div>
+                  <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
+                </div>
+
+                @if (messageUsesHtml(msg)) {
+                  <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
+                    <iframe
+                      class="message-html-frame"
+                      title="Message body"
+                      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                      [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                      (load)="onHtmlFrameLoad($event)"
+                    ></iframe>
+                  </div>
+                } @else {
+                  <div
+                    class="max-w-full whitespace-pre-wrap text-[0.92rem] leading-relaxed break-words text-lm-text"
+                    [class.text-right]="isMine(msg)"
+                  >
+                    {{ messagePlainText(msg) }}
+                  </div>
+                }
+
+                @if (msg.attachments.length) {
+                  <div class="mt-3 border-t border-lm-border pt-3" aria-label="Attachments">
+                    <ul
+                      class="m-0 flex list-none flex-wrap gap-2 p-0"
+                      [class.justify-end]="isMine(msg)"
+                    >
+                      @for (file of msg.attachments; track file.id) {
+                        <li>
+                          <button
+                            type="button"
+                            class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
+                            (click)="shell.openAttachment(file.id)"
+                          >
+                            <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                            <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
+                          </button>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </article>
+            </div>
+          }
+        } @empty {
+          @if (!shell.detailLoading()) {
+            <p class="py-2 text-sm text-lm-muted">No messages loaded for this thread.</p>
+          }
+        }
+      </div>
+
+      @if (shell.replyOpen()) {
+        <footer
+          class="flex max-h-[min(42vh,320px)] min-h-0 shrink-0 flex-col gap-2.5 overflow-hidden border-t border-lm-border bg-lm-panel px-4 py-3"
+          aria-label="Reply"
+        >
+          <div class="flex shrink-0 items-center justify-between">
+            <span class="min-w-0 truncate text-[0.8rem] font-semibold text-lm-muted"
+              >Reply to {{ thread.from }}</span
+            >
+            <button
+              type="button"
+              class="cursor-pointer rounded border-0 bg-transparent px-2 py-0.5 text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+              (click)="shell.closeReply()"
+              aria-label="Close reply"
+            >
+              ×
+            </button>
+          </div>
+          <textarea
+            class="min-h-[72px] max-h-40 w-full flex-1 resize-none overflow-y-auto rounded-[10px] border border-lm-border bg-lm-bg px-3 py-2.5 text-[0.9rem] leading-snug text-lm-text outline-none focus:outline-2 focus:outline-offset-1 focus:outline-lm-accent/55"
+            rows="4"
+            [value]="shell.replyBody()"
+            (input)="onReplyInput($event)"
+            placeholder="Write a reply… (⌘↵ to send)"
+          ></textarea>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="text-[0.72rem] text-lm-muted">Plain-text send</span>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-[0.72rem] text-lm-muted">⌘↵</span>
+              <button
+                type="button"
+                class="cursor-pointer rounded-lg border-0 bg-lm-accent px-2.5 py-1.5 text-[0.8rem] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                (click)="shell.sendReply()"
+                [disabled]="shell.sending() || !shell.isConnected()"
+              >
+                {{ shell.sending() ? 'Sending…' : 'Send' }}
+              </button>
+            </div>
+          </div>
+        </footer>
+      } @else if (shell.isConnected()) {
+        <button
+          type="button"
+          class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+          (click)="shell.openReply()"
+        >
+          Click to reply ·
+          <kbd class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
+            >r</kbd
+          >
+        </button>
+      }
+    } @else {
+      <div class="m-auto text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</div>
+    }
+  </section>
+</div>
+
+@if (shell.commandPaletteOpen()) {
+  <div
+    class="fixed inset-0 z-40 bg-black/45"
+    (click)="shell.closeCommandPalette()"
+  ></div>
+  <div
+    class="fixed top-[18%] left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-lm-border bg-lm-panel px-4 py-4 shadow-2xl"
+    role="dialog"
+    aria-label="Command palette"
+    aria-modal="true"
+  >
+    <div class="mb-2 font-semibold">Command palette</div>
+    <div class="flex max-h-72 flex-col gap-1 overflow-auto">
+      @for (item of paletteItems; track item.cmd) {
+        <button
+          type="button"
+          class="cursor-pointer rounded-lg border border-transparent px-2.5 py-2 text-left text-sm hover:border-lm-border hover:bg-lm-hover"
+          (click)="shell.runPaletteCommand(item.cmd)"
+        >
+          <span class="font-medium">{{ item.label }}</span>
+          <span class="ml-2 text-xs text-lm-muted">{{ item.hint }}</span>
+        </button>
+      }
+    </div>
+    <p class="mt-3 m-0 text-[0.72rem] text-lm-muted">Esc to close · ⌘K to open</p>
+  </div>
+}
+
+@if (shell.settingsOpen()) {
+  <div class="fixed inset-0 z-40 bg-black/50" (click)="shell.closeSettings()"></div>
+  <div
+    class="fixed top-1/2 left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lm-border bg-lm-panel p-5 shadow-2xl"
+    role="dialog"
+    aria-label="Appearance"
+    aria-modal="true"
+  >
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="m-0 text-base font-semibold">Appearance</h2>
+      <button
+        type="button"
+        class="cursor-pointer rounded border-0 bg-transparent px-2 text-lg text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        (click)="shell.closeSettings()"
+        aria-label="Close"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="mb-4">
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Mode</div>
+      <div class="flex gap-2">
+        @for (m of ['dark', 'light', 'system']; track m) {
+          <button
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-2 text-sm capitalize"
+            [class.border-lm-accent]="shell.theme().mode === m"
+            [class.bg-lm-accent/15]="shell.theme().mode === m"
+            [class.border-lm-border]="shell.theme().mode !== m"
+            (click)="shell.setThemeMode($any(m))"
+          >
+            {{ m }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Accent</div>
+      <div class="flex flex-wrap gap-2">
+        @for (a of shell.accentPresets; track a.id) {
+          <button
+            type="button"
+            class="h-8 w-8 rounded-full border-2 transition-transform hover:scale-110"
+            [class.border-lm-text]="shell.theme().accent === a.value"
+            [class.border-transparent]="shell.theme().accent !== a.value"
+            [style.background]="a.value"
+            [title]="a.label"
+            (click)="shell.setThemeAccent(a.value)"
+          ></button>
+        }
+        <label
+          class="flex h-8 cursor-pointer items-center gap-1 rounded-full border border-lm-border px-2 text-xs text-lm-muted hover:bg-lm-hover"
+          title="Custom color"
+        >
+          <input
+            type="color"
+            class="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+            [value]="shell.theme().accent"
+            (input)="onAccentColor($event)"
+          />
+          Custom
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Density</div>
+      <div class="flex gap-2">
+        @for (d of ['comfortable', 'compact']; track d) {
+          <button
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-2 text-sm capitalize"
+            [class.border-lm-accent]="shell.theme().density === d"
+            [class.bg-lm-accent/15]="shell.theme().density === d"
+            [class.border-lm-border]="shell.theme().density !== d"
+            (click)="shell.setThemeDensity($any(d))"
+          >
+            {{ d }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+@if (shell.composeOpen()) {
+  <div class="fixed inset-0 z-40 bg-black/45" (click)="shell.closeCompose()"></div>
+  <div
+    class="fixed right-5 bottom-5 z-50 flex w-[min(440px,calc(100vw-2rem))] flex-col gap-2.5 rounded-xl border border-lm-border bg-lm-panel px-4 py-3.5 shadow-2xl"
+    role="dialog"
+    aria-label="New message"
+    aria-modal="true"
+  >
+    <header class="flex items-center justify-between">
+      <strong>New message</strong>
+      <button
+        type="button"
+        class="cursor-pointer rounded border-0 bg-transparent px-2 text-lg text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        (click)="shell.closeCompose()"
+        aria-label="Close"
+      >
+        ×
+      </button>
+    </header>
+    <div class="flex flex-col gap-1.5">
+      <label class="grid grid-cols-[4rem_1fr] items-center gap-2 text-[0.8rem] text-lm-muted">
+        <span>To</span>
+        <input
+          type="text"
+          class="border-0 border-b border-lm-border bg-transparent py-1.5 text-sm text-lm-text outline-none"
+          [value]="shell.composeTo()"
+          (input)="onComposeTo($event)"
+          placeholder="email@example.com"
+        />
+      </label>
+      <label class="grid grid-cols-[4rem_1fr] items-center gap-2 text-[0.8rem] text-lm-muted">
+        <span>Subject</span>
+        <input
+          type="text"
+          class="border-0 border-b border-lm-border bg-transparent py-1.5 text-sm text-lm-text outline-none"
+          [value]="shell.composeSubject()"
+          (input)="onComposeSubject($event)"
+          placeholder="Subject"
+        />
+      </label>
+    </div>
+    <textarea
+      class="min-h-35 w-full resize-none rounded-[10px] border border-lm-border bg-lm-bg px-3 py-2.5 text-[0.9rem] text-lm-text outline-none focus:outline-2 focus:outline-offset-1 focus:outline-lm-accent/55"
+      rows="8"
+      [value]="shell.composeBody()"
+      (input)="onComposeBody($event)"
+      placeholder="Write something…"
+    ></textarea>
+    <div class="flex items-center justify-between gap-3">
+      <button
+        type="button"
+        class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover"
+        (click)="shell.closeCompose()"
+      >
+        Close
+      </button>
+      <button
+        type="button"
+        class="cursor-pointer rounded-lg border-0 bg-lm-accent px-2.5 py-1.5 text-[0.8rem] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+        (click)="shell.sendCompose()"
+        [disabled]="shell.sending()"
+      >
+        {{ shell.sending() ? 'Sending…' : 'Send' }}
+      </button>
+    </div>
+  </div>
+}
+
+  `,
+  styles: [`
+/* Host height for Tauri/webview; iframe grows via JS after load */
+:host {
+  display: block;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  font-family: var(--font-lm);
+}
+
+.message-html-wrap {
+  background: #fff;
+  min-height: 8rem;
+}
+
+.message-html-frame {
+  display: block;
+  width: 100%;
+  min-height: 12rem;
+  height: 20rem;
+  border: 0;
+  background: #fff;
+  vertical-align: top;
+}
+
+.msg-incoming .message-html-frame {
+  min-height: 14rem;
+}
+
+  `],
   host: {
     '(document:keydown)': 'onKeydown($event)',
   },
