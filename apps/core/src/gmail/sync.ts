@@ -119,7 +119,44 @@ function upsertThreadAndMessages(
     )`,
   );
 
+  const upsertThread = db.prepare(
+    `INSERT INTO threads (
+      id, account_id, subject, snippet, from_name, from_email,
+      last_message_at, unread, starred, has_attachments, label_ids, updated_at
+    ) VALUES (
+      @id, @account_id, @subject, @snippet, @from_name, @from_email,
+      @last_message_at, @unread, @starred, @has_attachments, @label_ids, @updated_at
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      subject = excluded.subject,
+      snippet = excluded.snippet,
+      from_name = excluded.from_name,
+      from_email = excluded.from_email,
+      last_message_at = excluded.last_message_at,
+      unread = excluded.unread,
+      starred = excluded.starred,
+      has_attachments = excluded.has_attachments,
+      label_ids = excluded.label_ids,
+      updated_at = excluded.updated_at`,
+  );
+
   const tx = db.transaction(() => {
+    // Parent thread first — messages.thread_id FK requires this row to exist
+    upsertThread.run({
+      id: threadId,
+      account_id: account.id,
+      subject: '',
+      snippet: '',
+      from_name: '',
+      from_email: '',
+      last_message_at: now,
+      unread: 0,
+      starred: 0,
+      has_attachments: 0,
+      label_ids: '[]',
+      updated_at: now,
+    });
+
     for (const msg of messages) {
       if (!msg.id) continue;
       const headers = headerMap(msg.payload?.headers);
@@ -133,11 +170,17 @@ function upsertThreadAndMessages(
       if (labels.includes('STARRED')) starred = 1;
       for (const l of labels) labelSet.add(l);
 
-      const bodies = { text: '', html: '', attachments: [] as Omit<AttachmentRow, 'message_id'>[] };
+      const bodies = {
+        text: '',
+        html: '',
+        attachments: [] as Omit<AttachmentRow, 'message_id'>[],
+      };
       collectParts(msg.payload ?? undefined, bodies, msg.id);
       if (bodies.attachments.length) hasAttachments = 1;
 
-      const internal = msg.internalDate ? Number(msg.internalDate) : dateMs ?? now;
+      const internal = msg.internalDate
+        ? Number(msg.internalDate)
+        : (dateMs ?? now);
       if (internal > lastAt) {
         lastAt = internal;
         subject = subj || subject;
@@ -179,26 +222,7 @@ function upsertThreadAndMessages(
       }
     }
 
-    db.prepare(
-      `INSERT INTO threads (
-        id, account_id, subject, snippet, from_name, from_email,
-        last_message_at, unread, starred, has_attachments, label_ids, updated_at
-      ) VALUES (
-        @id, @account_id, @subject, @snippet, @from_name, @from_email,
-        @last_message_at, @unread, @starred, @has_attachments, @label_ids, @updated_at
-      )
-      ON CONFLICT(id) DO UPDATE SET
-        subject = excluded.subject,
-        snippet = excluded.snippet,
-        from_name = excluded.from_name,
-        from_email = excluded.from_email,
-        last_message_at = excluded.last_message_at,
-        unread = excluded.unread,
-        starred = excluded.starred,
-        has_attachments = excluded.has_attachments,
-        label_ids = excluded.label_ids,
-        updated_at = excluded.updated_at`,
-    ).run({
+    upsertThread.run({
       id: threadId,
       account_id: account.id,
       subject,
