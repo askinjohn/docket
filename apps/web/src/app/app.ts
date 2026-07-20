@@ -53,16 +53,68 @@ export class App implements OnInit {
     return formatPlainBody(raw);
   }
 
+  /**
+   * Measure iframe content height *before* showing it to avoid half-size → full jump.
+   */
   onHtmlFrameLoad(event: Event): void {
     const iframe = event.target as HTMLIFrameElement;
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc?.body) return;
-      const h = doc.body.scrollHeight;
-      iframe.style.height = `${Math.min(Math.max(h + 16, 80), 1600)}px`;
-    } catch {
-      iframe.style.height = '320px';
-    }
+    const wrap = iframe.parentElement;
+    wrap?.classList.add('is-sizing');
+    iframe.classList.remove('is-ready');
+
+    const measure = (): void => {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc?.body) {
+          iframe.style.height = '12rem';
+          iframe.classList.add('is-ready');
+          wrap?.classList.remove('is-sizing');
+          return;
+        }
+        // Prefer full document height; body alone is often short before layout settles
+        const h = Math.max(
+          doc.body.scrollHeight,
+          doc.body.offsetHeight,
+          doc.documentElement?.scrollHeight ?? 0,
+          doc.documentElement?.offsetHeight ?? 0,
+        );
+        iframe.style.height = `${Math.min(Math.max(h + 12, 64), 2400)}px`;
+      } catch {
+        iframe.style.height = '16rem';
+      }
+    };
+
+    const finish = (): void => {
+      measure();
+      iframe.classList.add('is-ready');
+      wrap?.classList.remove('is-sizing');
+    };
+
+    // Double rAF: wait for iframe document layout after load
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        finish();
+        // Images often load after first paint — remeasure without hiding again
+        try {
+          const doc = iframe.contentDocument;
+          if (!doc) return;
+          const remeasure = (): void => {
+            measure();
+          };
+          for (const img of Array.from(doc.images)) {
+            if (!img.complete) {
+              img.addEventListener('load', remeasure, { once: true });
+              img.addEventListener('error', remeasure, { once: true });
+            }
+          }
+          // Late layout (webfonts / nested tables)
+          window.setTimeout(remeasure, 100);
+          window.setTimeout(remeasure, 400);
+        } catch {
+          /* cross-origin or gone */
+        }
+      });
+    });
   }
 
   onReplyInput(event: Event): void {

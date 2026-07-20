@@ -205,8 +205,17 @@
       </header>
 
       <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
-        @if (shell.detailLoading()) {
-          <p class="py-2 text-sm text-lm-muted">Loading messages…</p>
+        @if (shell.detailLoading() && thread.messages.length === 0) {
+          <div
+            class="mb-3 min-h-64 max-w-[min(44rem,100%)] animate-pulse rounded-xl border border-lm-border bg-lm-panel px-4 py-4"
+            aria-busy="true"
+          >
+            <div class="mb-4 h-4 w-1/3 rounded bg-lm-hover"></div>
+            <div class="mb-2 h-3 w-full rounded bg-lm-hover"></div>
+            <div class="mb-2 h-3 w-5/6 rounded bg-lm-hover"></div>
+            <div class="h-3 w-2/3 rounded bg-lm-hover"></div>
+            <p class="mt-6 text-sm text-lm-muted">Loading message…</p>
+          </div>
         }
         @for (msg of thread.messages; track msg.id) {
           <article
@@ -221,7 +230,7 @@
             </div>
 
             @if (messageUsesHtml(msg)) {
-              <div class="w-full overflow-hidden rounded-lg border border-lm-border bg-white">
+              <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border">
                 <iframe
                   class="message-html-frame"
                   title="Message body"
