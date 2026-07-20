@@ -55,7 +55,7 @@ Agent  →  MCP server              ─┘         │
 
 | Surface | Technology |
 |---------|------------|
-| UI | Angular 22 · signals · Signal Forms · httpResource · Tailwind · Angular Aria |
+| UI | Angular 22 · signals · Signal Forms · httpResource · plain CSS · Angular Aria |
 | Core | Node/Bun TBD · REST + WebSocket/SSE · Gmail · AI · MCP |
 | DB | SQLite (+ FTS later) |
 | Notify v1 | Web Notifications driven by core events |

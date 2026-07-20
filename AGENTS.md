@@ -55,7 +55,7 @@ Do **not** put Gmail tokens, API keys, or production secrets in the repo.
 - Prefer `httpResource` / `resource` for async server data.  
 - Native control flow only (`@if`, `@for`, `@switch`).  
 - `input()` / `output()` / `model()` — not decorator inputs/outputs.  
-- Tailwind for layout/density styling is allowed.  
+- Prefer plain CSS / component styles (no Tailwind).  
 - Sandbox untrusted HTML email; never `innerHTML` raw mail without sanitization/sandbox.  
 - Follow `apps/web/AGENTS.md` for finer Angular style.  
 
