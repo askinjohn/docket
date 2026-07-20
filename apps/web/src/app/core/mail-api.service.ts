@@ -196,6 +196,18 @@ export class MailApiService {
     );
   }
 
+  suggestContacts(q: string, limit = 8) {
+    const params = new URLSearchParams({
+      q,
+      limit: String(limit),
+    });
+    return firstValueFrom(
+      this.http.get<{
+        contacts: { email: string; name: string; hits: number }[];
+      }>(`${this.baseUrl}/contacts/suggest?${params}`),
+    );
+  }
+
   attachmentUrl(id: string): string {
     return `${this.baseUrl}/attachments/${encodeURIComponent(id)}`;
   }

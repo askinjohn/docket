@@ -20,7 +20,11 @@ import {
   syncInbox,
   syncIncremental,
 } from '../gmail/sync.js';
-import { getThreadDetail, listThreads } from '../mail/queries.js';
+import {
+  getThreadDetail,
+  listThreads,
+  suggestContacts,
+} from '../mail/queries.js';
 import { buildDailySummary } from '../summary/daily.js';
 
 export const api = new Hono();
@@ -179,6 +183,15 @@ api.get('/threads', (c) => {
   const q = c.req.query('q') ?? undefined;
   const view = (c.req.query('view') as 'inbox' | 'starred' | 'all') || 'inbox';
   return c.json(listThreads({ q, view }));
+});
+
+/** Typeahead contacts from cached mail history (not Google Contacts). */
+api.get('/contacts/suggest', (c) => {
+  const q = c.req.query('q') ?? '';
+  const limit = Number(c.req.query('limit') ?? 8);
+  return c.json({
+    contacts: suggestContacts(q, Number.isFinite(limit) ? limit : 8),
+  });
 });
 
 api.get('/threads/:id', (c) => {

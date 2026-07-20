@@ -707,43 +707,135 @@ import { UiShellService } from './core/ui-shell.service';
         }}</span>
       </div>
 
-      <label
-        class="grid grid-cols-[3.25rem_1fr_auto] items-center gap-x-2 border-b border-lm-border/70 py-1.5 text-[0.8rem]"
-      >
-        <span class="text-lm-muted">To</span>
-        <input
-          #composeTo
-          type="email"
-          autocomplete="email"
-          class="min-w-0 border-0 bg-transparent py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted/70"
-          [value]="shell.composeTo()"
-          (input)="onComposeTo($event)"
-          placeholder="name@company.com"
-        />
-        @if (!shell.composeShowCc()) {
-          <button
-            type="button"
-            class="cursor-pointer rounded-md border-0 bg-transparent px-1.5 py-1 text-[0.72rem] font-medium text-lm-accent hover:bg-lm-accent/10"
-            (click)="shell.showComposeCc()"
+      <div class="relative border-b border-lm-border/70">
+        <label
+          class="grid grid-cols-[3.25rem_1fr_auto] items-center gap-x-2 py-1.5 text-[0.8rem]"
+        >
+          <span class="text-lm-muted">To</span>
+          <input
+            #composeTo
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            role="combobox"
+            aria-autocomplete="list"
+            [attr.aria-expanded]="
+              shell.contactSuggestField() === 'to' &&
+              shell.contactSuggestions().length > 0
+            "
+            class="min-w-0 border-0 bg-transparent py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted/70"
+            [value]="shell.composeTo()"
+            (input)="onComposeTo($event)"
+            (keydown)="onComposeRecipientKey($event, 'to')"
+            (blur)="onComposeRecipientBlur()"
+            placeholder="name@company.com"
+          />
+          @if (!shell.composeShowCc()) {
+            <button
+              type="button"
+              class="cursor-pointer rounded-md border-0 bg-transparent px-1.5 py-1 text-[0.72rem] font-medium text-lm-accent hover:bg-lm-accent/10"
+              (click)="shell.showComposeCc()"
+            >
+              Cc
+            </button>
+          }
+        </label>
+        @if (
+          shell.contactSuggestField() === 'to' &&
+          shell.contactSuggestions().length
+        ) {
+          <ul
+            class="absolute top-full right-0 left-0 z-20 mt-0.5 max-h-48 overflow-auto rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
+            role="listbox"
+            aria-label="Suggested contacts from mail history"
           >
-            Cc
-          </button>
+            @for (
+              c of shell.contactSuggestions();
+              track c.email;
+              let i = $index
+            ) {
+              <li role="option" [attr.aria-selected]="shell.contactSuggestHighlight() === i">
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left hover:bg-lm-hover"
+                  [class.bg-lm-accent/15]="shell.contactSuggestHighlight() === i"
+                  (mousedown)="$event.preventDefault(); shell.pickContactSuggestion(c)"
+                >
+                  <span
+                    class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lm-accent/20 text-[0.7rem] font-semibold text-lm-accent"
+                    >{{ c.name.charAt(0).toUpperCase() }}</span
+                  >
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-medium text-lm-text">{{
+                      c.name
+                    }}</span>
+                    <span class="block truncate text-[0.72rem] text-lm-muted">{{
+                      c.email
+                    }}</span>
+                  </span>
+                </button>
+              </li>
+            }
+          </ul>
         }
-      </label>
+      </div>
 
       @if (shell.composeShowCc()) {
-        <label
-          class="grid grid-cols-[3.25rem_1fr] items-center gap-x-2 border-b border-lm-border/70 py-1.5 text-[0.8rem]"
-        >
-          <span class="text-lm-muted">Cc</span>
-          <input
-            type="text"
-            class="min-w-0 border-0 bg-transparent py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted/70"
-            [value]="shell.composeCc()"
-            (input)="onComposeCc($event)"
-            placeholder="optional@example.com"
-          />
-        </label>
+        <div class="relative border-b border-lm-border/70">
+          <label
+            class="grid grid-cols-[3.25rem_1fr] items-center gap-x-2 py-1.5 text-[0.8rem]"
+          >
+            <span class="text-lm-muted">Cc</span>
+            <input
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              class="min-w-0 border-0 bg-transparent py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted/70"
+              [value]="shell.composeCc()"
+              (input)="onComposeCc($event)"
+              (keydown)="onComposeRecipientKey($event, 'cc')"
+              (blur)="onComposeRecipientBlur()"
+              placeholder="optional@example.com"
+            />
+          </label>
+          @if (
+            shell.contactSuggestField() === 'cc' &&
+            shell.contactSuggestions().length
+          ) {
+            <ul
+              class="absolute top-full right-0 left-0 z-20 mt-0.5 max-h-48 overflow-auto rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
+              role="listbox"
+            >
+              @for (
+                c of shell.contactSuggestions();
+                track c.email;
+                let i = $index
+              ) {
+                <li role="option">
+                  <button
+                    type="button"
+                    class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left hover:bg-lm-hover"
+                    [class.bg-lm-accent/15]="shell.contactSuggestHighlight() === i"
+                    (mousedown)="$event.preventDefault(); shell.pickContactSuggestion(c)"
+                  >
+                    <span
+                      class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lm-accent/20 text-[0.7rem] font-semibold text-lm-accent"
+                      >{{ c.name.charAt(0).toUpperCase() }}</span
+                    >
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate text-sm font-medium">{{
+                        c.name
+                      }}</span>
+                      <span class="block truncate text-[0.72rem] text-lm-muted">{{
+                        c.email
+                      }}</span>
+                    </span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </div>
       }
 
       <label
@@ -972,6 +1064,37 @@ export class App implements OnInit {
 
   onComposeBody(event: Event): void {
     this.shell.setComposeBody((event.target as HTMLTextAreaElement).value);
+  }
+
+  /** Arrow keys / Enter / Escape for recipient typeahead. */
+  onComposeRecipientKey(event: KeyboardEvent, _field: 'to' | 'cc'): void {
+    const open =
+      this.shell.contactSuggestions().length > 0 &&
+      this.shell.contactSuggestField() != null;
+    if (!open) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.shell.moveContactHighlight(1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.shell.moveContactHighlight(-1);
+    } else if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault();
+      this.shell.pickContactSuggestion();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.shell.clearContactSuggestions();
+    } else if (event.key === 'Tab' && !event.shiftKey) {
+      event.preventDefault();
+      this.shell.pickContactSuggestion();
+    }
+  }
+
+  onComposeRecipientBlur(): void {
+    // Delay so mousedown on a suggestion can run first.
+    window.setTimeout(() => this.shell.clearContactSuggestions(), 150);
   }
 
   onAccentColor(event: Event): void {

@@ -76,6 +76,14 @@ export class UiShellService {
   readonly composeBody = signal('');
   /** Show Cc field in the compose window. */
   readonly composeShowCc = signal(false);
+  /** Typeahead from mail history (To or Cc field). */
+  readonly contactSuggestions = signal<
+    { email: string; name: string; hits: number }[]
+  >([]);
+  readonly contactSuggestField = signal<'to' | 'cc' | null>(null);
+  readonly contactSuggestHighlight = signal(0);
+  private contactSuggestTimer: ReturnType<typeof setTimeout> | null = null;
+  private contactSuggestSeq = 0;
   readonly searchQuery = signal('');
   readonly mailView = signal<MailView>('inbox');
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
@@ -680,6 +688,7 @@ export class UiShellService {
     ) {
       return;
     }
+    this.clearContactSuggestions();
     this.composeOpen.set(false);
   }
 
@@ -699,6 +708,7 @@ export class UiShellService {
     this.composeSubject.set('');
     this.composeBody.set('');
     this.composeShowCc.set(false);
+    this.clearContactSuggestions();
     this.composeOpen.set(false);
   }
 
@@ -712,15 +722,94 @@ export class UiShellService {
 
   setComposeTo(v: string): void {
     this.composeTo.set(v);
+    this.scheduleContactSuggest('to', v);
   }
   setComposeCc(v: string): void {
     this.composeCc.set(v);
+    this.scheduleContactSuggest('cc', v);
   }
   setComposeSubject(v: string): void {
     this.composeSubject.set(v);
   }
   setComposeBody(v: string): void {
     this.composeBody.set(v);
+  }
+
+  clearContactSuggestions(): void {
+    if (this.contactSuggestTimer) {
+      clearTimeout(this.contactSuggestTimer);
+      this.contactSuggestTimer = null;
+    }
+    this.contactSuggestions.set([]);
+    this.contactSuggestField.set(null);
+    this.contactSuggestHighlight.set(0);
+  }
+
+  /**
+   * Suggest recipients from addresses already seen in synced mail history.
+   * Uses the segment after the last comma so multi-recipient fields work.
+   */
+  private scheduleContactSuggest(field: 'to' | 'cc', raw: string): void {
+    if (this.contactSuggestTimer) clearTimeout(this.contactSuggestTimer);
+    const segment = raw.split(',').pop()?.trim() ?? '';
+    if (segment.length < 1) {
+      this.clearContactSuggestions();
+      return;
+    }
+    this.contactSuggestTimer = setTimeout(() => {
+      void this.runContactSuggest(field, segment);
+    }, 120);
+  }
+
+  private async runContactSuggest(
+    field: 'to' | 'cc',
+    segment: string,
+  ): Promise<void> {
+    if (!this.isConnected()) return;
+    const seq = ++this.contactSuggestSeq;
+    try {
+      const res = await this.api.suggestContacts(segment, 8);
+      if (seq !== this.contactSuggestSeq) return;
+      this.contactSuggestField.set(field);
+      this.contactSuggestions.set(res.contacts);
+      this.contactSuggestHighlight.set(0);
+    } catch {
+      if (seq === this.contactSuggestSeq) {
+        this.contactSuggestions.set([]);
+      }
+    }
+  }
+
+  moveContactHighlight(delta: number): void {
+    const list = this.contactSuggestions();
+    if (!list.length) return;
+    const next =
+      (this.contactSuggestHighlight() + delta + list.length) % list.length;
+    this.contactSuggestHighlight.set(next);
+  }
+
+  /** Apply highlighted or given contact into the active To/Cc field. */
+  pickContactSuggestion(contact?: {
+    email: string;
+    name: string;
+  }): void {
+    const field = this.contactSuggestField();
+    const list = this.contactSuggestions();
+    const chosen =
+      contact ?? list[this.contactSuggestHighlight()] ?? list[0] ?? null;
+    if (!field || !chosen) return;
+
+    const current = field === 'to' ? this.composeTo() : this.composeCc();
+    const parts = current.split(',');
+    parts[parts.length - 1] = ` ${chosen.email}`;
+    const next = parts
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .join(', ');
+
+    if (field === 'to') this.composeTo.set(next);
+    else this.composeCc.set(next);
+    this.clearContactSuggestions();
   }
 
   async sendCompose(): Promise<void> {
@@ -748,6 +837,7 @@ export class UiShellService {
       this.composeSubject.set('');
       this.composeBody.set('');
       this.composeShowCc.set(false);
+      this.clearContactSuggestions();
       this.composeOpen.set(false);
       this.statusMessage.set('Message sent');
     } catch (e) {

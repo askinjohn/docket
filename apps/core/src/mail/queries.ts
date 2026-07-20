@@ -151,3 +151,139 @@ function stripHtml(html: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+export interface ContactSuggestion {
+  email: string;
+  name: string;
+  /** How often this address appears in cached mail (higher = more relevant). */
+  hits: number;
+}
+
+const EMAIL_RE = /[\w.+-]+@[\w.-]+\.\w+/gi;
+
+/** Pull display name + email from a From/To header fragment. */
+function parseAddressToken(token: string): { name: string; email: string } | null {
+  const raw = token.trim();
+  if (!raw) return null;
+  const angle = raw.match(/^(?:"?([^"<]*)"?\s*)?<([^>]+@[^>]+)>$/);
+  if (angle) {
+    const email = angle[2]!.trim().toLowerCase();
+    const name = (angle[1] ?? '').trim().replace(/^["']|["']$/g, '');
+    return { email, name: name || email.split('@')[0] || email };
+  }
+  const bare = raw.match(/^[\w.+-]+@[\w.-]+\.\w+$/i);
+  if (bare) {
+    const email = bare[0].toLowerCase();
+    return { email, name: email.split('@')[0] || email };
+  }
+  // Fallback: first email-looking token in the string
+  const found = raw.match(EMAIL_RE);
+  if (found?.[0]) {
+    const email = found[0].toLowerCase();
+    return { email, name: email.split('@')[0] || email };
+  }
+  return null;
+}
+
+/**
+ * Contact suggestions from mail history already in SQLite
+ * (from_header / to_header on cached messages — no Gmail Contacts API).
+ */
+export function suggestContacts(query: string, limit = 8): ContactSuggestion[] {
+  const account = getActiveAccount();
+  if (!account) return [];
+
+  const q = query.trim().toLowerCase();
+  if (q.length < 1) return [];
+
+  const rows = getDb()
+    .prepare(
+      `SELECT from_header, to_header FROM messages
+       WHERE account_id = ?
+       ORDER BY internal_date DESC
+       LIMIT 800`,
+    )
+    .all(account.id) as { from_header: string; to_header: string }[];
+
+  const me = account.email.toLowerCase();
+  const map = new Map<string, ContactSuggestion>();
+
+  const ingest = (header: string) => {
+    if (!header) return;
+    // Split on commas outside of angle brackets (simple: split by ,)
+    for (const part of header.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)) {
+      const parsed = parseAddressToken(part);
+      if (!parsed) continue;
+      if (parsed.email === me) continue;
+      const existing = map.get(parsed.email);
+      if (existing) {
+        existing.hits += 1;
+        // Prefer a non-email-looking display name when we see one
+        if (
+          parsed.name &&
+          parsed.name.includes(' ') &&
+          !existing.name.includes(' ')
+        ) {
+          existing.name = parsed.name;
+        }
+      } else {
+        map.set(parsed.email, {
+          email: parsed.email,
+          name: parsed.name,
+          hits: 1,
+        });
+      }
+    }
+  };
+
+  for (const row of rows) {
+    ingest(row.from_header);
+    ingest(row.to_header);
+  }
+
+  // Also harvest thread-level from fields
+  const threadRows = getDb()
+    .prepare(
+      `SELECT from_name, from_email FROM threads
+       WHERE account_id = ?
+       ORDER BY last_message_at DESC
+       LIMIT 200`,
+    )
+    .all(account.id) as { from_name: string; from_email: string }[];
+
+  for (const t of threadRows) {
+    const email = (t.from_email || '').trim().toLowerCase();
+    if (!email || !email.includes('@') || email === me) continue;
+    const name = (t.from_name || '').trim() || email.split('@')[0] || email;
+    const existing = map.get(email);
+    if (existing) {
+      existing.hits += 1;
+      if (name && name.includes(' ') && !existing.name.includes(' ')) {
+        existing.name = name;
+      }
+    } else {
+      map.set(email, { email, name, hits: 1 });
+    }
+  }
+
+  const matches = [...map.values()].filter((c) => {
+    return (
+      c.email.includes(q) ||
+      c.name.toLowerCase().includes(q) ||
+      c.email.split('@')[0]?.includes(q)
+    );
+  });
+
+  matches.sort((a, b) => {
+    // Prefix match on email/local-part ranks higher
+    const aPref =
+      a.email.startsWith(q) || a.name.toLowerCase().startsWith(q) ? 1 : 0;
+    const bPref =
+      b.email.startsWith(q) || b.name.toLowerCase().startsWith(q) ? 1 : 0;
+    if (bPref !== aPref) return bPref - aPref;
+    if (b.hits !== a.hits) return b.hits - a.hits;
+    return a.email.localeCompare(b.email);
+  });
+
+  return matches.slice(0, Math.min(limit, 20));
+}

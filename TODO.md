@@ -24,6 +24,7 @@
 - [x] Undo archive (`z` / Undo button, ~8s window) + `POST /threads/:id/unarchive`
 - [x] Quiet background history sync every 60s while connected
 - [x] Compose window polish (From/Cc, docked card, discard confirm, ⌘↵ send)
+- [x] Recipient typeahead from local mail history (`GET /contacts/suggest`)
 
 ## Still thin / follow-ups
 
