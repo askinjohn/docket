@@ -34,66 +34,6 @@ export interface ShellThreadPreview {
   hasAttachments?: boolean;
 }
 
-const DEMO_THREADS: ShellThreadPreview[] = [
-  {
-    id: 'demo-1',
-    from: 'Alex Chen',
-    subject: 'Q3 deck + invoice for review',
-    snippet:
-      'Attached the latest deck and the invoice PDF. Can you reply with sign-off?',
-    time: '10:42',
-    unread: true,
-    hasAttachments: true,
-    messages: [
-      {
-        id: 'm1',
-        from: 'Alex Chen <alex@example.com>',
-        to: 'you@gmail.com',
-        time: 'Today 10:42',
-        body: `Hi —\n\nAttached the latest Q3 deck and the vendor invoice.\nCould you reply with a quick sign-off by EOD?\n\nThanks,\nAlex`,
-        attachments: [
-          {
-            id: 'a1',
-            name: 'Q3-Product-Review.pdf',
-            sizeLabel: '2.4 MB',
-            kind: 'pdf',
-          },
-          {
-            id: 'a2',
-            name: 'invoice-8841.pdf',
-            sizeLabel: '186 KB',
-            kind: 'pdf',
-          },
-          {
-            id: 'a3',
-            name: 'chart-preview.png',
-            sizeLabel: '420 KB',
-            kind: 'image',
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'demo-2',
-    from: 'Local Mail',
-    subject: 'Connect Gmail to load real mail',
-    snippet: 'Start the core, add OAuth credentials, then Connect Gmail.',
-    time: '—',
-    unread: false,
-    messages: [
-      {
-        id: 'm2',
-        from: 'Local Mail <system@local>',
-        to: 'you@gmail.com',
-        time: 'Demo',
-        body: 'Demo mode: core offline or not connected. See docs/GMAIL_SETUP.md.',
-        attachments: [],
-      },
-    ],
-  },
-];
-
 export type CoreStatus =
   | 'checking'
   | 'offline'
@@ -105,23 +45,19 @@ export type CoreStatus =
 export class UiShellService {
   private readonly api = inject(MailApiService);
 
-  readonly threads = signal<ShellThreadPreview[]>(DEMO_THREADS);
-  readonly selectedId = signal<string | null>(DEMO_THREADS[0]?.id ?? null);
+  readonly threads = signal<ShellThreadPreview[]>([]);
+  readonly selectedId = signal<string | null>(null);
   readonly detailLoading = signal(false);
   readonly listLoading = signal(false);
   readonly syncing = signal(false);
   readonly sending = signal(false);
   readonly statusMessage = signal<string | null>(null);
   readonly commandPaletteOpen = signal(false);
-  readonly replyOpen = signal(true);
+  readonly replyOpen = signal(false);
   readonly composeOpen = signal(false);
   readonly replyBody = signal('');
-  readonly composeAttachments = signal<
-    { id: string; name: string; sizeLabel: string }[]
-  >([]);
   readonly coreStatus = signal<CoreStatus>('checking');
   readonly accountEmail = signal<string | null>(null);
-  readonly usingDemo = signal(true);
   readonly phaseLabel = signal('Phase 1 — Core + Gmail');
 
   readonly selectedThread = computed(() => {
@@ -129,17 +65,32 @@ export class UiShellService {
     return this.threads().find((t) => t.id === id) ?? null;
   });
 
-  readonly coreOnline = computed(() => {
-    const s = this.coreStatus();
-    return (
-      s === 'online-connected' ||
-      s === 'online-disconnected' ||
-      s === 'misconfigured'
-    );
+  readonly isConnected = computed(
+    () => this.coreStatus() === 'online-connected',
+  );
+
+  readonly emptyInboxHint = computed(() => {
+    switch (this.coreStatus()) {
+      case 'checking':
+        return 'Checking connection…';
+      case 'offline':
+        return 'Core is offline. Start: cd apps/core && npm run dev';
+      case 'misconfigured':
+        return 'Add GOOGLE_CLIENT_ID and SECRET to apps/core/.env';
+      case 'online-disconnected':
+        return 'Connect Gmail to load your inbox.';
+      case 'online-connected':
+        return this.listLoading()
+          ? 'Loading…'
+          : 'Inbox is empty. Try Sync inbox.';
+      default:
+        return '';
+    }
   });
 
   async bootstrap(): Promise<void> {
     this.coreStatus.set('checking');
+    this.clearMailbox();
     try {
       const health = await this.api.health();
       if (!health.googleConfigured) {
@@ -147,9 +98,6 @@ export class UiShellService {
         this.statusMessage.set(
           'Core is up. Add GOOGLE_CLIENT_ID / SECRET in apps/core/.env — see docs/GMAIL_SETUP.md',
         );
-        this.usingDemo.set(true);
-        this.threads.set(DEMO_THREADS);
-        this.selectedId.set(DEMO_THREADS[0]?.id ?? null);
         return;
       }
       if (health.account?.email) {
@@ -159,20 +107,21 @@ export class UiShellService {
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
-        this.usingDemo.set(true);
-        this.threads.set(DEMO_THREADS);
-        this.selectedId.set(DEMO_THREADS[0]?.id ?? null);
-        this.statusMessage.set('Core online — connect Gmail to load your inbox.');
+        this.statusMessage.set(
+          'Core online — connect Gmail (opens your browser).',
+        );
       }
     } catch {
       this.coreStatus.set('offline');
-      this.usingDemo.set(true);
-      this.threads.set(DEMO_THREADS);
-      this.selectedId.set(DEMO_THREADS[0]?.id ?? null);
-      this.statusMessage.set(
-        'Core offline. Run: cd apps/core && npm run dev',
-      );
+      this.statusMessage.set('Core offline. Run: cd apps/core && npm run dev');
     }
+  }
+
+  private clearMailbox(): void {
+    this.threads.set([]);
+    this.selectedId.set(null);
+    this.replyOpen.set(false);
+    this.replyBody.set('');
   }
 
   async refreshThreads(): Promise<void> {
@@ -183,13 +132,10 @@ export class UiShellService {
         this.accountEmail.set(res.account.email);
       }
       if (!res.threads.length) {
-        this.usingDemo.set(false);
-        this.threads.set([]);
-        this.selectedId.set(null);
+        this.clearMailbox();
         this.statusMessage.set('Inbox empty locally — try Sync.');
         return;
       }
-      this.usingDemo.set(false);
       const mapped: ShellThreadPreview[] = res.threads.map((t: ApiThread) => ({
         id: t.id,
         from: t.from,
@@ -218,9 +164,6 @@ export class UiShellService {
   }
 
   async loadThreadDetail(id: string): Promise<void> {
-    if (this.usingDemo() || id.startsWith('demo-')) {
-      return;
-    }
     this.detailLoading.set(true);
     try {
       const detail: ApiThreadDetail = await this.api.getThread(id);
@@ -286,8 +229,8 @@ export class UiShellService {
   }
 
   /**
-   * Opens Google OAuth in the **system browser** (Proton Pass / extensions work).
-   * Polls core until tokens are saved, then refreshes inbox.
+   * Opens Google OAuth in the system browser.
+   * Polls core until tokens are saved, then syncs — no browser redirect into the app.
    */
   async connectGmail(): Promise<void> {
     if (this.coreStatus() === 'misconfigured') {
@@ -299,7 +242,7 @@ export class UiShellService {
 
     const url = this.api.gmailConnectUrl();
     this.statusMessage.set(
-      'Opening your browser for Google sign-in… Finish there, then return here.',
+      'Opening your browser for Google sign-in… Finish there, then return to this app.',
     );
 
     try {
@@ -316,7 +259,6 @@ export class UiShellService {
     void this.waitForGmailAuth();
   }
 
-  /** Poll /auth/status until connected or timeout. */
   private async waitForGmailAuth(): Promise<void> {
     const started = Date.now();
     const timeoutMs = 3 * 60 * 1000;
@@ -335,7 +277,7 @@ export class UiShellService {
           return;
         }
       } catch {
-        // core briefly unavailable — keep waiting
+        // keep waiting
       }
     }
 
@@ -360,7 +302,7 @@ export class UiShellService {
 
   async archiveSelected(): Promise<void> {
     const id = this.selectedId();
-    if (!id || this.usingDemo()) {
+    if (!id || !this.isConnected()) {
       this.statusMessage.set('Archive needs a connected Gmail inbox.');
       return;
     }
@@ -374,6 +316,7 @@ export class UiShellService {
         await this.selectThread(next.id);
       } else {
         this.selectedId.set(null);
+        this.replyOpen.set(false);
       }
       this.statusMessage.set('Archived');
     } catch (e) {
@@ -382,6 +325,7 @@ export class UiShellService {
   }
 
   openReply(): void {
+    if (!this.isConnected() || !this.selectedId()) return;
     this.replyOpen.set(true);
     this.composeOpen.set(false);
   }
@@ -391,6 +335,10 @@ export class UiShellService {
   }
 
   openCompose(): void {
+    if (!this.isConnected()) {
+      this.statusMessage.set('Connect Gmail first.');
+      return;
+    }
     this.composeOpen.set(true);
     this.commandPaletteOpen.set(false);
   }
@@ -403,18 +351,6 @@ export class UiShellService {
     this.replyBody.set(value);
   }
 
-  removeComposeAttachment(id: string): void {
-    this.composeAttachments.update((list) => list.filter((a) => a.id !== id));
-  }
-
-  addMockAttachment(): void {
-    const n = this.composeAttachments().length + 1;
-    this.composeAttachments.update((list) => [
-      ...list,
-      { id: `mock-${n}`, name: `attachment-${n}.zip`, sizeLabel: '1.1 MB' },
-    ]);
-  }
-
   async sendReply(): Promise<void> {
     const id = this.selectedId();
     const body = this.replyBody().trim();
@@ -422,19 +358,14 @@ export class UiShellService {
       this.statusMessage.set('Write a reply first.');
       return;
     }
-    if (!id || this.usingDemo()) {
-      this.statusMessage.set('Demo mode — connect Gmail to send.');
-      this.replyBody.set('');
-      this.composeAttachments.set([]);
-      this.replyOpen.set(false);
-      this.composeOpen.set(false);
+    if (!id || !this.isConnected()) {
+      this.statusMessage.set('Connect Gmail to send.');
       return;
     }
     this.sending.set(true);
     try {
       await this.api.reply(id, body);
       this.replyBody.set('');
-      this.composeAttachments.set([]);
       this.statusMessage.set('Sent');
       await this.loadThreadDetail(id);
     } catch (e) {
@@ -442,10 +373,6 @@ export class UiShellService {
     } finally {
       this.sending.set(false);
     }
-  }
-
-  mockSend(): void {
-    void this.sendReply();
   }
 
   toggleCommandPalette(): void {

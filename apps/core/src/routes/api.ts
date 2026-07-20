@@ -55,12 +55,18 @@ api.get('/auth/gmail/callback', async (c) => {
   const code = c.req.query('code');
   const err = c.req.query('error');
   if (err) {
-    return c.redirect(
-      `${appConfig.webOrigin}/?auth=error&reason=${encodeURIComponent(err)}`,
-    );
+    return c.html(authResultPage({
+      ok: false,
+      title: 'Sign-in cancelled',
+      body: String(err),
+    }));
   }
   if (!code) {
-    return c.json({ error: 'Missing code' }, 400);
+    return c.html(authResultPage({
+      ok: false,
+      title: 'Missing code',
+      body: 'Google did not return an authorization code.',
+    }), 400);
   }
   try {
     const account = await exchangeCode(code);
@@ -68,36 +74,58 @@ api.get('/auth/gmail/callback', async (c) => {
     void syncInbox({ maxThreads: 25 }).catch((e) =>
       console.error('[sync] initial sync failed', e),
     );
-    const target = `${appConfig.webOrigin}/?auth=ok&email=${encodeURIComponent(account.email)}`;
-    // HTML works for browser + Tauri (external OAuth browser): user can return to the app
-    return c.html(`<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"/>
-<meta http-equiv="refresh" content="0;url=${target}"/>
-<title>Local Mail — Connected</title>
-<style>
-  body{font-family:system-ui,sans-serif;background:#0b0d12;color:#e8ecf4;
-  display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
-  .card{max-width:28rem;padding:1.5rem;border:1px solid #2a3344;border-radius:12px;background:#12161f}
-  a{color:#7c6af7}
-</style></head>
-<body><div class="card">
-  <h1>Connected</h1>
-  <p>Signed in as <strong>${account.email}</strong>.</p>
-  <p>Return to the <strong>Local Mail</strong> app (Dock window) and click <em>Sync inbox</em> if mail does not appear yet.</p>
-  <p><a href="${target}">Open Local Mail UI</a></p>
-</div></body></html>`);
+    // Do NOT redirect to localhost UI — that opens a browser tab.
+    // The Dock/Tauri app polls /auth/status and will pick this up.
+    return c.html(authResultPage({
+      ok: true,
+      title: 'Connected',
+      body: `Signed in as <strong>${escapeHtml(account.email)}</strong>. You can close this tab and return to the <strong>Local Mail</strong> app — it will sync automatically.`,
+    }));
   } catch (e) {
     const message = e instanceof Error ? e.message : 'auth_failed';
     console.error('[auth] callback failed', e);
-    return c.html(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><title>Auth error</title></head>
-<body style="font-family:system-ui;background:#0b0d12;color:#e8ecf4;padding:2rem">
-<h1>Connection failed</h1><p>${message}</p>
-<p><a href="${appConfig.webOrigin}" style="color:#7c6af7">Back</a></p>
-</body></html>`, 400);
+    return c.html(authResultPage({
+      ok: false,
+      title: 'Connection failed',
+      body: escapeHtml(message),
+    }), 400);
   }
 });
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Success/error page for system-browser OAuth — never navigates away into the app origin. */
+function authResultPage(opts: { ok: boolean; title: string; body: string }): string {
+  const accent = opts.ok ? '#3dd6c6' : '#f07178';
+  return `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<title>Local Mail — ${opts.title}</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0b0d12;color:#e8ecf4;
+  display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+  .card{max-width:28rem;padding:1.5rem 1.75rem;border:1px solid #2a3344;border-radius:12px;background:#12161f}
+  h1{margin:0 0 .75rem;font-size:1.25rem;color:${accent}}
+  p{margin:.5rem 0;line-height:1.5;color:#8b95a8}
+  p strong{color:#e8ecf4}
+  .hint{font-size:.85rem;margin-top:1.25rem}
+  button{margin-top:1rem;padding:.5rem 1rem;border-radius:8px;border:0;background:#7c6af7;color:#fff;font:inherit;cursor:pointer}
+</style></head>
+<body><div class="card">
+  <h1>${opts.title}</h1>
+  <p>${opts.body}</p>
+  <p class="hint">This window can be closed. Local Mail stays in the Dock app.</p>
+  <button type="button" onclick="window.close()">Close tab</button>
+</div>
+<script>try{window.history.replaceState({},'',location.pathname)}catch(e){}</script>
+</body></html>`;
+}
 
 api.post('/sync', async (c) => {
   try {

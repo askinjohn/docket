@@ -37,7 +37,7 @@
       >
         Connect Gmail
       </button>
-      <p class="hint">Opens system browser (password managers work there).</p>
+      <p class="hint">Opens system browser. Close that tab when done — stay in this app.</p>
     }
 
     @if (shell.coreStatus() === 'online-connected') {
@@ -57,14 +57,16 @@
       <button type="button" class="nav-item" disabled title="Soon">Sent</button>
     </nav>
 
-    <button type="button" class="compose-btn secondary" (click)="shell.openCompose()">
+    <button
+      type="button"
+      class="compose-btn secondary"
+      (click)="shell.openCompose()"
+      [disabled]="!shell.isConnected()"
+    >
       Compose <kbd>c</kbd>
     </button>
 
     <div class="sidebar-footer">
-      @if (shell.usingDemo()) {
-        <p class="hint">Showing demo data until Gmail is connected &amp; synced.</p>
-      }
       <p class="hint mono">j/k · e archive · r reply · ⌘↵ send</p>
     </div>
   </aside>
@@ -72,9 +74,7 @@
   <section class="list-pane" aria-label="Thread list">
     <header class="pane-header">
       <h1>Inbox</h1>
-      @if (shell.usingDemo()) {
-        <span class="badge">Demo</span>
-      } @else {
+      @if (shell.isConnected()) {
         <span class="badge live">Live</span>
       }
       @if (shell.listLoading()) {
@@ -112,7 +112,7 @@
           </button>
         </li>
       } @empty {
-        <li class="empty-list">No threads yet. Sync after connecting Gmail.</li>
+        <li class="empty-list">{{ shell.emptyInboxHint() }}</li>
       }
     </ul>
   </section>
@@ -131,7 +131,7 @@
               class="btn ghost"
               (click)="shell.archiveSelected()"
               title="Archive (e)"
-              [disabled]="shell.usingDemo()"
+              [disabled]="!shell.isConnected()"
             >
               Archive
             </button>
@@ -193,43 +193,12 @@
             rows="5"
             [value]="shell.replyBody()"
             (input)="onReplyInput($event)"
-            [placeholder]="
-              shell.usingDemo()
-                ? 'Demo reply (not sent until Gmail is connected)'
-                : 'Write a reply…'
-            "
+            placeholder="Write a reply…"
           ></textarea>
-
-          @if (shell.composeAttachments().length) {
-            <ul class="attachment-list compose-atts">
-              @for (file of shell.composeAttachments(); track file.id) {
-                <li>
-                  <span class="attachment-chip outbound">
-                    <span class="att-icon" aria-hidden="true">📄</span>
-                    <span class="att-text">
-                      <span class="att-name">{{ file.name }}</span>
-                      <span class="att-size">{{ file.sizeLabel }}</span>
-                    </span>
-                    <button
-                      type="button"
-                      class="att-remove"
-                      (click)="shell.removeComposeAttachment(file.id)"
-                      [attr.aria-label]="'Remove ' + file.name"
-                    >
-                      ×
-                    </button>
-                  </span>
-                </li>
-              }
-            </ul>
-          }
 
           <div class="reply-toolbar">
             <div class="reply-toolbar-left">
-              <button type="button" class="btn ghost" (click)="shell.addMockAttachment()">
-                Attach
-              </button>
-              <span class="hint">{{ shell.usingDemo() ? 'Mock files' : 'Outbound attach: soon' }}</span>
+              <span class="hint">Attachments on send: soon</span>
             </div>
             <div class="reply-toolbar-right">
               <span class="hint mono">⌘↵</span>
@@ -237,20 +206,20 @@
                 type="button"
                 class="btn primary"
                 (click)="shell.sendReply()"
-                [disabled]="shell.sending()"
+                [disabled]="shell.sending() || !shell.isConnected()"
               >
                 {{ shell.sending() ? 'Sending…' : 'Send' }}
               </button>
             </div>
           </div>
         </footer>
-      } @else {
+      } @else if (shell.isConnected()) {
         <button type="button" class="reply-collapsed" (click)="shell.openReply()">
           Click to reply · <kbd>r</kbd>
         </button>
       }
     } @else {
-      <div class="empty">Select a thread</div>
+      <div class="empty">{{ shell.emptyInboxHint() }}</div>
     }
   </section>
 </div>
@@ -279,7 +248,7 @@
         ×
       </button>
     </header>
-    <p class="muted">New compose (not reply) lands fully in a later slice — use Reply for send today.</p>
+    <p class="muted">New compose (not reply) lands fully soon — use Reply on a thread to send today.</p>
     <div class="compose-fields">
       <label>
         <span>To</span>
