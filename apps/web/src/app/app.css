@@ -15,9 +15,13 @@
 .message-html-frame {
   display: block;
   width: 100%;
-  min-height: 8rem;
-  height: 16rem;
+  min-height: 12rem;
+  height: 20rem;
   border: 0;
   background: #fff;
   vertical-align: top;
+}
+
+.msg-incoming .message-html-frame {
+  min-height: 14rem;
 }

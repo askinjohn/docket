@@ -28,7 +28,8 @@ export class App implements OnInit {
     { cmd: 'ai-draft', label: 'AI draft reply', hint: '' },
     { cmd: 'inbox', label: 'Go to inbox', hint: '' },
     { cmd: 'starred', label: 'Go to starred', hint: '' },
-    { cmd: 'theme', label: 'Toggle theme', hint: '' },
+    { cmd: 'theme', label: 'Toggle dark / light', hint: '' },
+    { cmd: 'settings', label: 'Appearance settings', hint: '' },
     { cmd: 'add-account', label: 'Add Google account', hint: '' },
   ];
 
@@ -50,6 +51,10 @@ export class App implements OnInit {
 
   onComposeBody(event: Event): void {
     this.shell.setComposeBody((event.target as HTMLTextAreaElement).value);
+  }
+
+  onAccentColor(event: Event): void {
+    this.shell.setThemeAccent((event.target as HTMLInputElement).value);
   }
 
   iconFor(kind: string): string {
@@ -162,6 +167,7 @@ export class App implements OnInit {
     if (event.key === 'Escape') {
       this.shell.closeCommandPalette();
       this.shell.closeCompose();
+      this.shell.closeSettings();
       return;
     }
 

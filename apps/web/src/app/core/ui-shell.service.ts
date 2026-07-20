@@ -7,6 +7,15 @@ import {
   type PublicAccount,
 } from './mail-api.service';
 import { openExternalUrl } from './open-external';
+import {
+  ACCENT_PRESETS,
+  applyTheme,
+  loadThemePrefs,
+  saveThemePrefs,
+  type ThemeDensity,
+  type ThemeMode,
+  type ThemePrefs,
+} from './theme';
 
 export interface ShellAttachment {
   id: string;
@@ -66,7 +75,8 @@ export class UiShellService {
   readonly composeBody = signal('');
   readonly searchQuery = signal('');
   readonly mailView = signal<MailView>('inbox');
-  readonly themeMode = signal<'dark' | 'light'>('dark');
+  readonly theme = signal<ThemePrefs>(loadThemePrefs());
+  readonly settingsOpen = signal(false);
   readonly aiBusy = signal(false);
   readonly summaryBusy = signal(false);
   readonly coreStatus = signal<CoreStatus>('checking');
@@ -74,6 +84,7 @@ export class UiShellService {
   readonly accounts = signal<PublicAccount[]>([]);
   readonly activeAccountId = signal<number | null>(null);
   readonly phaseLabel = signal('Local Mail');
+  readonly accentPresets = ACCENT_PRESETS;
   private eventsAbort: AbortController | null = null;
 
   readonly selectedThread = computed(() => {
@@ -105,6 +116,7 @@ export class UiShellService {
   });
 
   async bootstrap(): Promise<void> {
+    applyTheme(this.theme());
     this.coreStatus.set('checking');
     this.clearMailbox();
     try {
@@ -204,10 +216,40 @@ export class UiShellService {
     await this.refreshThreads();
   }
 
+  openSettings(): void {
+    this.settingsOpen.set(true);
+    this.commandPaletteOpen.set(false);
+  }
+
+  closeSettings(): void {
+    this.settingsOpen.set(false);
+  }
+
+  setThemeMode(mode: ThemeMode): void {
+    const next = { ...this.theme(), mode };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
+  setThemeAccent(accent: string): void {
+    const next = { ...this.theme(), accent };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
+  setThemeDensity(density: ThemeDensity): void {
+    const next = { ...this.theme(), density };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
+  /** Cycle dark ↔ light (palette shortcut). */
   toggleTheme(): void {
-    const next = this.themeMode() === 'dark' ? 'light' : 'dark';
-    this.themeMode.set(next);
-    document.documentElement.dataset['theme'] = next;
+    const mode: ThemeMode = this.theme().mode === 'light' ? 'dark' : 'light';
+    this.setThemeMode(mode);
   }
 
   async refreshThreads(): Promise<void> {
@@ -627,6 +669,9 @@ export class UiShellService {
         break;
       case 'theme':
         this.toggleTheme();
+        break;
+      case 'settings':
+        this.openSettings();
         break;
       case 'inbox':
         void this.setMailView('inbox');

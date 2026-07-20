@@ -1,5 +1,5 @@
 <div
-  class="grid h-full max-h-dvh grid-cols-[220px_minmax(280px,360px)_1fr] overflow-hidden bg-lm-bg text-lm-text"
+  class="grid h-full max-h-dvh grid-cols-[200px_minmax(260px,320px)_minmax(0,1fr)] overflow-hidden bg-lm-bg text-lm-text"
 >
   <!-- Sidebar -->
   <aside
@@ -153,8 +153,17 @@
       >
     </button>
 
-    <div class="mt-auto px-2">
-      <p class="m-0 font-mono text-[0.72rem] leading-snug text-lm-muted">j/k · e archive · r reply · ⌘↵ send</p>
+    <div class="mt-auto flex flex-col gap-2 px-1">
+      <button
+        type="button"
+        class="w-full rounded-lg border border-lm-border px-3 py-2 text-left text-[0.82rem] text-lm-text hover:bg-lm-hover"
+        (click)="shell.openSettings()"
+      >
+        Appearance
+      </button>
+      <p class="m-0 px-1 font-mono text-[0.68rem] leading-snug text-lm-muted">
+        j/k · e · r · s · ⌘K · ⌘↵
+      </p>
     </div>
   </aside>
 
@@ -292,10 +301,10 @@
         </div>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-4">
+      <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5">
         @if (shell.detailLoading() && thread.messages.length === 0) {
           <div
-            class="mb-3 min-h-64 max-w-[min(44rem,100%)] animate-pulse rounded-xl border border-lm-border bg-lm-panel px-4 py-4"
+            class="mb-3 min-h-64 max-w-3xl animate-pulse rounded-2xl border border-lm-border bg-lm-panel px-5 py-4"
             aria-busy="true"
           >
             <div class="mb-4 h-4 w-1/3 rounded bg-lm-hover"></div>
@@ -306,86 +315,44 @@
           </div>
         }
         @for (msg of thread.messages; track msg.id) {
-          <div
-            class="mb-3 flex w-full"
-            [class.justify-end]="isMine(msg)"
-            [class.justify-start]="!isMine(msg)"
-          >
+          <!-- Incoming HTML: wide card. Your plain replies: right bubble. -->
+          @if (messageUsesHtml(msg) && !isMine(msg)) {
             <article
-              class="max-w-[min(36rem,92%)] overflow-hidden rounded-xl border px-4 py-4"
-              [class.border-lm-border]="!isMine(msg)"
-              [class.bg-lm-panel]="!isMine(msg)"
-              [class.border-lm-accent/40]="isMine(msg)"
-              [class.bg-lm-accent/15]="isMine(msg)"
-              [class.ml-auto]="isMine(msg)"
+              class="msg-incoming mb-4 w-full max-w-3xl overflow-hidden rounded-2xl border border-lm-border bg-lm-panel shadow-sm"
             >
-              <div
-                class="mb-3 flex min-w-0 justify-between gap-4"
-                [class.flex-row-reverse]="isMine(msg)"
-              >
-                <div class="min-w-0" [class.text-right]="isMine(msg)">
-                  <div class="text-sm font-semibold break-words">
-                    @if (isMine(msg)) {
-                      You
-                    } @else {
-                      {{ msg.from }}
-                    }
-                  </div>
-                  <div class="mt-0.5 text-xs text-lm-muted break-words">
-                    @if (isMine(msg)) {
-                      To: {{ msg.to }}
-                    } @else {
-                      To: {{ msg.to }}
-                    }
-                  </div>
+              <div class="flex items-start justify-between gap-4 border-b border-lm-border px-5 py-3">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold break-words text-lm-text">{{ msg.from }}</div>
+                  <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
                 </div>
                 <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
               </div>
-
-              @if (messageUsesHtml(msg)) {
-                <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
-                  <iframe
-                    class="message-html-frame"
-                    title="Message body"
-                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                    [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                    (load)="onHtmlFrameLoad($event)"
-                  ></iframe>
-                </div>
-              } @else {
-                <div
-                  class="max-w-full whitespace-pre-wrap text-[0.9rem] leading-relaxed break-words text-lm-text"
-                  [class.text-right]="isMine(msg)"
-                >
-                  {{ messagePlainText(msg) }}
-                </div>
-              }
-
+              <div class="message-html-wrap w-full overflow-hidden bg-white">
+                <iframe
+                  class="message-html-frame"
+                  title="Message body"
+                  sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                  [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                  (load)="onHtmlFrameLoad($event)"
+                ></iframe>
+              </div>
               @if (msg.attachments.length) {
-                <div class="mt-4 border-t border-lm-border pt-3.5" aria-label="Attachments">
+                <div class="border-t border-lm-border px-5 py-3" aria-label="Attachments">
                   <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
                     Attachments · {{ msg.attachments.length }}
                   </div>
-                  <ul
-                    class="m-0 flex list-none flex-wrap gap-2 p-0"
-                    [class.justify-end]="isMine(msg)"
-                  >
+                  <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
                     @for (file of msg.attachments; track file.id) {
                       <li>
                         <button
                           type="button"
-                          class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-inherit hover:border-lm-accent/45 hover:bg-lm-hover"
-                          [attr.data-kind]="file.kind"
+                          class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
                           (click)="shell.openAttachment(file.id)"
                           title="Download / open"
                         >
-                          <span class="text-base leading-none" aria-hidden="true">{{
-                            iconFor(file.kind)
-                          }}</span>
+                          <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
                           <span class="flex min-w-0 flex-col">
-                            <span class="max-w-40 truncate text-[0.78rem] font-semibold">{{
-                              file.name
-                            }}</span>
+                            <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
                             <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
                           </span>
                         </button>
@@ -395,7 +362,82 @@
                 </div>
               }
             </article>
-          </div>
+          } @else {
+            <div
+              class="mb-3 flex w-full"
+              [class.justify-end]="isMine(msg)"
+              [class.justify-start]="!isMine(msg)"
+            >
+              <article
+                class="overflow-hidden rounded-2xl border px-4 py-3.5 shadow-sm"
+                [class.max-w-xl]="isMine(msg)"
+                [class.max-w-3xl]="!isMine(msg)"
+                [class.w-full]="!isMine(msg)"
+                [class.border-lm-border]="!isMine(msg)"
+                [class.bg-lm-panel]="!isMine(msg)"
+                [class.border-lm-accent/45]="isMine(msg)"
+                [class.bg-lm-accent/15]="isMine(msg)"
+              >
+                <div
+                  class="mb-2 flex min-w-0 justify-between gap-4"
+                  [class.flex-row-reverse]="isMine(msg)"
+                >
+                  <div class="min-w-0" [class.text-right]="isMine(msg)">
+                    <div class="text-sm font-semibold break-words">
+                      @if (isMine(msg)) {
+                        You
+                      } @else {
+                        {{ msg.from }}
+                      }
+                    </div>
+                    <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
+                  </div>
+                  <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
+                </div>
+
+                @if (messageUsesHtml(msg)) {
+                  <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
+                    <iframe
+                      class="message-html-frame"
+                      title="Message body"
+                      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                      [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                      (load)="onHtmlFrameLoad($event)"
+                    ></iframe>
+                  </div>
+                } @else {
+                  <div
+                    class="max-w-full whitespace-pre-wrap text-[0.92rem] leading-relaxed break-words text-lm-text"
+                    [class.text-right]="isMine(msg)"
+                  >
+                    {{ messagePlainText(msg) }}
+                  </div>
+                }
+
+                @if (msg.attachments.length) {
+                  <div class="mt-3 border-t border-lm-border pt-3" aria-label="Attachments">
+                    <ul
+                      class="m-0 flex list-none flex-wrap gap-2 p-0"
+                      [class.justify-end]="isMine(msg)"
+                    >
+                      @for (file of msg.attachments; track file.id) {
+                        <li>
+                          <button
+                            type="button"
+                            class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
+                            (click)="shell.openAttachment(file.id)"
+                          >
+                            <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                            <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
+                          </button>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+              </article>
+            </div>
+          }
         } @empty {
           @if (!shell.detailLoading()) {
             <p class="py-2 text-sm text-lm-muted">No messages loaded for this thread.</p>
@@ -487,6 +529,93 @@
       }
     </div>
     <p class="mt-3 m-0 text-[0.72rem] text-lm-muted">Esc to close · ⌘K to open</p>
+  </div>
+}
+
+@if (shell.settingsOpen()) {
+  <div class="fixed inset-0 z-40 bg-black/50" (click)="shell.closeSettings()"></div>
+  <div
+    class="fixed top-1/2 left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lm-border bg-lm-panel p-5 shadow-2xl"
+    role="dialog"
+    aria-label="Appearance"
+    aria-modal="true"
+  >
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="m-0 text-base font-semibold">Appearance</h2>
+      <button
+        type="button"
+        class="cursor-pointer rounded border-0 bg-transparent px-2 text-lg text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        (click)="shell.closeSettings()"
+        aria-label="Close"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="mb-4">
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Mode</div>
+      <div class="flex gap-2">
+        @for (m of ['dark', 'light', 'system']; track m) {
+          <button
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-2 text-sm capitalize"
+            [class.border-lm-accent]="shell.theme().mode === m"
+            [class.bg-lm-accent/15]="shell.theme().mode === m"
+            [class.border-lm-border]="shell.theme().mode !== m"
+            (click)="shell.setThemeMode($any(m))"
+          >
+            {{ m }}
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Accent</div>
+      <div class="flex flex-wrap gap-2">
+        @for (a of shell.accentPresets; track a.id) {
+          <button
+            type="button"
+            class="h-8 w-8 rounded-full border-2 transition-transform hover:scale-110"
+            [class.border-lm-text]="shell.theme().accent === a.value"
+            [class.border-transparent]="shell.theme().accent !== a.value"
+            [style.background]="a.value"
+            [title]="a.label"
+            (click)="shell.setThemeAccent(a.value)"
+          ></button>
+        }
+        <label
+          class="flex h-8 cursor-pointer items-center gap-1 rounded-full border border-lm-border px-2 text-xs text-lm-muted hover:bg-lm-hover"
+          title="Custom color"
+        >
+          <input
+            type="color"
+            class="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+            [value]="shell.theme().accent"
+            (input)="onAccentColor($event)"
+          />
+          Custom
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Density</div>
+      <div class="flex gap-2">
+        @for (d of ['comfortable', 'compact']; track d) {
+          <button
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-2 text-sm capitalize"
+            [class.border-lm-accent]="shell.theme().density === d"
+            [class.bg-lm-accent/15]="shell.theme().density === d"
+            [class.border-lm-border]="shell.theme().density !== d"
+            (click)="shell.setThemeDensity($any(d))"
+          >
+            {{ d }}
+          </button>
+        }
+      </div>
+    </div>
   </div>
 }
 
