@@ -77,6 +77,7 @@ export class UiShellService {
   readonly mailView = signal<MailView>('inbox');
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
   readonly settingsOpen = signal(false);
+  readonly accountMenuOpen = signal(false);
   readonly aiBusy = signal(false);
   readonly summaryBusy = signal(false);
   readonly coreStatus = signal<CoreStatus>('checking');
@@ -218,11 +219,20 @@ export class UiShellService {
 
   openSettings(): void {
     this.settingsOpen.set(true);
+    this.accountMenuOpen.set(false);
     this.commandPaletteOpen.set(false);
   }
 
   closeSettings(): void {
     this.settingsOpen.set(false);
+  }
+
+  toggleAccountMenu(): void {
+    this.accountMenuOpen.update((v) => !v);
+  }
+
+  closeAccountMenu(): void {
+    this.accountMenuOpen.set(false);
   }
 
   setThemeMode(mode: ThemeMode): void {

@@ -12,169 +12,173 @@ import { UiShellService } from './core/ui-shell.service';
 <div
   class="grid h-full max-h-dvh grid-cols-[200px_minmax(260px,320px)_minmax(0,1fr)] overflow-hidden bg-lm-bg text-lm-text"
 >
-  <!-- Sidebar -->
+  <!-- Sidebar — minimal -->
   <aside
-    class="flex min-h-0 flex-col gap-5 border-r border-lm-border bg-lm-panel px-3.5 py-4"
+    class="relative flex min-h-0 flex-col border-r border-lm-border/80 bg-lm-panel px-3 py-4"
     aria-label="Navigation"
   >
-    <div class="flex items-center gap-2.5 px-1 py-1">
+    <!-- Brand -->
+    <div class="mb-6 flex items-center gap-2.5 px-2">
       <span
-        class="h-7 w-7 shrink-0 rounded-md bg-linear-to-br from-lm-accent to-lm-accent-2 shadow-[0_0_24px_color-mix(in_srgb,var(--color-lm-accent)_35%,transparent)]"
+        class="h-6 w-6 shrink-0 rounded-md bg-linear-to-br from-lm-accent to-lm-accent-2"
         aria-hidden="true"
       ></span>
-      <div>
-        <div class="text-[0.95rem] font-semibold tracking-tight">Local Mail</div>
-        <div class="text-[0.7rem] text-lm-muted">{{ shell.phaseLabel() }}</div>
-      </div>
+      <span class="text-sm font-semibold tracking-tight text-lm-text">Local Mail</span>
     </div>
 
-    <div
-      class="break-all rounded-lg border border-lm-border px-2.5 py-1.5 text-[0.72rem] leading-snug text-lm-muted data-[status=online-connected]:border-lm-accent-2/50 data-[status=online-connected]:text-lm-accent-2 data-[status=offline]:border-lm-danger/40 data-[status=offline]:text-lm-danger data-[status=misconfigured]:border-lm-danger/40 data-[status=misconfigured]:text-lm-danger"
-      [attr.data-status]="shell.coreStatus()"
-    >
-      @switch (shell.coreStatus()) {
-        @case ('checking') {
-          <span>Checking core…</span>
-        }
-        @case ('offline') {
-          <span>Core offline</span>
-        }
-        @case ('misconfigured') {
-          <span>OAuth not configured</span>
-        }
-        @case ('online-disconnected') {
-          <span>Core online</span>
-        }
-        @case ('online-connected') {
-          <span>{{ shell.accountEmail() }}</span>
-        }
-      }
-    </div>
-
-    @if (shell.accounts().length > 0) {
-      <div class="flex flex-col gap-1">
-        <label class="px-0.5 text-[0.65rem] tracking-wide text-lm-muted uppercase"
-          >Accounts</label
-        >
-        @for (acc of shell.accounts(); track acc.id) {
-          <button
-            type="button"
-            class="truncate rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-lm-hover"
-            [class.bg-lm-accent/20]="shell.activeAccountId() === acc.id"
-            [class.font-semibold]="shell.activeAccountId() === acc.id"
-            (click)="shell.switchAccount(acc.id)"
-            [title]="acc.email"
-          >
-            {{ acc.email }}
-          </button>
-        }
-        <button
-          type="button"
-          class="mt-1 rounded-lg border border-dashed border-lm-border px-2.5 py-1.5 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-          (click)="shell.addAccount()"
-        >
-          + Add account
-        </button>
-        @if (shell.activeAccountId() != null) {
-          <button
-            type="button"
-            class="rounded-lg px-2.5 py-1 text-left text-[0.7rem] text-lm-danger/90 hover:bg-lm-hover"
-            (click)="shell.removeActiveAccount()"
-          >
-            Remove active account
-          </button>
-        }
-      </div>
-    }
-
-    @if (shell.coreStatus() === 'online-disconnected' || shell.coreStatus() === 'misconfigured') {
+    <!-- Primary CTA -->
+    @if (shell.isConnected()) {
       <button
         type="button"
-        class="flex w-full items-center justify-between rounded-lg bg-linear-to-br from-lm-accent to-[color-mix(in_srgb,var(--color-lm-accent)_70%,#000)] px-3 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
-        (click)="shell.connectGmail()"
-        [disabled]="shell.coreStatus() === 'misconfigured'"
+        class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+        (click)="shell.openCompose()"
       >
-        Connect Gmail
+        Compose
       </button>
-      <p class="m-0 text-[0.72rem] leading-snug text-lm-muted">
-        Opens system browser. Close that tab when done — stay in this app.
+    } @else if (shell.coreStatus() === 'misconfigured') {
+      <p class="mb-4 px-2 text-xs leading-relaxed text-lm-muted">
+        Add OAuth keys in apps/core/.env
       </p>
-    }
-
-    @if (shell.coreStatus() === 'online-connected') {
+    } @else {
       <button
         type="button"
-        class="w-full cursor-pointer rounded-lg border border-lm-border bg-lm-hover px-3 py-2 text-[0.82rem] text-lm-text disabled:cursor-wait disabled:opacity-60"
-        (click)="shell.syncNow()"
-        [disabled]="shell.syncing()"
+        class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-45"
+        (click)="shell.connectGmail()"
+        [disabled]="shell.coreStatus() === 'offline' || shell.coreStatus() === 'checking'"
       >
-        {{ shell.syncing() ? 'Syncing…' : 'Sync inbox' }}
-      </button>
-      <button
-        type="button"
-        class="w-full cursor-pointer rounded-lg border border-lm-border px-3 py-2 text-[0.82rem] text-lm-text hover:bg-lm-hover disabled:opacity-50"
-        (click)="shell.runDailySummary()"
-        [disabled]="shell.summaryBusy()"
-      >
-        {{ shell.summaryBusy() ? 'Writing…' : 'Daily summary → notes' }}
+        Connect
       </button>
     }
 
-    <nav class="flex flex-col gap-1">
+    <!-- Nav only -->
+    <nav class="flex flex-col gap-0.5 px-0.5">
       <button
         type="button"
-        class="rounded-lg px-2.5 py-2 text-left text-sm"
-        [class.bg-lm-accent/20]="shell.mailView() === 'inbox'"
-        [class.font-semibold]="shell.mailView() === 'inbox'"
+        class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+        [class.bg-lm-hover]="shell.mailView() === 'inbox'"
+        [class.text-lm-text]="shell.mailView() === 'inbox'"
+        [class.font-medium]="shell.mailView() === 'inbox'"
+        [class.text-lm-muted]="shell.mailView() !== 'inbox'"
         (click)="shell.setMailView('inbox')"
       >
         Inbox
       </button>
       <button
         type="button"
-        class="rounded-lg px-2.5 py-2 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-        [class.bg-lm-accent/20]="shell.mailView() === 'starred'"
-        [class.font-semibold]="shell.mailView() === 'starred'"
+        class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+        [class.bg-lm-hover]="shell.mailView() === 'starred'"
         [class.text-lm-text]="shell.mailView() === 'starred'"
+        [class.font-medium]="shell.mailView() === 'starred'"
+        [class.text-lm-muted]="shell.mailView() !== 'starred'"
         (click)="shell.setMailView('starred')"
       >
         Starred
       </button>
       <button
         type="button"
-        class="rounded-lg px-2.5 py-2 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-        [class.bg-lm-accent/20]="shell.mailView() === 'all'"
-        [class.font-semibold]="shell.mailView() === 'all'"
+        class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+        [class.bg-lm-hover]="shell.mailView() === 'all'"
         [class.text-lm-text]="shell.mailView() === 'all'"
+        [class.font-medium]="shell.mailView() === 'all'"
+        [class.text-lm-muted]="shell.mailView() !== 'all'"
         (click)="shell.setMailView('all')"
       >
         All
       </button>
     </nav>
 
-    <button
-      type="button"
-      class="flex w-full items-center justify-between rounded-lg border border-lm-border bg-transparent px-3 py-2.5 text-sm font-medium text-lm-text disabled:cursor-not-allowed disabled:opacity-45"
-      (click)="shell.openCompose()"
-      [disabled]="!shell.isConnected()"
-    >
-      Compose
-      <kbd class="rounded border border-lm-border px-1.5 py-0.5 font-mono text-[0.7rem] text-lm-muted"
-        >c</kbd
-      >
-    </button>
+    <!-- Footer: account + tools (collapsed) -->
+    <div class="mt-auto space-y-1 border-t border-lm-border/60 pt-3">
+      @if (shell.isConnected()) {
+        <div class="relative">
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-lm-hover"
+            (click)="shell.toggleAccountMenu()"
+            [title]="shell.accountEmail() || ''"
+          >
+            <span
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lm-accent/25 text-[0.7rem] font-semibold text-lm-accent"
+            >
+              {{ accountInitial() }}
+            </span>
+            <span class="min-w-0 flex-1 truncate text-xs text-lm-muted">{{
+              shell.accountEmail()
+            }}</span>
+            <span class="text-[0.65rem] text-lm-muted">▾</span>
+          </button>
 
-    <div class="mt-auto flex flex-col gap-2 px-1">
+          @if (shell.accountMenuOpen()) {
+            <div
+              class="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
+            >
+              @if (shell.accounts().length > 1) {
+                @for (acc of shell.accounts(); track acc.id) {
+                  <button
+                    type="button"
+                    class="block w-full truncate px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                    [class.text-lm-accent]="shell.activeAccountId() === acc.id"
+                    (click)="shell.switchAccount(acc.id); shell.closeAccountMenu()"
+                  >
+                    {{ acc.email }}
+                  </button>
+                }
+                <div class="my-1 border-t border-lm-border"></div>
+              }
+              <button
+                type="button"
+                class="block w-full px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                (click)="shell.syncNow(); shell.closeAccountMenu()"
+              >
+                {{ shell.syncing() ? 'Syncing…' : 'Sync' }}
+              </button>
+              <button
+                type="button"
+                class="block w-full px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                (click)="shell.runDailySummary(); shell.closeAccountMenu()"
+              >
+                Daily summary
+              </button>
+              <button
+                type="button"
+                class="block w-full px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                (click)="shell.addAccount(); shell.closeAccountMenu()"
+              >
+                Add account
+              </button>
+              <button
+                type="button"
+                class="block w-full px-3 py-2 text-left text-xs text-lm-danger hover:bg-lm-hover"
+                (click)="shell.removeActiveAccount(); shell.closeAccountMenu()"
+              >
+                Remove account
+              </button>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="px-2 py-1 text-[0.7rem] text-lm-muted">
+          @switch (shell.coreStatus()) {
+            @case ('offline') {
+              Core offline
+            }
+            @case ('checking') {
+              Connecting…
+            }
+            @default {
+              Not connected
+            }
+          }
+        </div>
+      }
+
       <button
         type="button"
-        class="w-full rounded-lg border border-lm-border px-3 py-2 text-left text-[0.82rem] text-lm-text hover:bg-lm-hover"
+        class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
         (click)="shell.openSettings()"
       >
-        Appearance
+        Settings
       </button>
-      <p class="m-0 px-1 font-mono text-[0.68rem] leading-snug text-lm-muted">
-        j/k · e · r · s · ⌘K · ⌘↵
-      </p>
     </div>
   </aside>
 
@@ -776,6 +780,11 @@ export class App implements OnInit {
     this.shell.setThemeAccent((event.target as HTMLInputElement).value);
   }
 
+  accountInitial(): string {
+    const email = this.shell.accountEmail() || '?';
+    return email.charAt(0).toUpperCase();
+  }
+
   iconFor(kind: string): string {
     switch (kind) {
       case 'pdf':
@@ -887,6 +896,7 @@ export class App implements OnInit {
       this.shell.closeCommandPalette();
       this.shell.closeCompose();
       this.shell.closeSettings();
+      this.shell.closeAccountMenu();
       return;
     }
 
