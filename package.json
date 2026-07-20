@@ -14,6 +14,9 @@
     "core:dev": "npm --prefix apps/core run dev",
     "core:start": "npm --prefix apps/core start",
     "core:install": "npm --prefix apps/core install",
-    "install:all": "npm --prefix apps/web install && npm --prefix apps/core install"
+    "desktop:dev": "npm --prefix apps/desktop run dev",
+    "desktop:build": "npm --prefix apps/desktop run build",
+    "desktop:install": "npm --prefix apps/desktop install",
+    "install:all": "npm --prefix apps/web install && npm --prefix apps/core install && npm --prefix apps/desktop install"
   }
 }

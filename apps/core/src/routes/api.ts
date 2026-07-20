@@ -68,15 +68,34 @@ api.get('/auth/gmail/callback', async (c) => {
     void syncInbox({ maxThreads: 25 }).catch((e) =>
       console.error('[sync] initial sync failed', e),
     );
-    return c.redirect(
-      `${appConfig.webOrigin}/?auth=ok&email=${encodeURIComponent(account.email)}`,
-    );
+    const target = `${appConfig.webOrigin}/?auth=ok&email=${encodeURIComponent(account.email)}`;
+    // HTML works for browser + Tauri (external OAuth browser): user can return to the app
+    return c.html(`<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta http-equiv="refresh" content="0;url=${target}"/>
+<title>Local Mail — Connected</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#0b0d12;color:#e8ecf4;
+  display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+  .card{max-width:28rem;padding:1.5rem;border:1px solid #2a3344;border-radius:12px;background:#12161f}
+  a{color:#7c6af7}
+</style></head>
+<body><div class="card">
+  <h1>Connected</h1>
+  <p>Signed in as <strong>${account.email}</strong>.</p>
+  <p>Return to the <strong>Local Mail</strong> app (Dock window) and click <em>Sync inbox</em> if mail does not appear yet.</p>
+  <p><a href="${target}">Open Local Mail UI</a></p>
+</div></body></html>`);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'auth_failed';
     console.error('[auth] callback failed', e);
-    return c.redirect(
-      `${appConfig.webOrigin}/?auth=error&reason=${encodeURIComponent(message)}`,
-    );
+    return c.html(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>Auth error</title></head>
+<body style="font-family:system-ui;background:#0b0d12;color:#e8ecf4;padding:2rem">
+<h1>Connection failed</h1><p>${message}</p>
+<p><a href="${appConfig.webOrigin}" style="color:#7c6af7">Back</a></p>
+</body></html>`, 400);
   }
 });
 

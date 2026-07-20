@@ -1,0 +1,20 @@
+{
+  "name": "@local-mail/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local Mail — Tauri Dock shell (Angular UI + core sidecar)",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "info": "tauri info"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2"
+  }
+}

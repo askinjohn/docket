@@ -23,8 +23,9 @@ Read before large changes:
 
 | Path | Role |
 |------|------|
-| `apps/web/` | Angular 22 UI only |
-| `apps/core/` | Local backend (Phase 1+) |
+| `apps/web/` | Angular 22 UI (browser or Tauri webview) |
+| `apps/core/` | Local backend on 127.0.0.1 (Gmail, SQLite) |
+| `apps/desktop/` | Tauri 2 Dock shell — primary packaging target |
 | `docs/` | Architecture, decisions, planning artifacts |
 | Root `*.md` | Product, roadmap, TODO, this file |
 
@@ -41,6 +42,7 @@ Do **not** put Gmail tokens, API keys, or production secrets in the repo.
 5. **Gmail-only v1** — do not build multi-provider IMAP unless PRODUCT.md changes.  
 6. **Phase discipline** — do not implement Phase 4–5 AI/MCP features before Phase 1 mail works, unless the human explicitly overrides.  
 7. **Node engine** — develop with Node matching `.nvmrc` (≥ 22.22.3 for Angular 22).  
+8. **Desktop shell** — primary packaging is **Tauri 2** (`apps/desktop`). Do not introduce Electron unless PRODUCT.md changes. Browser + core remains a valid dev path.  
 
 ---
 

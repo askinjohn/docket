@@ -67,6 +67,13 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 ---
 
+## ADR-013 — Primary desktop shell is Tauri 2 (Dock app)
+
+- **Status:** Accepted (2026-07-20)
+- **Context:** User wants a real laptop Dock app; keep Angular UI and local core.
+- **Decision:** Ship/package via **Tauri 2** (`apps/desktop`). Dev loads Angular at `127.0.0.1:4200`; prod embeds `apps/web/dist/web/browser`. Core is spawned as a **sidecar** on `127.0.0.1:8787` if not already running. Browser + manual core remains valid for development.
+- **Consequences:** Need Rust toolchain for desktop builds. App Store is a later, harder path; notarized `.app` is the near-term distribute story.
+
 ## ADR-011 — Core runtime is Node 22 + TypeScript
 
 - **Status:** Accepted (2026-07-20)

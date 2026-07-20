@@ -1,6 +1,6 @@
 # Project status
 
-**Phase:** 1 — Core + Gmail (code ready; OAuth credentials needed)  
+**Phase:** 1 — Core + Gmail · **Shell: Tauri Dock app**  
 **As of:** 2026-07-20  
 
 ## Done
@@ -8,6 +8,7 @@
 - Phase 0 shell + planning
 - Core: Hono on `127.0.0.1:8787`, SQLite, Gmail OAuth/sync/archive/reply
 - Web: talks to core, Connect Gmail, Sync, live/demo modes
+- **Tauri 2** `apps/desktop` — native window, starts/reuses core
 - `docs/GMAIL_SETUP.md`
 
 ## In progress
@@ -25,12 +26,14 @@
 ## How to run
 
 ```bash
-# core
-cd apps/core && npm run dev
+# recommended — Dock window
+npm run desktop:dev
 
-# ui
-cd apps/web && npm start
+# or browser fallback
+npm run core:dev   # terminal 1
+npm run web:start  # terminal 2
 ```
 
-- UI: http://127.0.0.1:4200  
+- Dock: **Local Mail** window  
+- Browser UI: http://127.0.0.1:4200  
 - Health: http://127.0.0.1:8787/health

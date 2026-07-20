@@ -9,8 +9,9 @@ Local-first Gmail client for your laptop: **Angular 22** UI on `localhost`, a **
 ```
 local-mail/
 ├── apps/
-│   ├── web/          # Angular 22 UI (this is what you open in the browser)
-│   └── core/         # Local backend (Gmail, SQLite, AI, MCP) — Phase 1+
+│   ├── web/          # Angular 22 UI (browser or Tauri webview)
+│   ├── core/         # Local backend (Gmail, SQLite) on 127.0.0.1:8787
+│   └── desktop/      # Tauri 2 Dock shell (Mac first)
 ├── docs/             # Product plan, architecture, decisions
 ├── AGENTS.md         # Rules for AI coding agents (source of truth)
 ├── CLAUDE.md         # Claude / multi-agent entry
@@ -32,20 +33,29 @@ nvm use          # or install Node 22.23+
 
 ## Quick start
 
-**Needs Node ≥ 22.22.3** (`nvm use` from repo root).
+**Needs Node ≥ 22.22.3** (`nvm use` from repo root).  
+**Desktop also needs Rust** (`rustup`).
+
+### Option A — Dock app (Tauri) recommended
 
 ```bash
-# install
+npm run install:all
+# apps/core/.env with Google OAuth when ready (see docs/GMAIL_SETUP.md)
+npm run desktop:dev
+```
+
+Opens a **Local Mail** window, starts Angular + core as needed.
+
+### Option B — Browser + core (dev fallback)
+
+```bash
 npm run install:all
 
-# terminal 1 — local core
-cd apps/core
-cp .env.example .env   # add Google OAuth when ready
-npm run dev            # http://127.0.0.1:8787/health
+# terminal 1
+npm run core:dev       # http://127.0.0.1:8787/health
 
-# terminal 2 — UI
-cd apps/web
-npm start              # http://127.0.0.1:4200
+# terminal 2
+npm run web:start      # http://127.0.0.1:4200
 ```
 
 Without OAuth credentials the UI still runs with **demo** threads.  
@@ -54,10 +64,12 @@ To load real Gmail: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
 ## Scripts (from repo root)
 
 ```bash
-npm run core:dev     # Core API (watch)
-npm run web:start    # Angular dev server
-npm run web:build    # Production build of UI
-npm run web:test     # Unit tests
+npm run desktop:dev    # Tauri Dock app (dev)
+npm run desktop:build  # Native .app / installers
+npm run core:dev       # Core API only (watch)
+npm run web:start      # Angular only (browser)
+npm run web:build      # Production build of UI
+npm run web:test       # Unit tests
 ```
 
 ## Docs

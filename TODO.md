@@ -1,6 +1,6 @@
 # Active TODO — Local Mail
 
-**Current phase:** 1 — Core + Gmail (in progress)  
+**Current phase:** 1 — Core + Gmail (in progress) · **Desktop shell: Tauri**  
 **Updated:** 2026-07-20
 
 ---
@@ -9,6 +9,13 @@
 
 ### Phase 0
 - [x] Repo, Angular 22 shell, docs, rules
+
+### Desktop (Tauri)
+- [x] `apps/desktop` Tauri 2 shell (product name Local Mail)
+- [x] Angular as webview frontend (dev :4200 / prod dist)
+- [x] Auto-start core sidecar on :8787 (or reuse if running)
+- [x] ADR-013 + README desktop path
+- [x] `npm run desktop:dev`
 
 ### Phase 1 (built so far)
 - [x] Core HTTP server on `127.0.0.1:8787` (Hono)
