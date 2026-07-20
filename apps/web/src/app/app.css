@@ -1,4 +1,4 @@
-/* Host + HTML iframe: hide until height is measured to avoid half-size flash */
+/* Host height for Tauri/webview; iframe grows via JS after load */
 :host {
   display: block;
   height: 100dvh;
@@ -8,47 +8,16 @@
 }
 
 .message-html-wrap {
-  position: relative;
-  min-height: 8rem;
   background: #fff;
-}
-
-.message-html-wrap.is-sizing::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    #f3f4f6 0%,
-    #e5e7eb 50%,
-    #f3f4f6 100%
-  );
-  background-size: 200% 100%;
-  animation: lm-shimmer 1.1s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes lm-shimmer {
-  0% {
-    background-position: 100% 0;
-  }
-  100% {
-    background-position: -100% 0;
-  }
+  min-height: 8rem;
 }
 
 .message-html-frame {
   display: block;
   width: 100%;
-  height: 0;
-  min-height: 0;
+  min-height: 8rem;
+  height: 16rem;
   border: 0;
   background: #fff;
-  opacity: 0;
-  transition: opacity 0.12s ease;
   vertical-align: top;
-}
-
-.message-html-frame.is-ready {
-  opacity: 1;
 }

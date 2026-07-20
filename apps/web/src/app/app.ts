@@ -1,16 +1,13 @@
 import { Component, inject, OnInit } from '@angular/core';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 
-import {
-  formatPlainBody,
-  prefersHtml,
-  wrapEmailHtml,
-} from './core/email-body';
+import { formatPlainBody, prefersHtml } from './core/email-body';
+import { SafeSrcdocPipe } from './core/safe-srcdoc.pipe';
 import type { ShellMessage } from './core/ui-shell.service';
 import { UiShellService } from './core/ui-shell.service';
 
 @Component({
   selector: 'lm-root',
+  imports: [SafeSrcdocPipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
   host: {
@@ -19,7 +16,6 @@ import { UiShellService } from './core/ui-shell.service';
 })
 export class App implements OnInit {
   protected readonly shell = inject(UiShellService);
-  private readonly sanitizer = inject(DomSanitizer);
 
   ngOnInit(): void {
     void this.shell.bootstrap();
@@ -42,79 +38,54 @@ export class App implements OnInit {
     return prefersHtml(msg.bodyHtml);
   }
 
-  /** Safe srcdoc for sandboxed iframe (scripts stripped; no allow-scripts). */
-  messageHtmlSrcdoc(msg: ShellMessage): SafeHtml {
-    const doc = wrapEmailHtml(msg.bodyHtml || '');
-    return this.sanitizer.bypassSecurityTrustHtml(doc);
-  }
-
   messagePlainText(msg: ShellMessage): string {
     const raw = msg.body?.trim() ? msg.body : stripTags(msg.bodyHtml || '');
     return formatPlainBody(raw);
   }
 
-  /**
-   * Measure iframe content height *before* showing it to avoid half-size → full jump.
-   */
+  /** Grow iframe to content; keep visible (no opacity hide — that caused blank white). */
   onHtmlFrameLoad(event: Event): void {
     const iframe = event.target as HTMLIFrameElement;
-    const wrap = iframe.parentElement;
-    wrap?.classList.add('is-sizing');
-    iframe.classList.remove('is-ready');
-
     const measure = (): void => {
       try {
         const doc = iframe.contentDocument;
         if (!doc?.body) {
           iframe.style.height = '12rem';
-          iframe.classList.add('is-ready');
-          wrap?.classList.remove('is-sizing');
           return;
         }
-        // Prefer full document height; body alone is often short before layout settles
         const h = Math.max(
           doc.body.scrollHeight,
           doc.body.offsetHeight,
           doc.documentElement?.scrollHeight ?? 0,
           doc.documentElement?.offsetHeight ?? 0,
         );
-        iframe.style.height = `${Math.min(Math.max(h + 12, 64), 2400)}px`;
+        // Avoid 0-height blank frame
+        iframe.style.height = `${Math.min(Math.max(h + 16, 120), 2400)}px`;
       } catch {
-        iframe.style.height = '16rem';
+        iframe.style.height = '20rem';
       }
     };
 
-    const finish = (): void => {
-      measure();
-      iframe.classList.add('is-ready');
-      wrap?.classList.remove('is-sizing');
-    };
-
-    // Double rAF: wait for iframe document layout after load
+    measure();
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        finish();
-        // Images often load after first paint — remeasure without hiding again
-        try {
-          const doc = iframe.contentDocument;
-          if (!doc) return;
-          const remeasure = (): void => {
-            measure();
-          };
-          for (const img of Array.from(doc.images)) {
-            if (!img.complete) {
-              img.addEventListener('load', remeasure, { once: true });
-              img.addEventListener('error', remeasure, { once: true });
-            }
-          }
-          // Late layout (webfonts / nested tables)
-          window.setTimeout(remeasure, 100);
-          window.setTimeout(remeasure, 400);
-        } catch {
-          /* cross-origin or gone */
-        }
-      });
+      measure();
+      requestAnimationFrame(measure);
     });
+
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      for (const img of Array.from(doc.images)) {
+        if (!img.complete) {
+          img.addEventListener('load', measure, { once: true });
+          img.addEventListener('error', measure, { once: true });
+        }
+      }
+      window.setTimeout(measure, 150);
+      window.setTimeout(measure, 500);
+    } catch {
+      /* ignore */
+    }
   }
 
   onReplyInput(event: Event): void {

@@ -230,12 +230,12 @@
             </div>
 
             @if (messageUsesHtml(msg)) {
-              <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border">
+              <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
                 <iframe
                   class="message-html-frame"
                   title="Message body"
                   sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                  [srcdoc]="messageHtmlSrcdoc(msg)"
+                  [srcdoc]="msg.bodyHtml | safeSrcdoc"
                   (load)="onHtmlFrameLoad($event)"
                 ></iframe>
               </div>
