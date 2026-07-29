@@ -7,6 +7,10 @@
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
+    "setup": "bash ./setup.sh",
+    "up": "bash ./up.sh",
+    "start": "bash ./up.sh --browser",
+    "start:desktop": "bash ./up.sh --desktop",
     "web:start": "npm --prefix apps/web start -- --host 127.0.0.1 --port 4300",
     "web:build": "npm --prefix apps/web run build",
     "web:test": "npm --prefix apps/web test -- --watch=false",

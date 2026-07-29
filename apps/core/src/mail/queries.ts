@@ -44,14 +44,14 @@ export function listThreads(options?: {
     rows = getDb()
       .prepare(
         `SELECT * FROM threads WHERE account_id = ? AND starred = 1
-         ORDER BY last_message_at DESC LIMIT 100`,
+         ORDER BY last_message_at DESC LIMIT 250`,
       )
       .all(account.id) as ThreadRow[];
   } else if (view === 'all') {
     rows = getDb()
       .prepare(
         `SELECT * FROM threads WHERE account_id = ?
-         ORDER BY last_message_at DESC LIMIT 100`,
+         ORDER BY last_message_at DESC LIMIT 250`,
       )
       .all(account.id) as ThreadRow[];
   } else {
@@ -61,13 +61,13 @@ export function listThreads(options?: {
          WHERE account_id = ?
            AND (label_ids LIKE '%INBOX%' OR label_ids = '[]')
          ORDER BY last_message_at DESC
-         LIMIT 100`,
+         LIMIT 250`,
       )
       .all(account.id) as ThreadRow[];
     if (!rows.length) {
       rows = getDb()
         .prepare(
-          `SELECT * FROM threads WHERE account_id = ? ORDER BY last_message_at DESC LIMIT 100`,
+          `SELECT * FROM threads WHERE account_id = ? ORDER BY last_message_at DESC LIMIT 250`,
         )
         .all(account.id) as ThreadRow[];
     }

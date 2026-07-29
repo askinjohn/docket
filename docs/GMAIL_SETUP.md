@@ -1,6 +1,6 @@
 # Gmail OAuth setup (Phase 1)
 
-Local Mail talks to Gmail via the **Gmail API**. Tokens stay on your machine in SQLite under `~/.local-mail/`.
+Local Mail talks to Gmail via the **Gmail API**. Tokens stay on your machine under `~/.local-mail/` (or the OS keychain — see below).
 
 ## 1. Google Cloud project
 
@@ -55,11 +55,32 @@ cd apps/web && npm start
 - `gmail.send` — send replies  
 - `userinfo.email` — show connected address  
 
+## Token storage (configurable)
+
+After cloning, pick how OAuth tokens are stored in `apps/core/.env`:
+
+| `LOCAL_MAIL_TOKEN_STORE` | Where secrets live | When to use |
+|--------------------------|--------------------|-------------|
+| **`sqlite`** (default) | `access_token` / `refresh_token` columns in `mail.sqlite` | Easy first run, CI, quick dogfood |
+| **`keychain`** | macOS Keychain / Windows Credential Manager / libsecret via **keytar** | Daily driver; SQLite no longer holds refresh tokens |
+
+```bash
+# Recommended for personal Mac use
+LOCAL_MAIL_TOKEN_STORE=keychain
+cd apps/core && npm install keytar   # optionalDependency; native build
+```
+
+- Switching **sqlite → keychain**: next API use migrates existing tokens into the keychain and clears them from SQLite.  
+- Switching **keychain → sqlite**: re-connect Gmail (or tokens remain only in the keychain until re-auth writes to SQLite).  
+- `/health` reports `"tokenStore": "sqlite" | "keychain"`.
+
 ## Security
 
 - Core binds to **127.0.0.1** only  
 - Do not commit `.env` or `~/.local-mail/*.sqlite`  
+- Prefer `LOCAL_MAIL_TOKEN_STORE=keychain` so a copied DB is not a full Gmail session  
 - For personal use, keeping the app in **Testing** on the consent screen is fine with your test user  
+- Revoke access anytime: [Google Account → Third-party access](https://myaccount.google.com/permissions)
 
 ## Troubleshooting
 

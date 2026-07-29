@@ -31,46 +31,52 @@ cd local-mail
 nvm use          # or install Node 22.23+
 ```
 
-## Quick start
+## Quick start — one command
 
-**Needs Node ≥ 22.22.3** (`nvm use` from repo root).  
-**Desktop also needs Rust** (`rustup`).
-
-### Option A — Dock app (Tauri) recommended
+After clone, **one command** installs (if needed) and runs core + UI:
 
 ```bash
-npm run install:all
-# apps/core/.env with Google OAuth when ready (see docs/GMAIL_SETUP.md)
-npm run desktop:dev
+git clone <repo-url> local-mail
+cd local-mail
+nvm use                 # Node ≥ 22 (first time)
+chmod +x up.sh
+./up.sh                 # install deps → ensure .env → start core + browser
 ```
 
-Opens a **Local Mail** window, starts Angular + core as needed.
+That’s it. Opens **http://127.0.0.1:4300**. Press Ctrl+C to stop.
 
-### Option B — Browser + core (dev fallback)
+| Command | What it does |
+|---------|----------------|
+| `./up.sh` | Install (once) + start **core + browser** |
+| `./up.sh --desktop` | Install + start **core + Dock (Tauri)** |
+| `./up.sh --reinstall` | Force reinstall packages, then start |
+| `npm start` | Same as `./up.sh` |
+
+**OAuth:** if keys are missing, `./up.sh` **asks in the terminal** for Client ID + Secret and saves them to `apps/core/.env`.  
+Or non-interactive:
 
 ```bash
-npm run install:all
-
-# terminal 1
-npm run core:dev       # http://127.0.0.1:8787/health
-
-# terminal 2
-npm run web:start      # http://127.0.0.1:4300
+GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com \
+GOOGLE_CLIENT_SECRET=yyy \
+./up.sh
 ```
 
-Without OAuth credentials the UI still runs with **demo** threads.  
-To load real Gmail: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
+Gmail setup details: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md)  
+Redirect URI: `http://127.0.0.1:8787/auth/gmail/callback`
 
-## Scripts (from repo root)
+Then **Connect Gmail** in the app.
+
+### Other scripts
 
 ```bash
-npm run desktop:dev    # Tauri Dock app (dev)
-npm run desktop:build  # Native .app / installers
-npm run core:dev       # Core API only (watch)
-npm run web:start      # Angular only (browser)
-npm run web:build      # Production build of UI
-npm run web:test       # Unit tests
+./setup.sh             # optional interactive wizard (AI-style prompts)
+./start.sh             # start only (assumes already installed)
+./up.sh --desktop
+npm run desktop:build  # Local Mail.app + DMG (needs Rust)
+npm run web:test
 ```
+
+**Token storage:** `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (Mac).
 
 ## Docs
 

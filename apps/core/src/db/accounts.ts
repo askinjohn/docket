@@ -55,9 +55,20 @@ export function setActiveAccountId(
   return account;
 }
 
-export function deleteAccount(accountId: number, database: Db = getDb()): void {
+export async function deleteAccount(
+  accountId: number,
+  database: Db = getDb(),
+): Promise<void> {
   const account = getAccountById(accountId, database);
   if (!account) throw new Error('Account not found');
+
+  // Drop OS secrets first (no-op for sqlite store)
+  try {
+    const { getTokenStore } = await import('../secrets/token-store.js');
+    await getTokenStore().delete(accountId);
+  } catch (e) {
+    console.warn('[accounts] token store delete failed', e);
+  }
 
   // Cascade threads/messages via FK if we delete account — messages reference account
   database.prepare(`DELETE FROM threads WHERE account_id = ?`).run(accountId);

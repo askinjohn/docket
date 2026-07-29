@@ -26,12 +26,30 @@ const notesDir =
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(notesDir, { recursive: true });
 
+function parseTokenStore(
+  raw: string | undefined,
+): 'sqlite' | 'keychain' {
+  const v = (raw ?? 'sqlite').trim().toLowerCase();
+  if (v === 'keychain' || v === 'keytar' || v === 'os') return 'keychain';
+  if (v === 'sqlite' || v === 'db' || v === 'plaintext') return 'sqlite';
+  console.warn(
+    `[config] Unknown LOCAL_MAIL_TOKEN_STORE="${raw}" — using sqlite. Valid: sqlite | keychain`,
+  );
+  return 'sqlite';
+}
+
 export const appConfig = {
   host,
   port: Number(process.env.LOCAL_MAIL_CORE_PORT ?? 8787),
   dataDir,
   notesDir,
   dbPath: process.env.LOCAL_MAIL_DB_PATH ?? join(dataDir, 'mail.sqlite'),
+  /**
+   * Where OAuth access/refresh tokens live.
+   * - sqlite (default): columns on accounts — simple clone-and-run
+   * - keychain: OS secret store via keytar (recommended for daily use)
+   */
+  tokenStore: parseTokenStore(process.env.LOCAL_MAIL_TOKEN_STORE),
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',

@@ -61,12 +61,27 @@ export type CoreStatus =
   | 'online-connected'
   | 'misconfigured';
 
+/** Pending outbound file (base64) for compose / reply. */
+export interface PendingAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeLabel: string;
+  contentBase64: string;
+}
+
 @Service()
 export class UiShellService {
   private readonly api = inject(MailApiService);
 
   readonly threads = signal<ShellThreadPreview[]>([]);
+  /** Thread open in the reading pane (single focus). */
   readonly selectedId = signal<string | null>(null);
+  /**
+   * Multi-select set for bulk actions (⌘/Ctrl-click, Shift-range).
+   * Independent of selectedId until a bulk action runs.
+   */
+  readonly checkedIds = signal<ReadonlySet<string>>(new Set());
   readonly detailLoading = signal(false);
   readonly listLoading = signal(false);
   readonly syncing = signal(false);
@@ -82,6 +97,20 @@ export class UiShellService {
   readonly composeBody = signal('');
   /** Show Cc field in the compose window. */
   readonly composeShowCc = signal(false);
+  readonly composeAttachments = signal<PendingAttachment[]>([]);
+  readonly replyAttachments = signal<PendingAttachment[]>([]);
+  /** Gmail has another page of inbox after last full/more sync. */
+  readonly hasMoreMail = signal(false);
+  readonly loadingMore = signal(false);
+  /** Quiet top-up to keep ~LIST_TARGET rows in the viewport list. */
+  readonly listFilling = signal(false);
+  /** True while a Gmail search query is active (list is search results). */
+  readonly searchActive = signal(false);
+  readonly searching = signal(false);
+
+  /** Keep about this many threads in the list when Gmail still has more. */
+  private readonly listTarget = 100;
+  private listFillInFlight = false;
   /** Typeahead from mail history (To or Cc field). */
   readonly contactSuggestions = signal<
     { email: string; name: string; hits: number }[]
@@ -125,9 +154,13 @@ export class UiShellService {
     return this.threads().find((t) => t.id === id) ?? null;
   });
 
+  readonly checkedCount = computed(() => this.checkedIds().size);
+
   readonly isConnected = computed(
     () => this.coreStatus() === 'online-connected',
   );
+
+  private lastCheckedAnchor: string | null = null;
 
   readonly emptyInboxHint = computed(() => {
     switch (this.coreStatus()) {
@@ -186,13 +219,14 @@ export class UiShellService {
     }
   }
 
-  /** Quiet history sync every 60s so new mail lands without a manual Sync. */
+  /** Quiet history sync so new mail lands without a manual Sync. */
   private startBackgroundSync(): void {
     this.stopBackgroundSync();
+    // 30s is a better dogfood default than 60s for Notification Center
     this.bgSyncTimer = setInterval(() => {
       if (!this.isConnected() || this.syncing() || this.sending()) return;
       void this.quietSync();
-    }, 60_000);
+    }, 30_000);
   }
 
   private stopBackgroundSync(): void {
@@ -205,13 +239,35 @@ export class UiShellService {
   private async quietSync(): Promise<void> {
     try {
       const res = await this.api.sync(false);
-      if (res.synced > 0) {
+      if (res.hasMore != null) this.hasMoreMail.set(Boolean(res.hasMore));
+      // Notify from sync response (works even if SSE is disconnected)
+      this.ingestNewMailNotices(res.newMail);
+      if (res.synced > 0 || (res.newMail && res.newMail.length > 0)) {
         await this.refreshThreads();
-        // Per-message banners come from mail.new SSE; keep status subtle.
-        this.statusMessage.set(`Background sync: ${res.synced} update(s)`);
       }
     } catch {
       /* stay quiet on background failures */
+    }
+  }
+
+  /** Deduped path used by SSE and by sync HTTP response. */
+  private ingestNewMailNotices(
+    items:
+      | {
+          threadId: string;
+          from: string;
+          subject: string;
+        }[]
+      | undefined
+      | null,
+  ): void {
+    if (!items?.length) return;
+    for (const m of items) {
+      this.queueNewMailNotification({
+        threadId: m.threadId,
+        from: m.from,
+        subject: m.subject,
+      });
     }
   }
 
@@ -229,11 +285,21 @@ export class UiShellService {
     onNotifyOpenThread((threadId) => {
       void this.selectThread(threadId);
     });
+    void this.runEventStreamLoop(this.eventsAbort.signal);
+  }
+
+  /** Keep SSE alive; reconnect after drops so mail.new is not lost. */
+  private async runEventStreamLoop(signal: AbortSignal): Promise<void> {
     const url = `${this.api.baseUrl}/events`;
-    void (async () => {
+    let delayMs = 1000;
+    while (!signal.aborted) {
       try {
-        const res = await fetch(url, { signal: this.eventsAbort!.signal });
-        if (!res.ok || !res.body) return;
+        const res = await fetch(url, { signal });
+        if (!res.ok || !res.body) {
+          throw new Error(`events HTTP ${res.status}`);
+        }
+        delayMs = 1000;
+        console.info('[events] SSE connected');
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = '';
@@ -247,10 +313,14 @@ export class UiShellService {
             this.handleSseBlock(block);
           }
         }
-      } catch {
-        /* aborted or offline */
+        console.warn('[events] SSE ended — reconnecting');
+      } catch (e) {
+        if (signal.aborted) return;
+        console.warn('[events] SSE error — reconnecting', e);
       }
-    })();
+      await new Promise((r) => setTimeout(r, delayMs));
+      delayMs = Math.min(delayMs * 1.5, 15_000);
+    }
   }
 
   private handleSseBlock(block: string): void {
@@ -272,11 +342,14 @@ export class UiShellService {
     const type = (eventName || (payload['type'] as string) || '') as string;
 
     if (type === 'mail.new') {
-      this.queueNewMailNotification({
-        threadId: String(payload['threadId'] ?? ''),
-        from: String(payload['from'] ?? 'New mail'),
-        subject: String(payload['subject'] ?? '(no subject)'),
-      });
+      console.info('[events] mail.new', payload['from'], payload['subject']);
+      this.ingestNewMailNotices([
+        {
+          threadId: String(payload['threadId'] ?? ''),
+          from: String(payload['from'] ?? 'New mail'),
+          subject: String(payload['subject'] ?? '(no subject)'),
+        },
+      ]);
       void this.refreshThreads();
       return;
     }
@@ -292,8 +365,13 @@ export class UiShellService {
     subject: string;
   }): void {
     if (!item.threadId) return;
-    // Don't notify if user is already reading that thread
-    if (this.selectedId() === item.threadId) return;
+    // Still notify if you're reading another thread; only skip exact same thread
+    if (this.selectedId() === item.threadId) {
+      console.info('[notify] skip — already viewing thread', item.threadId);
+      return;
+    }
+    // Dedup same thread if SSE + HTTP both deliver
+    if (this.pendingNewMail.some((p) => p.threadId === item.threadId)) return;
 
     this.pendingNewMail.push(item);
     if (this.newMailFlushTimer) clearTimeout(this.newMailFlushTimer);
@@ -304,11 +382,19 @@ export class UiShellService {
   }
 
   private async flushNewMailNotifications(): Promise<void> {
-    const batch = this.pendingNewMail.splice(0, this.pendingNewMail.length);
-    if (!batch.length) return;
+    const raw = this.pendingNewMail.splice(0, this.pendingNewMail.length);
+    if (!raw.length) return;
+    // One notice per thread
+    const seen = new Set<string>();
+    const batch = raw.filter((m) => {
+      if (seen.has(m.threadId)) return false;
+      seen.add(m.threadId);
+      return true;
+    });
 
     if (batch.length === 1) {
       const m = batch[0]!;
+      console.info('[notify] show', m.from, m.subject);
       await showNotification({
         title: m.from,
         body: m.subject,
@@ -319,6 +405,7 @@ export class UiShellService {
 
     // Multiple arrivals: one summary + open first
     const first = batch[0]!;
+    console.info('[notify] show batch', batch.length);
     await showNotification({
       title: `${batch.length} new messages`,
       body: batch
@@ -329,8 +416,40 @@ export class UiShellService {
     });
   }
 
+  /** Dev / Settings: verify Notification Center without waiting for mail. */
+  async testNotification(): Promise<void> {
+    await requestNotifyPermission();
+    await showNotification({
+      title: 'Local Mail',
+      body: 'Test notification — if you see this, macOS notify works.',
+      threadId: this.selectedId() ?? undefined,
+    });
+    this.statusMessage.set('Test notification sent (check Notification Center)');
+  }
+
   private requestNotifyPermission(): void {
-    void requestNotifyPermission();
+    void (async () => {
+      await requestNotifyPermission();
+      // Dev builds often don't appear under Settings until the first real send.
+      // Surface a one-shot hint so users know what to look for.
+      try {
+        const isTauri = Boolean(
+          (window as unknown as { __TAURI_INTERNALS__?: unknown })
+            .__TAURI_INTERNALS__,
+        );
+        if (!isTauri) {
+          console.info(
+            '[notify] Browser mode — Notifications appear under Chrome/Safari, not “Local Mail”. Use npm run desktop:dev for a Dock app entry.',
+          );
+          return;
+        }
+        console.info(
+          '[notify] Dock mode — after Test notification, check System Settings → Notifications for “Local Mail” or “local-mail”.',
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
   }
 
   private notify(title: string, body: string, threadId?: string): void {
@@ -340,20 +459,72 @@ export class UiShellService {
   private clearMailbox(): void {
     this.threads.set([]);
     this.selectedId.set(null);
+    this.clearChecked();
     this.replyOpen.set(false);
     this.replyBody.set('');
   }
 
   setSearchQuery(q: string): void {
     this.searchQuery.set(q);
+    if (!q.trim()) {
+      this.searchActive.set(false);
+    }
   }
 
-  async runSearch(): Promise<void> {
+  /** Clear search and return to normal inbox listing. */
+  async clearSearch(): Promise<void> {
+    this.searchQuery.set('');
+    this.searchActive.set(false);
     await this.refreshThreads();
+  }
+
+  /**
+   * Search: hit Gmail with the query (operators OK), cache hits, show locally.
+   * Empty query → local list only.
+   */
+  async runSearch(): Promise<void> {
+    const q = this.searchQuery().trim();
+    if (!q) {
+      this.searchActive.set(false);
+      await this.refreshThreads();
+      return;
+    }
+    if (!this.isConnected()) {
+      // Offline: filter whatever is already cached
+      this.searchActive.set(true);
+      await this.refreshThreads();
+      return;
+    }
+
+    this.searching.set(true);
+    this.statusMessage.set(`Searching Gmail for “${q}”…`);
+    try {
+      const res = await this.api.searchGmail(q, { maxResults: 40 });
+      this.searchActive.set(true);
+      this.hasMoreMail.set(Boolean(res.hasMore));
+      this.statusMessage.set(
+        res.synced > 0
+          ? `Found ${res.synced} thread(s) for “${res.query}”`
+          : `No Gmail matches for “${res.query}”`,
+      );
+      await this.refreshThreads();
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Search failed');
+      // Fall back to local filter
+      this.searchActive.set(true);
+      await this.refreshThreads();
+    } finally {
+      this.searching.set(false);
+    }
   }
 
   async setMailView(view: MailView): Promise<void> {
     this.mailView.set(view);
+    // Leaving search when switching primary views keeps UX clear
+    if (this.searchActive()) {
+      this.searchQuery.set('');
+      this.searchActive.set(false);
+    }
     await this.refreshThreads();
   }
 
@@ -402,46 +573,82 @@ export class UiShellService {
     this.setThemeMode(mode);
   }
 
-  async refreshThreads(): Promise<void> {
+  async refreshThreads(opts?: { skipFill?: boolean }): Promise<void> {
     this.listLoading.set(true);
     try {
       const res = await this.api.listThreads({
         q: this.searchQuery() || undefined,
-        view: this.mailView(),
+        // Search results can include non-inbox threads
+        view: this.searchActive() && this.searchQuery().trim() ? 'all' : this.mailView(),
       });
       if (res.account?.email) {
         this.accountEmail.set(res.account.email);
       }
+      // Prefer server paging flags when present
+      if (this.searchActive() && res.searchHasMore != null) {
+        this.hasMoreMail.set(Boolean(res.searchHasMore));
+      } else if (!this.searchActive() && res.inboxHasMore != null) {
+        this.hasMoreMail.set(Boolean(res.inboxHasMore));
+      }
       if (!res.threads.length) {
         this.clearMailbox();
         void setDockBadge(0);
-        this.statusMessage.set(
-          this.searchQuery()
-            ? 'No matches.'
-            : 'Inbox empty locally — try Sync.',
-        );
+        if (!this.statusMessage()?.startsWith('Found') && !this.statusMessage()?.startsWith('No Gmail')) {
+          this.statusMessage.set(
+            this.searchQuery()
+              ? 'No matches in cache — try Enter to search Gmail.'
+              : 'Inbox empty locally — try Sync.',
+          );
+        }
         return;
       }
-      const mapped: ShellThreadPreview[] = res.threads.map((t: ApiThread) => ({
-        id: t.id,
-        from: t.from,
-        subject: t.subject,
-        snippet: t.snippet,
-        time: t.time,
-        unread: t.unread,
-        starred: t.starred,
-        hasAttachments: t.hasAttachments,
-        messages: [],
-      }));
+      // Keep already-loaded message bodies — list refresh used to wipe them to []
+      // and race with detail load ("No messages loaded for this thread").
+      const prevById = new Map(this.threads().map((t) => [t.id, t]));
+      const mapped: ShellThreadPreview[] = res.threads.map((t: ApiThread) => {
+        const prev = prevById.get(t.id);
+        return {
+          id: t.id,
+          from: t.from,
+          subject: t.subject,
+          snippet: t.snippet,
+          time: t.time,
+          unread: t.unread,
+          starred: t.starred,
+          hasAttachments: t.hasAttachments,
+          messages: prev?.messages?.length ? prev.messages : [],
+        };
+      });
       this.threads.set(mapped);
+      // Drop checks that are no longer in the list
+      if (this.checkedIds().size) {
+        const alive = new Set(mapped.map((t) => t.id));
+        const next = new Set([...this.checkedIds()].filter((id) => alive.has(id)));
+        if (next.size !== this.checkedIds().size) this.checkedIds.set(next);
+      }
       void setDockBadge(mapped.filter((t) => t.unread).length);
       const keep = mapped.find((t) => t.id === this.selectedId());
       const nextId = keep?.id ?? mapped[0]?.id ?? null;
       this.selectedId.set(nextId);
+      // Top up list after archive / thin cache (async, non-blocking for selection)
+      if (!opts?.skipFill) {
+        void this.ensureListFilled();
+      }
       if (nextId) {
         await this.loadThreadDetail(nextId);
       }
-      this.statusMessage.set(null);
+      // Don't clobber archive undo / search result banners
+      if (!this.undoAvailable() && !this.listFilling()) {
+        const msg = this.statusMessage();
+        if (
+          msg &&
+          (msg.startsWith('Syncing') ||
+            msg.startsWith('Loading') ||
+            msg === 'Restoring…')
+        ) {
+          this.statusMessage.set(null);
+        }
+      }
     } catch (e) {
       this.statusMessage.set(
         e instanceof Error ? e.message : 'Failed to load threads',
@@ -451,10 +658,16 @@ export class UiShellService {
     }
   }
 
+  private detailLoadSeq = 0;
+
   async loadThreadDetail(id: string): Promise<void> {
+    const seq = ++this.detailLoadSeq;
     this.detailLoading.set(true);
     try {
       const detail: ApiThreadDetail = await this.api.getThread(id);
+      // Ignore stale responses if user clicked another thread
+      if (seq !== this.detailLoadSeq || this.selectedId() !== id) return;
+
       this.threads.update((list) =>
         list.map((t) =>
           t.id === id
@@ -483,12 +696,20 @@ export class UiShellService {
           list.map((t) => (t.id === id ? { ...t, unread: false } : t)),
         );
       }
+      if (!detail.messages.length) {
+        this.statusMessage.set(
+          'No messages in cache for this thread — try Sync',
+        );
+      }
     } catch (e) {
+      if (seq !== this.detailLoadSeq) return;
       this.statusMessage.set(
         e instanceof Error ? e.message : 'Failed to load thread',
       );
     } finally {
-      this.detailLoading.set(false);
+      if (seq === this.detailLoadSeq) {
+        this.detailLoading.set(false);
+      }
     }
   }
 
@@ -499,6 +720,176 @@ export class UiShellService {
       list.map((t) => (t.id === id ? { ...t, unread: false } : t)),
     );
     await this.loadThreadDetail(id);
+  }
+
+  isChecked(id: string): boolean {
+    return this.checkedIds().has(id);
+  }
+
+  clearChecked(): void {
+    this.checkedIds.set(new Set());
+    this.lastCheckedAnchor = null;
+  }
+
+  /** Select every thread currently in the list. */
+  selectAllVisible(): void {
+    this.checkedIds.set(new Set(this.threads().map((t) => t.id)));
+    const list = this.threads();
+    this.lastCheckedAnchor = list[list.length - 1]?.id ?? null;
+  }
+
+  /**
+   * Thread list click with multi-select modifiers.
+   * - plain: open thread (and clear multi-select)
+   * - ⌘/Ctrl: toggle check without leaving current reading focus
+   * - Shift: range check from last anchor
+   */
+  async onThreadListClick(
+    id: string,
+    event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean },
+  ): Promise<void> {
+    const multi = event.metaKey || event.ctrlKey;
+    const range = event.shiftKey;
+
+    if (range && this.lastCheckedAnchor) {
+      const list = this.threads();
+      const a = list.findIndex((t) => t.id === this.lastCheckedAnchor);
+      const b = list.findIndex((t) => t.id === id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        const next = new Set(this.checkedIds());
+        for (let i = lo; i <= hi; i++) {
+          next.add(list[i]!.id);
+        }
+        this.checkedIds.set(next);
+        this.lastCheckedAnchor = id;
+        // Also focus the end of the range
+        await this.selectThread(id);
+        return;
+      }
+    }
+
+    if (multi) {
+      const next = new Set(this.checkedIds());
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      this.checkedIds.set(next);
+      this.lastCheckedAnchor = id;
+      // Don't switch reading pane on pure multi-toggle unless nothing focused
+      if (!this.selectedId()) await this.selectThread(id);
+      return;
+    }
+
+    // Plain click: single focus + clear multi
+    this.clearChecked();
+    this.lastCheckedAnchor = id;
+    await this.selectThread(id);
+  }
+
+  /** Archive every checked thread, or the focused one if none checked. */
+  async archiveSelected(): Promise<void> {
+    const checked = [...this.checkedIds()];
+    if (checked.length > 1) {
+      await this.archiveMany(checked);
+      return;
+    }
+    if (checked.length === 1) {
+      // Treat single check as the target
+      this.selectedId.set(checked[0]!);
+      this.clearChecked();
+    }
+    await this.archiveFocusedOnly();
+  }
+
+  private async archiveMany(ids: string[]): Promise<void> {
+    if (!this.isConnected() || !ids.length) return;
+    const idSet = new Set(ids);
+    const list = this.threads();
+    const remaining = list.filter((t) => !idSet.has(t.id));
+    const nextFocus =
+      remaining.find((t) => t.id === this.selectedId())?.id ??
+      remaining[0]?.id ??
+      null;
+
+    // Optimistic remove
+    this.threads.set(remaining);
+    this.clearChecked();
+    this.clearArchiveUndo(); // bulk: no single-thread undo for now
+    if (nextFocus) void this.selectThread(nextFocus);
+    else {
+      this.selectedId.set(null);
+      this.replyOpen.set(false);
+    }
+    this.statusMessage.set(`Archiving ${ids.length}…`);
+
+    let ok = 0;
+    let fail = 0;
+    for (const id of ids) {
+      try {
+        await this.api.archive(id);
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    this.statusMessage.set(
+      fail
+        ? `Archived ${ok}, failed ${fail}`
+        : `Archived ${ok} thread${ok === 1 ? '' : 's'}`,
+    );
+    void this.ensureListFilled();
+    if (fail) await this.refreshThreads();
+  }
+
+  private async archiveFocusedOnly(): Promise<void> {
+    const id = this.selectedId();
+    if (!id || !this.isConnected()) {
+      this.statusMessage.set('Archive needs a connected Gmail inbox.');
+      return;
+    }
+    const list = this.threads();
+    const idx = list.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    const removed = list[idx]!;
+
+    this.clearArchiveUndo();
+
+    // Optimistic remove + jump to next
+    const next = list[idx + 1] ?? list[idx - 1] ?? null;
+    this.threads.update((ts) => ts.filter((t) => t.id !== id));
+    // Drop from multi-select if present
+    if (this.checkedIds().has(id)) {
+      const c = new Set(this.checkedIds());
+      c.delete(id);
+      this.checkedIds.set(c);
+    }
+    if (next) void this.selectThread(next.id);
+    else {
+      this.selectedId.set(null);
+      this.replyOpen.set(false);
+    }
+
+    // Undo window (~8s), Gmail-style `z`
+    this.pendingArchiveUndo = {
+      thread: removed,
+      index: idx,
+      timer: setTimeout(() => this.clearArchiveUndo(), 8_000),
+    };
+    this.undoAvailable.set(true);
+    this.statusMessage.set('Archived — press z to undo');
+
+    if (this.hasMoreMail()) {
+      void this.ensureListFilled();
+    }
+
+    try {
+      await this.api.archive(id);
+      void this.ensureListFilled();
+    } catch (e) {
+      this.clearArchiveUndo();
+      this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
+      await this.refreshThreads();
+    }
   }
 
   selectNext(): void {
@@ -583,14 +974,13 @@ export class UiShellService {
     this.syncing.set(true);
     this.statusMessage.set('Syncing…');
     try {
-      const res = await this.api.sync(full);
+      const res = await this.api.sync(full, { maxThreads: 100 });
+      this.hasMoreMail.set(Boolean(res.hasMore));
       this.statusMessage.set(
         `Synced ${res.synced} (${res.mode ?? 'full'}) for ${res.email}`,
       );
+      this.ingestNewMailNotices(res.newMail);
       await this.refreshThreads();
-      if (res.synced > 0) {
-        this.notify('Local Mail', `Synced ${res.synced} thread(s)`);
-      }
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Sync failed');
     } finally {
@@ -598,44 +988,159 @@ export class UiShellService {
     }
   }
 
-  async archiveSelected(): Promise<void> {
-    const id = this.selectedId();
-    if (!id || !this.isConnected()) {
-      this.statusMessage.set('Archive needs a connected Gmail inbox.');
-      return;
+  /**
+   * Next page: either more Gmail search hits or older inbox threads.
+   * Safe to call from infinite scroll / auto-fill.
+   */
+  async loadMoreMail(opts?: { quiet?: boolean }): Promise<boolean> {
+    if (!this.isConnected() || this.loadingMore() || this.syncing() || this.searching()) {
+      return false;
     }
-    const list = this.threads();
-    const idx = list.findIndex((t) => t.id === id);
-    if (idx < 0) return;
-    const removed = list[idx]!;
+    if (!this.hasMoreMail()) return false;
 
-    this.clearArchiveUndo();
-
-    // Optimistic remove + jump to next
-    const next = list[idx + 1] ?? list[idx - 1] ?? null;
-    this.threads.update((ts) => ts.filter((t) => t.id !== id));
-    if (next) void this.selectThread(next.id);
-    else {
-      this.selectedId.set(null);
-      this.replyOpen.set(false);
-    }
-
-    // Undo window (~8s), Gmail-style `z`
-    this.pendingArchiveUndo = {
-      thread: removed,
-      index: idx,
-      timer: setTimeout(() => this.clearArchiveUndo(), 8_000),
-    };
-    this.undoAvailable.set(true);
-    this.statusMessage.set('Archived — press z to undo');
-
+    this.loadingMore.set(true);
+    let got = 0;
     try {
-      await this.api.archive(id);
+      if (this.searchActive() && this.searchQuery().trim()) {
+        const res = await this.api.searchGmail(this.searchQuery().trim(), {
+          more: true,
+          maxResults: 40,
+        });
+        this.hasMoreMail.set(Boolean(res.hasMore));
+        got = res.synced;
+        await this.refreshThreads({ skipFill: true });
+        if (!opts?.quiet && res.synced > 0) {
+          this.statusMessage.set(`Loaded ${res.synced} more search hit(s)`);
+        }
+      } else {
+        const res = await this.api.sync(false, { more: true, maxThreads: 100 });
+        this.hasMoreMail.set(Boolean(res.hasMore));
+        got = res.synced;
+        await this.refreshThreads({ skipFill: true });
+        if (!opts?.quiet) {
+          if (res.synced > 0) {
+            this.statusMessage.set(`Loaded ${res.synced} more thread(s)`);
+          } else if (!res.hasMore) {
+            this.statusMessage.set('End of inbox from Gmail');
+          }
+        }
+      }
+      return got > 0;
     } catch (e) {
-      this.clearArchiveUndo();
-      this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
-      await this.refreshThreads();
+      if (!opts?.quiet) {
+        this.statusMessage.set(
+          e instanceof Error ? e.message : 'Load more failed',
+        );
+      }
+      return false;
+    } finally {
+      this.loadingMore.set(false);
     }
+  }
+
+  /**
+   * Keep the list near `listTarget` (100) threads when possible.
+   * After archive the list shrinks — pull the next Gmail page(s) or re-sync
+   * the top of inbox so the viewport stays full. If Gmail has fewer total,
+   * the list stays smaller.
+   */
+  async ensureListFilled(): Promise<void> {
+    if (this.listFillInFlight || !this.isConnected()) return;
+    if (this.syncing() || this.searching()) return;
+    // Only auto-fill inbox (and active Gmail search); not starred/all alone
+    const fillingSearch = this.searchActive() && !!this.searchQuery().trim();
+    if (!fillingSearch && this.mailView() !== 'inbox') return;
+
+    if (this.threads().length >= this.listTarget) return;
+
+    this.listFillInFlight = true;
+    this.listFilling.set(true);
+    try {
+      let rounds = 0;
+      const maxRounds = 6;
+
+      while (
+        this.threads().length < this.listTarget &&
+        rounds < maxRounds &&
+        this.isConnected()
+      ) {
+        rounds += 1;
+        const before = this.threads().length;
+
+        if (this.hasMoreMail()) {
+          const got = await this.loadMoreMail({ quiet: true });
+          if (!got && !this.hasMoreMail()) break;
+          if (this.threads().length <= before && !this.hasMoreMail()) break;
+          continue;
+        }
+
+        // No next-page token: re-pull top of inbox (current Gmail INBOX).
+        // After archives, that restocks the list with remaining mail.
+        if (!fillingSearch && rounds <= 2) {
+          try {
+            const res = await this.api.sync(true, { maxThreads: this.listTarget });
+            this.hasMoreMail.set(Boolean(res.hasMore));
+            await this.refreshThreads({ skipFill: true });
+          } catch {
+            break;
+          }
+          // If still thin and no more pages, Gmail simply has fewer than target
+          if (!this.hasMoreMail()) break;
+          continue;
+        }
+
+        break;
+      }
+    } finally {
+      this.listFillInFlight = false;
+      this.listFilling.set(false);
+    }
+  }
+
+  /** Called when thread list scrolls near the bottom. */
+  onThreadListScrollNearBottom(): void {
+    if (this.loadingMore() || this.listFilling()) return;
+    if (this.hasMoreMail()) {
+      void this.loadMoreMail();
+    } else if (this.threads().length < this.listTarget) {
+      void this.ensureListFilled();
+    }
+  }
+
+  /**
+   * Fetch new mail now (history). Used on window focus / pull-to-refresh at top.
+   * Throttled so focus spam doesn't hammer Gmail.
+   */
+  private lastFetchNewAt = 0;
+  fetchNewMailNow(reason = 'manual'): void {
+    if (!this.isConnected() || this.syncing() || this.sending()) return;
+    const now = Date.now();
+    if (now - this.lastFetchNewAt < 8_000) return;
+    this.lastFetchNewAt = now;
+    console.info('[sync] fetch new', reason);
+    void this.quietSync();
+  }
+
+  async addComposeFiles(fileList: FileList | null): Promise<void> {
+    const next = await filesToPending(fileList);
+    if (next.length) {
+      this.composeAttachments.update((cur) => [...cur, ...next]);
+    }
+  }
+
+  removeComposeAttachment(id: string): void {
+    this.composeAttachments.update((list) => list.filter((a) => a.id !== id));
+  }
+
+  async addReplyFiles(fileList: FileList | null): Promise<void> {
+    const next = await filesToPending(fileList);
+    if (next.length) {
+      this.replyAttachments.update((cur) => [...cur, ...next]);
+    }
+  }
+
+  removeReplyAttachment(id: string): void {
+    this.replyAttachments.update((list) => list.filter((a) => a.id !== id));
   }
 
   /** Restore the last archived thread to the inbox (hotkey `z`). */
@@ -751,6 +1256,7 @@ export class UiShellService {
 
   closeReply(): void {
     this.replyOpen.set(false);
+    this.replyAttachments.set([]);
   }
 
   openCompose(): void {
@@ -781,7 +1287,8 @@ export class UiShellService {
       this.composeTo().trim() ||
         this.composeCc().trim() ||
         this.composeSubject().trim() ||
-        this.composeBody().trim(),
+        this.composeBody().trim() ||
+        this.composeAttachments().length,
     );
   }
 
@@ -791,6 +1298,7 @@ export class UiShellService {
     this.composeSubject.set('');
     this.composeBody.set('');
     this.composeShowCc.set(false);
+    this.composeAttachments.set([]);
     this.clearContactSuggestions();
     this.composeOpen.set(false);
   }
@@ -909,20 +1417,30 @@ export class UiShellService {
     }
     this.sending.set(true);
     try {
+      const attachments = this.composeAttachments().map((a) => ({
+        filename: a.name,
+        mimeType: a.mimeType,
+        contentBase64: a.contentBase64,
+      }));
       await this.api.sendNew(
         to,
         this.composeSubject(),
         body,
         this.composeCc().trim() || undefined,
+        attachments.length ? attachments : undefined,
       );
       this.composeTo.set('');
       this.composeCc.set('');
       this.composeSubject.set('');
       this.composeBody.set('');
       this.composeShowCc.set(false);
+      this.composeAttachments.set([]);
       this.clearContactSuggestions();
       this.composeOpen.set(false);
       this.statusMessage.set('Message sent');
+      // Pull history soon so self-mail / replies can raise notifications without waiting 60s
+      window.setTimeout(() => void this.quietSync(), 4_000);
+      window.setTimeout(() => void this.quietSync(), 12_000);
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');
     } finally {
@@ -991,6 +1509,9 @@ export class UiShellService {
       case 'sync':
         void this.syncNow();
         break;
+      case 'test-notify':
+        void this.testNotification();
+        break;
       case 'star':
         void this.toggleStarSelected();
         break;
@@ -1036,10 +1557,21 @@ export class UiShellService {
     }
     this.sending.set(true);
     try {
-      await this.api.reply(id, body);
+      const attachments = this.replyAttachments().map((a) => ({
+        filename: a.name,
+        mimeType: a.mimeType,
+        contentBase64: a.contentBase64,
+      }));
+      await this.api.reply(
+        id,
+        body,
+        attachments.length ? attachments : undefined,
+      );
       this.replyBody.set('');
+      this.replyAttachments.set([]);
       this.statusMessage.set('Sent');
       await this.loadThreadDetail(id);
+      window.setTimeout(() => void this.quietSync(), 4_000);
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');
     } finally {
@@ -1054,4 +1586,47 @@ export class UiShellService {
   closeCommandPalette(): void {
     this.commandPaletteOpen.set(false);
   }
+}
+
+const MAX_ATTACH_BYTES = 8 * 1024 * 1024; // 8 MB per file (JSON + base64 overhead)
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function filesToPending(
+  fileList: FileList | null,
+): Promise<PendingAttachment[]> {
+  if (!fileList?.length) return [];
+  const out: PendingAttachment[] = [];
+  for (const file of Array.from(fileList)) {
+    if (file.size > MAX_ATTACH_BYTES) {
+      console.warn(`[attach] skip ${file.name}: over 8 MB`);
+      continue;
+    }
+    const contentBase64 = await readFileAsBase64(file);
+    out.push({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      sizeLabel: formatFileSize(file.size),
+      contentBase64,
+    });
+  }
+  return out;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsDataURL(file);
+  });
 }

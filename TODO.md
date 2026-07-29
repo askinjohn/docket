@@ -26,6 +26,15 @@
 - [x] Compose window polish (From/Cc, docked card, discard confirm, ⌘↵ send)
 - [x] Recipient typeahead from local mail history (`GET /contacts/suggest`)
 - [x] Native Mac notifications (Tauri) + `mail.new` SSE + Dock badge (unread)
+- [x] Configurable OAuth token store: `LOCAL_MAIL_TOKEN_STORE=sqlite|keychain`
+- [x] Quiet bg sync (no “Background sync: N” list banner)
+- [x] Outbound attachments on compose + reply (multipart MIME, 8MB/file)
+- [x] Deeper inbox sync (100 threads) + Load more from Gmail
+- [x] Reply pane polish (header, attach, compose-style chrome)
+- [x] Gmail-backed search (`POST /search`, operators) + Clear
+- [x] Infinite scroll load-more + focus/scroll-top fetch new
+- [x] Keep ~100 threads in inbox viewport; auto-refill after archive / when thin
+- [x] Multi-select (⌘/Ctrl-click, Shift-range, x, ⌘A) + Clear + bulk archive
 
 ## Still thin / follow-ups
 

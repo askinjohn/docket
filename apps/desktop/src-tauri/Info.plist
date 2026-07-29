@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Helps macOS treat this as a normal notification-capable app -->
+	<key>NSUserNotificationAlertStyle</key>
+	<string>alert</string>
+	<key>CFBundleDisplayName</key>
+	<string>Local Mail</string>
+	<key>CFBundleName</key>
+	<string>Local Mail</string>
+</dict>
+</plist>

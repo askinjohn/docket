@@ -6,6 +6,7 @@ import {
   inject,
   Injector,
   OnInit,
+  signal,
   viewChild,
 } from '@angular/core';
 
@@ -212,14 +213,36 @@ import { UiShellService } from './core/ui-shell.service';
           >
         }
       </div>
-      <input
-        type="search"
-        class="w-full rounded-lg border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/50"
-        placeholder="Search subject, from, snippet…"
-        [value]="shell.searchQuery()"
-        (input)="onSearchInput($event)"
-        (keydown.enter)="shell.runSearch()"
-      />
+      <div class="flex items-center gap-1.5">
+        <input
+          type="search"
+          class="min-w-0 flex-1 rounded-lg border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/50"
+          placeholder="Search Gmail… from: me has:attachment"
+          [value]="shell.searchQuery()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="shell.runSearch()"
+          title="Enter runs Gmail search (operators supported)"
+        />
+        @if (shell.searchQuery() || shell.searchActive()) {
+          <button
+            type="button"
+            class="shrink-0 cursor-pointer rounded-lg border border-lm-border px-2 py-1.5 text-[0.75rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+            (click)="shell.clearSearch()"
+            title="Clear search"
+          >
+            Clear
+          </button>
+        }
+      </div>
+      @if (shell.searchActive() && shell.searchQuery()) {
+        <div class="text-[0.68rem] text-lm-muted">
+          @if (shell.searching()) {
+            Searching Gmail…
+          } @else {
+            Gmail results · local filter “{{ shell.searchQuery() }}”
+          }
+        </div>
+      }
     </header>
 
     @if (shell.statusMessage() || shell.undoAvailable()) {
@@ -243,41 +266,145 @@ import { UiShellService } from './core/ui-shell.service';
       </div>
     }
 
-    <ul class="m-0 min-h-0 flex-1 list-none overflow-auto p-1.5" role="listbox" aria-label="Threads">
+    @if (shell.checkedCount() > 0) {
+      <div
+        class="mx-2.5 mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-accent/40 bg-lm-accent/10 px-2.5 py-2 text-[0.78rem]"
+        role="toolbar"
+        aria-label="Bulk selection"
+      >
+        <span class="font-medium text-lm-text"
+          >{{ shell.checkedCount() }} selected</span
+        >
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            class="cursor-pointer rounded-md border border-lm-border bg-lm-panel px-2 py-1 text-lm-text hover:bg-lm-hover"
+            (click)="shell.selectAllVisible()"
+            title="Select all visible (⌘A)"
+          >
+            All
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-md border border-lm-border bg-lm-panel px-2 py-1 text-lm-text hover:bg-lm-hover"
+            (click)="shell.clearChecked()"
+            title="Clear selection (Esc)"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer rounded-md border-0 bg-lm-accent px-2 py-1 font-semibold text-white hover:brightness-110 disabled:opacity-40"
+            (click)="shell.archiveSelected()"
+            [disabled]="!shell.isConnected()"
+            title="Archive selected (e)"
+          >
+            Archive
+          </button>
+        </div>
+      </div>
+    }
+
+    <ul
+      #threadList
+      class="m-0 min-h-0 flex-1 list-none overflow-auto p-1.5"
+      role="listbox"
+      aria-label="Threads"
+      aria-multiselectable="true"
+      (scroll)="onThreadListScroll($event)"
+    >
       @for (thread of shell.threads(); track thread.id) {
         <li>
           <button
             type="button"
-            class="mb-0.5 w-full cursor-pointer rounded-lg border border-transparent bg-transparent px-2.5 py-2.5 text-left text-inherit hover:bg-lm-hover data-[selected=true]:border-lm-accent/35 data-[selected=true]:bg-lm-accent/15"
+            class="mb-0.5 flex w-full cursor-pointer items-start gap-2 rounded-lg border border-transparent bg-transparent px-2 py-2.5 text-left text-inherit hover:bg-lm-hover data-[selected=true]:border-lm-accent/35 data-[selected=true]:bg-lm-accent/15 data-[checked=true]:border-lm-accent/50 data-[checked=true]:bg-lm-accent/20"
             role="option"
             [attr.data-selected]="shell.selectedId() === thread.id"
-            [attr.aria-selected]="shell.selectedId() === thread.id"
-            (click)="shell.selectThread(thread.id)"
+            [attr.data-checked]="shell.isChecked(thread.id)"
+            [attr.aria-selected]="
+              shell.selectedId() === thread.id || shell.isChecked(thread.id)
+            "
+            (click)="onThreadClick(thread.id, $event)"
           >
-            <div class="mb-0.5 flex justify-between gap-2">
-              <span
-                class="text-sm text-lm-text"
-                [class.font-semibold]="thread.unread"
-                >{{ thread.from }}</span
-              >
-              <span class="shrink-0 text-[0.72rem] text-lm-muted">{{ thread.time }}</span>
-            </div>
-            <div
-              class="mb-0.5 truncate text-[0.82rem]"
-              [class.font-semibold]="thread.unread"
+            <span
+              class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[0.65rem]"
+              [class.border-lm-accent]="shell.isChecked(thread.id)"
+              [class.bg-lm-accent]="shell.isChecked(thread.id)"
+              [class.text-white]="shell.isChecked(thread.id)"
+              [class.border-lm-border]="!shell.isChecked(thread.id)"
+              aria-hidden="true"
+              >{{ shell.isChecked(thread.id) ? '✓' : '' }}</span
             >
-              @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
-                <span class="mr-1 opacity-85" aria-hidden="true" title="Has attachments">📎</span>
-              }
-              {{ thread.subject }}
-            </div>
-            <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
+            <span class="min-w-0 flex-1">
+              <div class="mb-0.5 flex justify-between gap-2">
+                <span
+                  class="text-sm text-lm-text"
+                  [class.font-semibold]="thread.unread"
+                  >{{ thread.from }}</span
+                >
+                <span class="shrink-0 text-[0.72rem] text-lm-muted">{{
+                  thread.time
+                }}</span>
+              </div>
+              <div
+                class="mb-0.5 truncate text-[0.82rem]"
+                [class.font-semibold]="thread.unread"
+              >
+                @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
+                  <span class="mr-1 opacity-85" aria-hidden="true" title="Has attachments"
+                    >📎</span
+                  >
+                }
+                {{ thread.subject }}
+              </div>
+              <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
+            </span>
           </button>
         </li>
       } @empty {
         <li class="list-none px-4 py-4 text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</li>
       }
     </ul>
+    @if (shell.isConnected()) {
+      <div class="shrink-0 border-t border-lm-border/70 px-2.5 py-2">
+        <button
+          type="button"
+          class="w-full cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-2 text-[0.78rem] font-medium text-lm-muted transition hover:bg-lm-hover hover:text-lm-text disabled:cursor-not-allowed disabled:opacity-40"
+          (click)="shell.loadMoreMail()"
+          [disabled]="
+            shell.loadingMore() ||
+            shell.listFilling() ||
+            shell.syncing() ||
+            shell.searching() ||
+            !shell.hasMoreMail()
+          "
+          [title]="
+            shell.searchActive()
+              ? 'More Gmail search results'
+              : 'Older inbox threads from Gmail (list aims for ~100)'
+          "
+        >
+          @if (shell.listFilling()) {
+            Filling list to ~100…
+          } @else if (shell.loadingMore()) {
+            Loading more…
+          } @else if (shell.hasMoreMail()) {
+            {{
+              shell.searchActive()
+                ? 'More search results'
+                : 'Load more · ' + shell.threads().length + ' shown'
+            }}
+          } @else if (shell.searchActive()) {
+            End of search results · {{ shell.threads().length }} shown
+          } @else {
+            {{ shell.threads().length }} in list
+            @if (shell.threads().length < 100) {
+              · all loaded from Gmail
+            }
+          }
+        </button>
+      </div>
+    }
   </section>
 
   <!-- Reading pane -->
@@ -367,15 +494,37 @@ import { UiShellService } from './core/ui-shell.service';
                 </div>
                 <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
               </div>
-              <div class="message-html-wrap w-full overflow-hidden bg-white">
+              <div
+                class="message-html-wrap w-full bg-white"
+                [class.is-expanded]="isHtmlExpanded(msg.id)"
+                [attr.data-msg-id]="msg.id"
+              >
                 <iframe
                   class="message-html-frame"
                   title="Message body"
                   sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                   [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                  (load)="onHtmlFrameLoad($event)"
+                  (load)="onHtmlFrameLoad($event, msg.id)"
                 ></iframe>
               </div>
+              @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
+                <button
+                  type="button"
+                  class="w-full cursor-pointer border-0 border-t border-lm-border bg-lm-bg/80 px-4 py-2 text-left text-[0.78rem] font-medium text-lm-accent hover:bg-lm-hover"
+                  (click)="expandHtml(msg.id)"
+                >
+                  Show full message ↓
+                </button>
+              }
+              @if (isHtmlExpanded(msg.id)) {
+                <button
+                  type="button"
+                  class="w-full cursor-pointer border-0 border-t border-lm-border bg-lm-bg/80 px-4 py-2 text-left text-[0.78rem] font-medium text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+                  (click)="collapseHtml(msg.id)"
+                >
+                  Collapse message ↑
+                </button>
+              }
               @if (msg.attachments.length) {
                 <div class="border-t border-lm-border px-5 py-3" aria-label="Attachments">
                   <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
@@ -418,11 +567,9 @@ import { UiShellService } from './core/ui-shell.service';
                 [class.border-lm-accent/45]="isMine(msg)"
                 [class.bg-lm-accent/15]="isMine(msg)"
               >
-                <div
-                  class="mb-2 flex min-w-0 justify-between gap-4"
-                  [class.flex-row-reverse]="isMine(msg)"
-                >
-                  <div class="min-w-0" [class.text-right]="isMine(msg)">
+                <!-- Bubble sits on the right for sent mail; content stays LTR/left-aligned. -->
+                <div class="mb-2 flex min-w-0 justify-between gap-4">
+                  <div class="min-w-0 text-left">
                     <div class="text-sm font-semibold break-words">
                       @if (isMine(msg)) {
                         You
@@ -436,19 +583,40 @@ import { UiShellService } from './core/ui-shell.service';
                 </div>
 
                 @if (messageUsesHtml(msg)) {
-                  <div class="message-html-wrap w-full overflow-hidden rounded-lg border border-lm-border bg-white">
+                  <div
+                    class="message-html-wrap w-full rounded-lg border border-lm-border bg-white"
+                    [class.is-expanded]="isHtmlExpanded(msg.id)"
+                    [attr.data-msg-id]="msg.id"
+                  >
                     <iframe
                       class="message-html-frame"
                       title="Message body"
                       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                       [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                      (load)="onHtmlFrameLoad($event)"
+                      (load)="onHtmlFrameLoad($event, msg.id)"
                     ></iframe>
                   </div>
+                  @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
+                    <button
+                      type="button"
+                      class="mt-1 w-full cursor-pointer rounded-lg border-0 bg-transparent px-1 py-1 text-left text-[0.75rem] font-medium text-lm-accent hover:underline"
+                      (click)="expandHtml(msg.id)"
+                    >
+                      Show full message ↓
+                    </button>
+                  }
+                  @if (isHtmlExpanded(msg.id)) {
+                    <button
+                      type="button"
+                      class="mt-1 w-full cursor-pointer rounded-lg border-0 bg-transparent px-1 py-1 text-left text-[0.75rem] font-medium text-lm-muted hover:text-lm-text"
+                      (click)="collapseHtml(msg.id)"
+                    >
+                      Collapse ↑
+                    </button>
+                  }
                 } @else {
                   <div
-                    class="max-w-full whitespace-pre-wrap text-[0.92rem] leading-relaxed break-words text-lm-text"
-                    [class.text-right]="isMine(msg)"
+                    class="max-w-full whitespace-pre-wrap text-left text-[0.92rem] leading-relaxed break-words text-lm-text"
                   >
                     {{ messagePlainText(msg) }}
                   </div>
@@ -456,10 +624,7 @@ import { UiShellService } from './core/ui-shell.service';
 
                 @if (msg.attachments.length) {
                   <div class="mt-3 border-t border-lm-border pt-3" aria-label="Attachments">
-                    <ul
-                      class="m-0 flex list-none flex-wrap gap-2 p-0"
-                      [class.justify-end]="isMine(msg)"
-                    >
+                    <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
                       @for (file of msg.attachments; track file.id) {
                         <li>
                           <button
@@ -487,52 +652,94 @@ import { UiShellService } from './core/ui-shell.service';
 
       @if (shell.replyOpen()) {
         <footer
-          class="flex max-h-[min(42vh,320px)] min-h-0 shrink-0 flex-col gap-2.5 overflow-hidden border-t border-lm-border bg-lm-panel px-4 py-3"
+          class="flex max-h-[min(48vh,380px)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-lm-border bg-lm-panel"
           aria-label="Reply"
         >
-          <div class="flex shrink-0 items-center justify-between">
-            <span class="min-w-0 truncate text-[0.8rem] font-semibold text-lm-muted"
-              >Reply to {{ thread.from }}</span
-            >
+          <div
+            class="flex shrink-0 items-center justify-between gap-3 border-b border-lm-border/70 bg-lm-bg/50 px-4 py-2"
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full bg-lm-accent"
+                aria-hidden="true"
+              ></span>
+              <span class="min-w-0 truncate text-[0.82rem] font-semibold text-lm-text"
+                >Reply to {{ thread.from }}</span
+              >
+            </div>
             <button
               type="button"
-              class="cursor-pointer rounded border-0 bg-transparent px-2 py-0.5 text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+              class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
               (click)="shell.closeReply()"
               aria-label="Close reply"
+              title="Close (Esc)"
             >
               ×
             </button>
           </div>
           <textarea
-            class="min-h-[72px] max-h-40 w-full flex-1 resize-none overflow-y-auto rounded-[10px] border border-lm-border bg-lm-bg px-3 py-2.5 text-[0.9rem] leading-snug text-lm-text outline-none focus:outline-2 focus:outline-offset-1 focus:outline-lm-accent/55"
-            rows="4"
+            class="min-h-24 max-h-44 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-[0.92rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted/65"
+            rows="5"
             [value]="shell.replyBody()"
             (input)="onReplyInput($event)"
-            placeholder="Write a reply… (⌘↵ to send)"
+            placeholder="Write your reply…"
           ></textarea>
-
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="text-[0.72rem] text-lm-muted">Plain-text send</span>
+          @if (shell.replyAttachments().length) {
+            <ul
+              class="m-0 flex list-none flex-wrap gap-1.5 border-t border-lm-border/60 px-4 py-2"
+            >
+              @for (file of shell.replyAttachments(); track file.id) {
+                <li
+                  class="inline-flex max-w-52 items-center gap-1.5 rounded-lg border border-lm-border bg-lm-bg px-2 py-1 text-[0.72rem]"
+                >
+                  <span class="truncate font-medium">{{ file.name }}</span>
+                  <span class="text-lm-muted">{{ file.sizeLabel }}</span>
+                  <button
+                    type="button"
+                    class="cursor-pointer border-0 bg-transparent px-1 text-lm-muted hover:text-lm-text"
+                    (click)="shell.removeReplyAttachment(file.id)"
+                    [attr.aria-label]="'Remove ' + file.name"
+                  >
+                    ×
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+          <div
+            class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-lm-border bg-lm-bg/40 px-4 py-2.5"
+          >
             <div class="flex items-center gap-2">
-              <span class="font-mono text-[0.72rem] text-lm-muted">⌘↵</span>
-              <button
-                type="button"
-                class="cursor-pointer rounded-lg border-0 bg-lm-accent px-2.5 py-1.5 text-[0.8rem] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                (click)="shell.sendReply()"
-                [disabled]="shell.sending() || !shell.isConnected()"
+              <label
+                class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.78rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
               >
-                {{ shell.sending() ? 'Sending…' : 'Send' }}
-              </button>
+                Attach
+                <input
+                  type="file"
+                  class="sr-only"
+                  multiple
+                  (change)="onReplyFiles($event)"
+                />
+              </label>
+              <span class="text-[0.7rem] text-lm-muted">⌘↵ send</span>
             </div>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border-0 bg-lm-accent px-3.5 py-1.5 text-[0.82rem] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              (click)="shell.sendReply()"
+              [disabled]="shell.sending() || !shell.isConnected()"
+            >
+              {{ shell.sending() ? 'Sending…' : 'Send' }}
+            </button>
           </div>
         </footer>
       } @else if (shell.isConnected()) {
         <button
           type="button"
-          class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+          class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
           (click)="shell.openReply()"
         >
-          Click to reply ·
+          Reply to this thread ·
           <kbd class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
             >r</kbd
           >
@@ -861,17 +1068,53 @@ import { UiShellService } from './core/ui-shell.service';
       rows="10"
     ></textarea>
 
+    @if (shell.composeAttachments().length) {
+      <ul
+        class="m-0 flex list-none flex-wrap gap-1.5 border-t border-lm-border/60 px-4 py-2"
+      >
+        @for (file of shell.composeAttachments(); track file.id) {
+          <li
+            class="inline-flex max-w-52 items-center gap-1.5 rounded-lg border border-lm-border bg-lm-bg px-2 py-1 text-[0.72rem]"
+          >
+            <span class="truncate font-medium">{{ file.name }}</span>
+            <span class="text-lm-muted">{{ file.sizeLabel }}</span>
+            <button
+              type="button"
+              class="cursor-pointer border-0 bg-transparent px-1 text-lm-muted hover:text-lm-text"
+              (click)="shell.removeComposeAttachment(file.id)"
+              [attr.aria-label]="'Remove ' + file.name"
+            >
+              ×
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
     <!-- Footer -->
     <footer
       class="flex shrink-0 items-center justify-between gap-3 border-t border-lm-border bg-lm-bg/50 px-4 py-3"
     >
-      <button
-        type="button"
-        class="cursor-pointer rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
-        (click)="shell.discardCompose()"
-      >
-        Discard
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="cursor-pointer rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
+          (click)="shell.discardCompose()"
+        >
+          Discard
+        </button>
+        <label
+          class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.78rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+        >
+          Attach
+          <input
+            type="file"
+            class="sr-only"
+            multiple
+            (change)="onComposeFiles($event)"
+          />
+        </label>
+      </div>
       <div class="flex items-center gap-2.5">
         <span class="hidden text-[0.7rem] text-lm-muted sm:inline" title="Send"
           >⌘↵</span
@@ -900,23 +1143,34 @@ import { UiShellService } from './core/ui-shell.service';
   font-family: var(--font-lm);
 }
 
+/* Cap height so long HTML mail scrolls inside the card — no page explosion. */
 .message-html-wrap {
   background: #fff;
-  min-height: 8rem;
+  min-height: 4rem;
+  max-height: min(42vh, 26rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.message-html-wrap.is-expanded {
+  max-height: none;
+  overflow-y: visible;
 }
 
 .message-html-frame {
   display: block;
   width: 100%;
-  min-height: 12rem;
-  height: 20rem;
+  min-height: 4rem;
+  height: 12rem; /* until measured */
   border: 0;
   background: #fff;
   vertical-align: top;
 }
 
 .msg-incoming .message-html-frame {
-  min-height: 14rem;
+  min-height: 5rem;
 }
 
 .compose-window {
@@ -943,11 +1197,13 @@ import { UiShellService } from './core/ui-shell.service';
   `],
   host: {
     '(document:keydown)': 'onKeydown($event)',
+    '(window:focus)': 'onWindowFocus()',
   },
 })
 export class App implements OnInit {
   protected readonly shell = inject(UiShellService);
   private readonly injector = inject(Injector);
+  private threadListNearTopArmed = true;
 
   /** Reading pane scroll container — keep latest message in view (chat-style). */
   private readonly readingScroll = viewChild<ElementRef<HTMLElement>>('readingScroll');
@@ -957,8 +1213,14 @@ export class App implements OnInit {
   private stickReadingToBottom = true;
   private lastReadingThreadId: string | null = null;
 
+  /** Message ids whose HTML body the user fully expanded. */
+  private readonly htmlExpandedIds = signal<ReadonlySet<string>>(new Set());
+  /** Message ids whose content height exceeds the collapsed max (show expand control). */
+  private readonly htmlTallIds = signal<ReadonlySet<string>>(new Set());
+
   protected readonly paletteItems = [
     { cmd: 'sync', label: 'Sync inbox', hint: '' },
+    { cmd: 'test-notify', label: 'Test notification', hint: '' },
     { cmd: 'compose', label: 'Compose', hint: 'c' },
     { cmd: 'reply', label: 'Reply', hint: 'r' },
     { cmd: 'archive', label: 'Archive', hint: 'e' },
@@ -983,11 +1245,13 @@ export class App implements OnInit {
         return;
       }
 
-      // New conversation → always show latest first.
+      // New conversation → always show latest first; reset expand state.
       const isNewThread = thread.id !== this.lastReadingThreadId;
       if (isNewThread) {
         this.lastReadingThreadId = thread.id;
         this.stickReadingToBottom = true;
+        this.htmlExpandedIds.set(new Set());
+        this.htmlTallIds.set(new Set());
       }
 
       // Depend on identity + message list so we re-scroll after detail load / send.
@@ -1048,6 +1312,37 @@ export class App implements OnInit {
 
   onSearchInput(event: Event): void {
     this.shell.setSearchQuery((event.target as HTMLInputElement).value);
+  }
+
+  onThreadClick(id: string, event: MouseEvent): void {
+    event.preventDefault();
+    void this.shell.onThreadListClick(id, {
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+    });
+  }
+
+  onWindowFocus(): void {
+    this.shell.fetchNewMailNow('window-focus');
+  }
+
+  /** Infinite scroll down + pull-new when near top again. */
+  onThreadListScroll(event: Event): void {
+    const el = event.target as HTMLElement;
+    const distBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distBottom < 120) {
+      this.shell.onThreadListScrollNearBottom();
+    }
+    // Near top after scrolling down: re-arm and optionally fetch new
+    if (el.scrollTop < 40) {
+      if (!this.threadListNearTopArmed) {
+        this.threadListNearTopArmed = true;
+        this.shell.fetchNewMailNow('list-scroll-top');
+      }
+    } else if (el.scrollTop > 80) {
+      this.threadListNearTopArmed = false;
+    }
   }
 
   onComposeTo(event: Event): void {
@@ -1141,37 +1436,66 @@ export class App implements OnInit {
     return formatPlainBody(raw);
   }
 
-  /** Grow iframe to content; keep visible (no opacity hide — that caused blank white). */
-  onHtmlFrameLoad(event: Event): void {
+  isHtmlExpanded(msgId: string): boolean {
+    return this.htmlExpandedIds().has(msgId);
+  }
+
+  htmlNeedsExpand(msgId: string): boolean {
+    return this.htmlTallIds().has(msgId);
+  }
+
+  expandHtml(msgId: string): void {
+    const next = new Set(this.htmlExpandedIds());
+    next.add(msgId);
+    this.htmlExpandedIds.set(next);
+  }
+
+  collapseHtml(msgId: string): void {
+    const next = new Set(this.htmlExpandedIds());
+    next.delete(msgId);
+    this.htmlExpandedIds.set(next);
+    // Keep reading position stable — don't yank to bottom on collapse
+  }
+
+  /**
+   * Size iframe to content height. Parent .message-html-wrap is max-height capped
+   * and scrolls — so long mail no longer explodes the reading pane layout.
+   */
+  onHtmlFrameLoad(event: Event, msgId: string): void {
     const iframe = event.target as HTMLIFrameElement;
+    let measured = 0;
+
     const measure = (): void => {
       try {
         const doc = iframe.contentDocument;
         if (!doc?.body) {
-          iframe.style.height = '12rem';
-          this.scrollReadingToLatest();
+          iframe.style.height = '8rem';
           return;
         }
+        // Prefer body; avoid documentElement double-counting that fights CSS
         const h = Math.max(
           doc.body.scrollHeight,
           doc.body.offsetHeight,
           doc.documentElement?.scrollHeight ?? 0,
-          doc.documentElement?.offsetHeight ?? 0,
         );
-        // Avoid 0-height blank frame
-        iframe.style.height = `${Math.min(Math.max(h + 16, 120), 2400)}px`;
+        measured = Math.max(h + 12, 64);
+        // Full natural height; wrap clips with max-height + overflow auto
+        iframe.style.height = `${measured}px`;
+
+        // ~26rem / 42vh cap — if taller, offer "Show full"
+        const capPx = Math.min(window.innerHeight * 0.42, 26 * 16);
+        this.setHtmlTall(msgId, measured > capPx + 8);
       } catch {
-        iframe.style.height = '20rem';
+        iframe.style.height = '12rem';
       }
-      // After height changes, keep the latest message pinned if user is at bottom.
-      this.scrollReadingToLatest(false);
+
+      // Only re-pin reading scroll for the *last* HTML frame while stuck to bottom.
+      // Older messages loading must not jump the viewport.
+      this.maybeStickAfterLastFrame(iframe);
     };
 
     measure();
-    requestAnimationFrame(() => {
-      measure();
-      requestAnimationFrame(measure);
-    });
+    requestAnimationFrame(measure);
 
     try {
       const doc = iframe.contentDocument;
@@ -1182,16 +1506,46 @@ export class App implements OnInit {
           img.addEventListener('error', measure, { once: true });
         }
       }
-      window.setTimeout(measure, 150);
-      window.setTimeout(measure, 500);
+      // One delayed pass for late layout (fonts); avoid multi-second thrash
+      window.setTimeout(measure, 200);
     } catch {
       /* ignore */
     }
   }
 
+  private setHtmlTall(msgId: string, tall: boolean): void {
+    const cur = this.htmlTallIds();
+    if (tall === cur.has(msgId)) return;
+    const next = new Set(cur);
+    if (tall) next.add(msgId);
+    else next.delete(msgId);
+    this.htmlTallIds.set(next);
+  }
+
+  private maybeStickAfterLastFrame(iframe: HTMLIFrameElement): void {
+    if (!this.stickReadingToBottom) return;
+    const root = this.readingScroll()?.nativeElement;
+    if (!root) return;
+    const frames = root.querySelectorAll('.message-html-frame');
+    if (!frames.length || frames[frames.length - 1] !== iframe) return;
+    requestAnimationFrame(() => this.scrollReadingToLatest(false));
+  }
+
   onReplyInput(event: Event): void {
     const value = (event.target as HTMLTextAreaElement).value;
     this.shell.setReplyBody(value);
+  }
+
+  onComposeFiles(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    void this.shell.addComposeFiles(input.files);
+    input.value = '';
+  }
+
+  onReplyFiles(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    void this.shell.addReplyFiles(input.files);
+    input.value = '';
   }
 
   onKeydown(event: KeyboardEvent): void {
@@ -1227,6 +1581,11 @@ export class App implements OnInit {
         this.shell.closeCompose();
         return;
       }
+      if (this.shell.checkedCount() > 0) {
+        event.preventDefault();
+        this.shell.clearChecked();
+        return;
+      }
       this.shell.closeCommandPalette();
       this.shell.closeSettings();
       this.shell.closeAccountMenu();
@@ -1237,12 +1596,29 @@ export class App implements OnInit {
       return;
     }
 
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      this.shell.selectAllVisible();
+      return;
+    }
+
     if (event.key === 'j') {
       event.preventDefault();
       this.shell.selectNext();
     } else if (event.key === 'k') {
       event.preventDefault();
       this.shell.selectPrevious();
+    } else if (event.key === 'x') {
+      // Toggle check on focused thread (Superhuman-style)
+      event.preventDefault();
+      const id = this.shell.selectedId();
+      if (id) {
+        void this.shell.onThreadListClick(id, {
+          metaKey: true,
+          ctrlKey: false,
+          shiftKey: false,
+        });
+      }
     } else if (event.key === 'r') {
       event.preventDefault();
       this.shell.openReply();

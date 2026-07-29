@@ -11,6 +11,13 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 - **Decision:** Angular **22.x** only. Production uses stable APIs: signals, OnPush default, Signal Forms, `resource`/`httpResource`, `@Service`, Angular Aria, control flow. No experimental WebMCP as foundation.
 - **Consequences:** Fast UI iteration; agent MCP stays on core.
 
+## ADR-012 — Configurable OAuth token store (sqlite | keychain)
+
+- **Status:** Accepted (2026-07-21)
+- **Context:** Refresh tokens in plaintext SQLite are risky but clone-and-run must stay easy.
+- **Decision:** `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (keytar / OS secret store). Keychain clears token columns in SQLite after migrate.
+- **Consequences:** Cloners get zero native deps by default; daily drivers set keychain in `.env`.
+
 ## ADR-011 — Native Mac notifications via Tauri + mail.new
 
 - **Status:** Accepted (2026-07-20)

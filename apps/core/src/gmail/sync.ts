@@ -245,9 +245,65 @@ function upsertThreadAndMessages(
   tx();
 }
 
+const INBOX_PAGE_TOKEN_KEY = 'inbox_list_page_token';
+const SEARCH_PAGE_TOKEN_KEY = 'search_list_page_token';
+const SEARCH_QUERY_KEY = 'search_list_query';
+
+/** Whether Gmail has another inbox page after the last full/more sync. */
+export function inboxHasMorePages(): boolean {
+  const row = getDb()
+    .prepare(`SELECT value FROM meta WHERE key = ?`)
+    .get(INBOX_PAGE_TOKEN_KEY) as { value: string } | undefined;
+  return Boolean(row?.value);
+}
+
+export function searchHasMorePages(): boolean {
+  const row = getDb()
+    .prepare(`SELECT value FROM meta WHERE key = ?`)
+    .get(SEARCH_PAGE_TOKEN_KEY) as { value: string } | undefined;
+  return Boolean(row?.value);
+}
+
+function setMeta(key: string, value: string): void {
+  getDb()
+    .prepare(
+      `INSERT INTO meta(key, value) VALUES(?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    )
+    .run(key, value);
+}
+
+function getMeta(key: string): string | null {
+  const row = getDb()
+    .prepare(`SELECT value FROM meta WHERE key = ?`)
+    .get(key) as { value: string } | undefined;
+  return row?.value || null;
+}
+
+export interface NewMailNotice {
+  threadId: string;
+  messageId: string;
+  from: string;
+  subject: string;
+  snippet: string;
+}
+
 export async function syncInbox(options?: {
   maxThreads?: number;
-}): Promise<{ synced: number; email: string }> {
+  /** Continue from Gmail page token (load more). */
+  more?: boolean;
+  /**
+   * Emit mail.new for messages that were not in SQLite and are recent.
+   * Off for first OAuth bulk pull / load-more to avoid spam.
+   */
+  notifyRecent?: boolean;
+}): Promise<{
+  synced: number;
+  email: string;
+  nextPageToken: string | null;
+  hasMore: boolean;
+  newMail: NewMailNotice[];
+}> {
   const account = getActiveAccount();
   if (!account) {
     throw new Error('No Gmail account connected');
@@ -255,16 +311,36 @@ export async function syncInbox(options?: {
 
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
-  const maxThreads = options?.maxThreads ?? 30;
+  const maxThreads = Math.min(Math.max(options?.maxThreads ?? 100, 1), 100);
+
+  let pageToken: string | undefined;
+  if (options?.more) {
+    const row = getDb()
+      .prepare(`SELECT value FROM meta WHERE key = ?`)
+      .get(INBOX_PAGE_TOKEN_KEY) as { value: string } | undefined;
+    pageToken = row?.value || undefined;
+    if (!pageToken) {
+      return {
+        synced: 0,
+        email: account.email,
+        nextPageToken: null,
+        hasMore: false,
+        newMail: [],
+      };
+    }
+  }
 
   const list = await gmail.users.threads.list({
     userId: 'me',
     q: 'in:inbox',
     maxResults: maxThreads,
+    pageToken,
   });
 
   const refs = list.data.threads ?? [];
   let synced = 0;
+  const freshMessages: { messageId: string; gmailThreadId: string }[] = [];
+  const existsStmt = getDb().prepare(`SELECT 1 AS ok FROM messages WHERE id = ?`);
 
   for (const ref of refs) {
     if (!ref.id) continue;
@@ -274,10 +350,33 @@ export async function syncInbox(options?: {
       format: 'full',
     });
     if (full.data) {
+      if (options?.notifyRecent) {
+        for (const m of full.data.messages ?? []) {
+          if (!m.id) continue;
+          const known = existsStmt.get(m.id) as { ok: number } | undefined;
+          if (!known) {
+            freshMessages.push({
+              messageId: m.id,
+              gmailThreadId: ref.id,
+            });
+          }
+        }
+      }
       upsertThreadAndMessages(account, full.data);
       synced += 1;
     }
   }
+
+  let newMail: NewMailNotice[] = [];
+  if (options?.notifyRecent && freshMessages.length) {
+    // Only ping for mail from the last 6 hours (avoids backlog spam)
+    newMail = publishNewMailEvents(account, freshMessages, {
+      maxAgeMs: 6 * 60 * 60 * 1000,
+    });
+  }
+
+  const nextPageToken = list.data.nextPageToken ?? null;
+  setMeta(INBOX_PAGE_TOKEN_KEY, nextPageToken ?? '');
 
   const profile = await gmail.users.getProfile({ userId: 'me' });
   if (profile.data.historyId) {
@@ -286,7 +385,124 @@ export async function syncInbox(options?: {
       .run(profile.data.historyId, Date.now(), account.id);
   }
 
-  return { synced, email: account.email };
+  return {
+    synced,
+    email: account.email,
+    nextPageToken,
+    hasMore: Boolean(nextPageToken),
+    newMail,
+  };
+}
+
+/**
+ * Search Gmail (full query language), pull matching threads into SQLite.
+ * Supports paging via `more: true` using the last search query/token.
+ */
+export async function searchGmail(options: {
+  q: string;
+  maxResults?: number;
+  more?: boolean;
+}): Promise<{
+  synced: number;
+  email: string;
+  query: string;
+  hasMore: boolean;
+  nextPageToken: string | null;
+}> {
+  const account = getActiveAccount();
+  if (!account) throw new Error('No Gmail account connected');
+
+  let q = options.q.trim();
+  let pageToken: string | undefined;
+
+  if (options.more) {
+    const savedQ = getMeta(SEARCH_QUERY_KEY);
+    const savedTok = getMeta(SEARCH_PAGE_TOKEN_KEY);
+    if (!savedQ || !savedTok) {
+      return {
+        synced: 0,
+        email: account.email,
+        query: savedQ ?? q,
+        hasMore: false,
+        nextPageToken: null,
+      };
+    }
+    q = savedQ;
+    pageToken = savedTok;
+  } else {
+    if (!q) throw new Error('search query required');
+    setMeta(SEARCH_QUERY_KEY, q);
+    setMeta(SEARCH_PAGE_TOKEN_KEY, '');
+  }
+
+  const auth = await getAuthedClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+  const maxResults = Math.min(Math.max(options.maxResults ?? 40, 1), 100);
+
+  const list = await gmail.users.threads.list({
+    userId: 'me',
+    q,
+    maxResults,
+    pageToken,
+  });
+
+  const refs = list.data.threads ?? [];
+  let synced = 0;
+
+  for (const ref of refs) {
+    if (!ref.id) continue;
+    try {
+      const full = await gmail.users.threads.get({
+        userId: 'me',
+        id: ref.id,
+        format: 'full',
+      });
+      if (full.data) {
+        upsertThreadAndMessages(account, full.data);
+        synced += 1;
+      }
+    } catch (e) {
+      console.warn('[search] thread fetch failed', ref.id, e);
+    }
+  }
+
+  const nextPageToken = list.data.nextPageToken ?? null;
+  setMeta(SEARCH_PAGE_TOKEN_KEY, nextPageToken ?? '');
+  setMeta(SEARCH_QUERY_KEY, q);
+
+  console.info(
+    `[search] q="${q}" synced=${synced} hasMore=${Boolean(nextPageToken)}`,
+  );
+
+  return {
+    synced,
+    email: account.email,
+    query: q,
+    hasMore: Boolean(nextPageToken),
+    nextPageToken,
+  };
+}
+
+/** Re-download one thread from Gmail into SQLite (when local messages are missing). */
+export async function hydrateThreadFromGmail(threadId: string): Promise<boolean> {
+  const account = getActiveAccount();
+  if (!account) return false;
+  const gmailId = toGmailThreadId(threadId);
+  try {
+    const auth = await getAuthedClient(account);
+    const gmail = google.gmail({ version: 'v1', auth });
+    const full = await gmail.users.threads.get({
+      userId: 'me',
+      id: gmailId,
+      format: 'full',
+    });
+    if (!full.data) return false;
+    upsertThreadAndMessages(account, full.data);
+    return true;
+  } catch (e) {
+    console.warn('[hydrate] failed for', threadId, e);
+    return false;
+  }
 }
 
 export async function modifyThreadLabels(
@@ -335,11 +551,75 @@ function encodeRawMime(raw: string): string {
     .replace(/=+$/, '');
 }
 
+export interface OutboundAttachment {
+  filename: string;
+  mimeType: string;
+  /** Standard base64 of file bytes (not URL-safe). */
+  contentBase64: string;
+}
+
+function chunkBase64(b64: string): string {
+  const clean = b64.replace(/\s/g, '');
+  return clean.match(/.{1,76}/g)?.join('\r\n') ?? clean;
+}
+
+/** Build a plain or multipart/mixed RFC822 message. */
+export function buildMimeMessage(opts: {
+  headerLines: string[];
+  bodyText: string;
+  attachments?: OutboundAttachment[];
+}): string {
+  const headers = [...opts.headerLines];
+  const atts = opts.attachments?.filter((a) => a.filename && a.contentBase64) ?? [];
+
+  if (!atts.length) {
+    return [
+      ...headers,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      opts.bodyText,
+    ].join('\r\n');
+  }
+
+  const boundary = `local_mail_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const parts: string[] = [
+    ...headers,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    opts.bodyText,
+  ];
+
+  for (const att of atts) {
+    const name = att.filename.replace(/[\r\n"]/g, '_');
+    const mime = (att.mimeType || 'application/octet-stream').replace(
+      /[\r\n]/g,
+      '',
+    );
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${mime}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      chunkBase64(att.contentBase64),
+    );
+  }
+  parts.push(`--${boundary}--`, '');
+  return parts.join('\r\n');
+}
+
 export async function sendReply(input: {
   threadId: string;
   bodyText: string;
   to?: string;
   subject?: string;
+  attachments?: OutboundAttachment[];
 }): Promise<{ id: string }> {
   const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
@@ -384,16 +664,16 @@ export async function sendReply(input: {
   const messageId = hmap.get('message-id') ?? `<${last.id}@mail.gmail.com>`;
   const references = [hmap.get('references'), messageId].filter(Boolean).join(' ');
 
-  const raw = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `In-Reply-To: ${messageId}`,
-    `References: ${references}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'MIME-Version: 1.0',
-    '',
-    input.bodyText,
-  ].join('\r\n');
+  const raw = buildMimeMessage({
+    headerLines: [
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `In-Reply-To: ${messageId}`,
+      `References: ${references}`,
+    ],
+    bodyText: input.bodyText,
+    attachments: input.attachments,
+  });
 
   const res = await gmail.users.messages.send({
     userId: 'me',
@@ -418,6 +698,7 @@ export async function sendNewMessage(input: {
   subject: string;
   bodyText: string;
   cc?: string;
+  attachments?: OutboundAttachment[];
 }): Promise<{ id: string }> {
   const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
@@ -426,15 +707,17 @@ export async function sendNewMessage(input: {
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const headers = [
+  const headerLines = [
     `To: ${input.to.trim()}`,
     input.cc?.trim() ? `Cc: ${input.cc.trim()}` : null,
     `Subject: ${input.subject || '(no subject)'}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    'MIME-Version: 1.0',
   ].filter((h): h is string => Boolean(h));
 
-  const raw = [...headers, '', input.bodyText].join('\r\n');
+  const raw = buildMimeMessage({
+    headerLines,
+    bodyText: input.bodyText,
+    attachments: input.attachments,
+  });
 
   const res = await gmail.users.messages.send({
     userId: 'me',
@@ -447,7 +730,30 @@ export async function sendNewMessage(input: {
 /** Incremental sync using Gmail history when possible. */
 export async function syncIncremental(options?: {
   maxThreads?: number;
-}): Promise<{ synced: number; email: string; mode: 'history' | 'full' }> {
+  more?: boolean;
+}): Promise<{
+  synced: number;
+  email: string;
+  mode: 'history' | 'full';
+  hasMore?: boolean;
+  nextPageToken?: string | null;
+  newMail: NewMailNotice[];
+}> {
+  // Explicit "load more" always uses paged full inbox pull
+  if (options?.more) {
+    const full = await syncInbox({
+      maxThreads: options.maxThreads ?? 100,
+      more: true,
+    });
+    return {
+      synced: full.synced,
+      email: full.email,
+      mode: 'full',
+      hasMore: full.hasMore,
+      nextPageToken: full.nextPageToken,
+      newMail: full.newMail,
+    };
+  }
   const account = getActiveAccount();
   if (!account) throw new Error('No Gmail account connected');
 
@@ -515,7 +821,7 @@ export async function syncIncremental(options?: {
         }
       }
 
-      publishNewMailEvents(account, freshMessages);
+      const newMail = publishNewMailEvents(account, freshMessages);
 
       const profile = await gmail.users.getProfile({ userId: 'me' });
       if (profile.data.historyId) {
@@ -524,48 +830,85 @@ export async function syncIncremental(options?: {
           .run(profile.data.historyId, Date.now(), account.id);
       }
 
-      return { synced, email: account.email, mode: 'history' };
+      return { synced, email: account.email, mode: 'history', newMail };
     } catch (e) {
       console.warn('[sync] history failed, falling back to full', e);
     }
   }
 
-  const full = await syncInbox(options);
-  return { ...full, mode: 'full' };
+  // History unavailable — full pull, but still notify on recent new messages
+  const full = await syncInbox({
+    ...options,
+    more: false,
+    notifyRecent: true,
+  });
+  return {
+    synced: full.synced,
+    email: full.email,
+    mode: 'full' as const,
+    hasMore: full.hasMore,
+    nextPageToken: full.nextPageToken,
+    newMail: full.newMail,
+  };
 }
 
 /**
- * Emit mail.new for freshly arrived inbox messages (skip self-sent / non-inbox).
- * Capped so a large history burst doesn't flood Notification Center.
+ * Emit mail.new for freshly arrived inbox messages.
+ * Returns the list so HTTP sync can notify the UI even if SSE is down.
  */
 function publishNewMailEvents(
   account: AccountRow,
   fresh: { messageId: string; gmailThreadId: string }[],
-): void {
-  if (!fresh.length) return;
+  opts?: { maxAgeMs?: number },
+): NewMailNotice[] {
+  if (!fresh.length) return [];
 
   const me = account.email.toLowerCase();
   const msgStmt = getDb().prepare(`SELECT * FROM messages WHERE id = ?`);
   const thrStmt = getDb().prepare(`SELECT * FROM threads WHERE id = ?`);
   const seenThreads = new Set<string>();
-  let emitted = 0;
-  const cap = 5;
+  const emitted: NewMailNotice[] = [];
+  const cap = 8;
+  const maxAge = opts?.maxAgeMs;
+  const now = Date.now();
 
   for (const item of fresh) {
-    if (emitted >= cap) break;
+    if (emitted.length >= cap) break;
     const localThreadId = toLocalThreadId(account.id, item.gmailThreadId);
     // One notification per thread in a single sync burst
     if (seenThreads.has(localThreadId)) continue;
 
     const msg = msgStmt.get(item.messageId) as MessageRow | undefined;
     const thr = thrStmt.get(localThreadId) as ThreadRow | undefined;
-    if (!msg || !thr) continue;
+    if (!msg || !thr) {
+      console.warn(
+        `[sync] mail.new skip: missing row msg=${item.messageId} thr=${localThreadId}`,
+      );
+      continue;
+    }
 
     const labels = thr.label_ids || '';
-    if (!labels.includes('INBOX') && labels !== '[]') continue;
+    if (!labels.includes('INBOX') && labels !== '[]') {
+      console.info(`[sync] mail.new skip non-inbox ${localThreadId}`);
+      continue;
+    }
+
+    if (maxAge != null) {
+      const ts = msg.internal_date ?? msg.date_ms ?? thr.last_message_at ?? 0;
+      if (ts > 0 && now - ts > maxAge) {
+        continue;
+      }
+    }
 
     const fromLower = (msg.from_header || '').toLowerCase();
-    if (fromLower.includes(me)) continue; // own outbound
+    const toLower = (msg.to_header || '').toLowerCase();
+    const fromIsMe = addressMentionsEmail(fromLower, me);
+    const toIsMe = addressMentionsEmail(toLower, me);
+    // Outbound to someone else (including replies) — do not notify
+    if (fromIsMe && !toIsMe) {
+      console.info(`[sync] mail.new skip outbound ${msg.subject}`);
+      continue;
+    }
 
     const from =
       thr.from_name ||
@@ -573,17 +916,36 @@ function publishNewMailEvents(
       msg.from_header ||
       'New mail';
     const subject = thr.subject || msg.subject || '(no subject)';
+    const snippet = thr.snippet || msg.snippet || '';
 
-    publish({
-      type: 'mail.new',
+    console.info(
+      `[sync] mail.new → ${from} / ${subject} (${localThreadId})`,
+    );
+    const notice: NewMailNotice = {
       threadId: localThreadId,
       messageId: item.messageId,
       from,
       subject,
-      snippet: thr.snippet || msg.snippet || '',
+      snippet,
+    };
+    publish({
+      type: 'mail.new',
+      ...notice,
       at: new Date().toISOString(),
     });
     seenThreads.add(localThreadId);
-    emitted += 1;
+    emitted.push(notice);
   }
+  return emitted;
+}
+
+/** True if a From/To header mentions this email (bare or Name <email>). */
+function addressMentionsEmail(headerLower: string, emailLower: string): boolean {
+  if (!headerLower || !emailLower) return false;
+  if (headerLower.includes(`<${emailLower}>`)) return true;
+  if (headerLower === emailLower) return true;
+  // bare email somewhere in the header
+  return new RegExp(
+    `(^|[\\s,<])${emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[\\s,>])`,
+  ).test(headerLower);
 }

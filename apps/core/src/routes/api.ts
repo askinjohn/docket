@@ -14,11 +14,16 @@ import { publish, subscribe } from '../events/bus.js';
 import { downloadAttachment } from '../gmail/attachments.js';
 import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
 import {
+  hydrateThreadFromGmail,
+  inboxHasMorePages,
   modifyThreadLabels,
+  searchGmail,
+  searchHasMorePages,
   sendNewMessage,
   sendReply,
   syncInbox,
   syncIncremental,
+  type OutboundAttachment,
 } from '../gmail/sync.js';
 import {
   getThreadDetail,
@@ -38,6 +43,8 @@ api.get('/health', (c) => {
     host: appConfig.host,
     port: appConfig.port,
     googleConfigured: googleConfigured(),
+    /** sqlite = tokens in DB (default); keychain = OS secret store */
+    tokenStore: appConfig.tokenStore,
     account: account ? { id: account.id, email: account.email } : null,
     accounts,
     aiMode: resolveAiMode(),
@@ -88,7 +95,7 @@ api.post('/accounts/active', async (c) => {
 
 api.delete('/accounts/:id', async (c) => {
   try {
-    deleteAccount(Number(c.req.param('id')));
+    await deleteAccount(Number(c.req.param('id')));
     return c.json({ ok: true, accounts: listAccounts().map(publicAccount) });
   } catch (e) {
     return c.json(
@@ -131,7 +138,7 @@ api.get('/auth/gmail/callback', async (c) => {
   }
   try {
     const account = await exchangeCode(code);
-    void syncInbox({ maxThreads: 25 })
+    void syncInbox({ maxThreads: 100 })
       .then((r) =>
         publish({
           type: 'mail.synced',
@@ -163,16 +170,62 @@ api.get('/auth/gmail/callback', async (c) => {
 
 api.post('/sync', async (c) => {
   try {
-    const body = await c.req.json().catch(() => ({} as { full?: boolean }));
-    const result = body.full
-      ? { ...(await syncInbox({ maxThreads: 40 })), mode: 'full' as const }
-      : await syncIncremental({ maxThreads: 40 });
+    const body = await c.req.json().catch(
+      () =>
+        ({} as {
+          full?: boolean;
+          more?: boolean;
+          maxThreads?: number;
+        }),
+    );
+    const maxThreads = body.maxThreads ?? 100;
+    let result: {
+      synced: number;
+      email: string;
+      mode: string;
+      hasMore?: boolean;
+      nextPageToken?: string | null;
+      newMail?: {
+        threadId: string;
+        messageId: string;
+        from: string;
+        subject: string;
+        snippet: string;
+      }[];
+    };
+    if (body.more) {
+      result = {
+        ...(await syncInbox({
+          maxThreads,
+          more: true,
+          notifyRecent: false,
+        })),
+        mode: 'full',
+      };
+    } else if (body.full) {
+      result = {
+        ...(await syncInbox({
+          maxThreads,
+          more: false,
+          // Manual Sync should surface brand-new inbox mail
+          notifyRecent: true,
+        })),
+        mode: 'full',
+      };
+    } else {
+      result = await syncIncremental({ maxThreads });
+    }
     publish({
       type: 'mail.synced',
       synced: result.synced,
       at: new Date().toISOString(),
     });
-    return c.json({ ok: true, ...result });
+    return c.json({
+      ok: true,
+      ...result,
+      hasMore: result.hasMore ?? inboxHasMorePages(),
+      newMail: result.newMail ?? [],
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'sync_failed';
     return c.json({ error: message }, 400);
@@ -182,7 +235,39 @@ api.post('/sync', async (c) => {
 api.get('/threads', (c) => {
   const q = c.req.query('q') ?? undefined;
   const view = (c.req.query('view') as 'inbox' | 'starred' | 'all') || 'inbox';
-  return c.json(listThreads({ q, view }));
+  return c.json({
+    ...listThreads({ q, view }),
+    searchHasMore: searchHasMorePages(),
+    inboxHasMore: inboxHasMorePages(),
+  });
+});
+
+/**
+ * Search Gmail (operators supported: from:, subject:, has:attachment, …).
+ * Pulls matching threads into SQLite, then client re-lists with local filter.
+ */
+api.post('/search', async (c) => {
+  const body = await c.req.json().catch(
+    () => ({} as { q?: string; more?: boolean; maxResults?: number }),
+  );
+  try {
+    const result = await searchGmail({
+      q: body.q ?? '',
+      more: body.more,
+      maxResults: body.maxResults,
+    });
+    publish({
+      type: 'mail.changed',
+      reason: 'search',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'search_failed' },
+      400,
+    );
+  }
 });
 
 /** Typeahead contacts from cached mail history (not Google Contacts). */
@@ -194,15 +279,22 @@ api.get('/contacts/suggest', (c) => {
   });
 });
 
-api.get('/threads/:id', (c) => {
-  const detail = getThreadDetail(c.req.param('id'));
+api.get('/threads/:id', async (c) => {
+  // IDs are composite "accountId:gmailThreadId" — client encodes them
+  const id = decodeURIComponent(c.req.param('id'));
+  let detail = getThreadDetail(id);
+  // Thread row without messages (or missing) — pull full thread from Gmail once
+  if (!detail || detail.messages.length === 0) {
+    const ok = await hydrateThreadFromGmail(id);
+    if (ok) detail = getThreadDetail(id);
+  }
   if (!detail) return c.json({ error: 'not_found' }, 404);
   return c.json(detail);
 });
 
 api.post('/threads/:id/archive', async (c) => {
   try {
-    await modifyThreadLabels(c.req.param('id'), [], ['INBOX']);
+    await modifyThreadLabels(decodeURIComponent(c.req.param('id')), [], ['INBOX']);
     publish({
       type: 'mail.changed',
       reason: 'archive',
@@ -220,7 +312,7 @@ api.post('/threads/:id/archive', async (c) => {
 /** Restore a thread to the inbox (undo archive). Re-fetches from Gmail into SQLite. */
 api.post('/threads/:id/unarchive', async (c) => {
   try {
-    await modifyThreadLabels(c.req.param('id'), ['INBOX'], []);
+    await modifyThreadLabels(decodeURIComponent(c.req.param('id')), ['INBOX'], []);
     publish({
       type: 'mail.changed',
       reason: 'unarchive',
@@ -237,7 +329,7 @@ api.post('/threads/:id/unarchive', async (c) => {
 
 api.post('/threads/:id/read', async (c) => {
   try {
-    await modifyThreadLabels(c.req.param('id'), [], ['UNREAD']);
+    await modifyThreadLabels(decodeURIComponent(c.req.param('id')), [], ['UNREAD']);
     return c.json({ ok: true });
   } catch (e) {
     return c.json(
@@ -251,8 +343,9 @@ api.post('/threads/:id/star', async (c) => {
   const body = await c.req.json().catch(() => ({} as { starred?: boolean }));
   const starred = body.starred !== false;
   try {
-    if (starred) await modifyThreadLabels(c.req.param('id'), ['STARRED'], []);
-    else await modifyThreadLabels(c.req.param('id'), [], ['STARRED']);
+    const tid = decodeURIComponent(c.req.param('id'));
+    if (starred) await modifyThreadLabels(tid, ['STARRED'], []);
+    else await modifyThreadLabels(tid, [], ['STARRED']);
     publish({
       type: 'mail.changed',
       reason: 'star',
@@ -268,14 +361,21 @@ api.post('/threads/:id/star', async (c) => {
 });
 
 api.post('/threads/:id/reply', async (c) => {
-  const body = await c.req.json().catch(() => ({} as { bodyText?: string }));
+  const body = await c.req.json().catch(
+    () =>
+      ({} as {
+        bodyText?: string;
+        attachments?: OutboundAttachment[];
+      }),
+  );
   if (!body.bodyText?.trim()) {
     return c.json({ error: 'bodyText required' }, 400);
   }
   try {
     const result = await sendReply({
-      threadId: c.req.param('id'),
+      threadId: decodeURIComponent(c.req.param('id')),
       bodyText: body.bodyText,
+      attachments: body.attachments,
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
@@ -294,6 +394,7 @@ api.post('/messages/send', async (c) => {
         subject?: string;
         bodyText?: string;
         cc?: string;
+        attachments?: OutboundAttachment[];
       }),
   );
   if (!body.to?.trim() || !body.bodyText?.trim()) {
@@ -305,6 +406,7 @@ api.post('/messages/send', async (c) => {
       subject: body.subject ?? '',
       bodyText: body.bodyText,
       cc: body.cc,
+      attachments: body.attachments,
     });
     return c.json({ ok: true, ...result });
   } catch (e) {

@@ -121,31 +121,64 @@ export class MailApiService {
       this.http.get<{
         account: { id: number; email: string } | null;
         threads: ApiThread[];
+        searchHasMore?: boolean;
+        inboxHasMore?: boolean;
       }>(`${this.baseUrl}/threads${qs ? `?${qs}` : ''}`),
+    );
+  }
+
+  /** Gmail server-side search; results are cached locally. */
+  searchGmail(q: string, opts?: { more?: boolean; maxResults?: number }) {
+    return firstValueFrom(
+      this.http.post<{
+        ok: boolean;
+        synced: number;
+        email: string;
+        query: string;
+        hasMore: boolean;
+      }>(`${this.baseUrl}/search`, {
+        q,
+        more: opts?.more,
+        maxResults: opts?.maxResults,
+      }),
     );
   }
 
   getThread(id: string) {
     return firstValueFrom(
-      this.http.get<ApiThreadDetail>(`${this.baseUrl}/threads/${id}`),
+      this.http.get<ApiThreadDetail>(
+        `${this.baseUrl}/threads/${encodeURIComponent(id)}`,
+      ),
     );
   }
 
-  sync(full = false) {
+  sync(full = false, opts?: { more?: boolean; maxThreads?: number }) {
     return firstValueFrom(
       this.http.post<{
         ok: boolean;
         synced: number;
         email: string;
         mode?: string;
-      }>(`${this.baseUrl}/sync`, { full }),
+        hasMore?: boolean;
+        newMail?: {
+          threadId: string;
+          messageId: string;
+          from: string;
+          subject: string;
+          snippet: string;
+        }[];
+      }>(`${this.baseUrl}/sync`, {
+        full,
+        more: opts?.more,
+        maxThreads: opts?.maxThreads,
+      }),
     );
   }
 
   archive(threadId: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean }>(
-        `${this.baseUrl}/threads/${threadId}/archive`,
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/archive`,
         {},
       ),
     );
@@ -154,7 +187,7 @@ export class MailApiService {
   unarchive(threadId: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean }>(
-        `${this.baseUrl}/threads/${threadId}/unarchive`,
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/unarchive`,
         {},
       ),
     );
@@ -163,7 +196,7 @@ export class MailApiService {
   markRead(threadId: string) {
     return firstValueFrom(
       this.http.post<{ ok: boolean }>(
-        `${this.baseUrl}/threads/${threadId}/read`,
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/read`,
         {},
       ),
     );
@@ -172,26 +205,44 @@ export class MailApiService {
   star(threadId: string, starred: boolean) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; starred: boolean }>(
-        `${this.baseUrl}/threads/${threadId}/star`,
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/star`,
         { starred },
       ),
     );
   }
 
-  reply(threadId: string, bodyText: string) {
+  reply(
+    threadId: string,
+    bodyText: string,
+    attachments?: {
+      filename: string;
+      mimeType: string;
+      contentBase64: string;
+    }[],
+  ) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; id: string }>(
-        `${this.baseUrl}/threads/${threadId}/reply`,
-        { bodyText },
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/reply`,
+        { bodyText, attachments },
       ),
     );
   }
 
-  sendNew(to: string, subject: string, bodyText: string, cc?: string) {
+  sendNew(
+    to: string,
+    subject: string,
+    bodyText: string,
+    cc?: string,
+    attachments?: {
+      filename: string;
+      mimeType: string;
+      contentBase64: string;
+    }[],
+  ) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; id: string }>(
         `${this.baseUrl}/messages/send`,
-        { to, subject, bodyText, cc: cc || undefined },
+        { to, subject, bodyText, cc: cc || undefined, attachments },
       ),
     );
   }

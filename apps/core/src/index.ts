@@ -9,6 +9,12 @@ const app = createApp();
 console.log(`[local-mail/core] data dir: ${appConfig.dataDir}`);
 console.log(`[local-mail/core] database: ${appConfig.dbPath}`);
 console.log(
+  `[local-mail/core] token store: ${appConfig.tokenStore}` +
+    (appConfig.tokenStore === 'sqlite'
+      ? ' (plaintext in SQLite — set LOCAL_MAIL_TOKEN_STORE=keychain for OS secrets)'
+      : ' (OS keychain via keytar)'),
+);
+console.log(
   `[local-mail/core] listening http://${appConfig.host}:${appConfig.port}`,
 );
 

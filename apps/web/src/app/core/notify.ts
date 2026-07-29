@@ -1,7 +1,9 @@
 /**
  * Cross-platform notifications:
  * - Tauri Dock app → native macOS Notification Center
- * - Browser → Web Notification API
+ * - Browser / fallback → Web Notification API
+ *
+ * Never silently drop: if Tauri path fails, try Web API.
  */
 
 export interface MailNotifyPayload {
@@ -31,17 +33,17 @@ function isTauri(): boolean {
 
 async function ensureTauriPermission(): Promise<boolean> {
   try {
-    const {
-      isPermissionGranted,
-      requestPermission,
-    } = await import('@tauri-apps/plugin-notification');
+    const { isPermissionGranted, requestPermission } = await import(
+      '@tauri-apps/plugin-notification'
+    );
     let granted = await isPermissionGranted();
     if (!granted) {
       const perm = await requestPermission();
       granted = perm === 'granted';
     }
     return granted;
-  } catch {
+  } catch (e) {
+    console.warn('[notify] Tauri notification plugin unavailable', e);
     return false;
   }
 }
@@ -51,17 +53,14 @@ async function hookTauriActionOnce(): Promise<void> {
   tauriActionHooked = true;
   try {
     const { onAction } = await import('@tauri-apps/plugin-notification');
-    await onAction((notification) => {
-      const extra = (notification as { extra?: Record<string, unknown> }).extra;
-      const threadId =
-        (extra?.['threadId'] as string | undefined) ||
-        (notification as { extra?: { threadId?: string } }).extra?.threadId;
-      if (threadId && openThreadHandler) {
+    await onAction((notification: { extra?: Record<string, unknown> }) => {
+      const threadId = notification.extra?.['threadId'];
+      if (typeof threadId === 'string' && openThreadHandler) {
         openThreadHandler(threadId);
       }
     });
   } catch {
-    /* onAction may be limited on desktop — focus app still works */
+    /* onAction may be limited on desktop */
   }
 }
 
@@ -81,11 +80,51 @@ async function focusMainWindow(): Promise<void> {
   }
 }
 
+function showWebNotification(payload: MailNotifyPayload): boolean {
+  if (typeof Notification === 'undefined') {
+    console.warn('[notify] Web Notification API not available');
+    return false;
+  }
+  if (Notification.permission === 'default') {
+    void Notification.requestPermission().then((p) => {
+      if (p === 'granted') showWebNotification(payload);
+    });
+    return false;
+  }
+  if (Notification.permission !== 'granted') {
+    console.warn('[notify] Web Notification permission not granted');
+    return false;
+  }
+
+  try {
+    const n = new Notification(payload.title, {
+      body: payload.body,
+      tag: payload.threadId ? `thread-${payload.threadId}` : undefined,
+      data: payload.threadId ? { threadId: payload.threadId } : undefined,
+    });
+    n.onclick = () => {
+      void focusMainWindow();
+      if (payload.threadId && openThreadHandler) {
+        openThreadHandler(payload.threadId);
+      }
+      n.close();
+    };
+    console.info('[notify] Web notification shown', payload.title);
+    return true;
+  } catch (e) {
+    console.warn('[notify] Web Notification failed', e);
+    return false;
+  }
+}
+
 /** Request permission early (browser or Tauri). */
 export async function requestNotifyPermission(): Promise<void> {
   if (isTauri()) {
-    await ensureTauriPermission();
+    const ok = await ensureTauriPermission();
     await hookTauriActionOnce();
+    if (!ok && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
     return;
   }
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -94,45 +133,37 @@ export async function requestNotifyPermission(): Promise<void> {
 }
 
 /**
- * Show a system notification. Prefer native in Tauri; fall back to Web API.
+ * Show a system notification. Prefer native in Tauri; always fall back to Web API.
  */
 export async function showNotification(payload: MailNotifyPayload): Promise<void> {
   const { title, body, threadId } = payload;
+  console.info('[notify] show requested', title, body?.slice?.(0, 80));
 
   if (isTauri()) {
     try {
       const granted = await ensureTauriPermission();
       await hookTauriActionOnce();
-      if (!granted) return;
-      const { sendNotification } = await import('@tauri-apps/plugin-notification');
-      sendNotification({
-        title,
-        body,
-        extra: threadId ? { threadId } : undefined,
-      });
-      return;
+      if (granted) {
+        const { sendNotification } = await import(
+          '@tauri-apps/plugin-notification'
+        );
+        sendNotification({
+          title,
+          body,
+          extra: threadId ? { threadId } : undefined,
+        });
+        console.info('[notify] Tauri notification sent', title);
+        return;
+      }
+      console.warn(
+        '[notify] Tauri permission denied — trying Web Notification fallback',
+      );
     } catch (e) {
-      console.warn('[notify] Tauri notification failed, trying Web API', e);
+      console.warn('[notify] Tauri path failed, trying Web API', e);
     }
   }
 
-  if (typeof Notification === 'undefined') return;
-  if (Notification.permission !== 'granted') return;
-
-  try {
-    const n = new Notification(title, {
-      body,
-      tag: threadId ? `thread-${threadId}` : undefined,
-      data: threadId ? { threadId } : undefined,
-    });
-    n.onclick = () => {
-      void focusMainWindow();
-      if (threadId && openThreadHandler) openThreadHandler(threadId);
-      n.close();
-    };
-  } catch {
-    /* ignore */
-  }
+  showWebNotification(payload);
 }
 
 /** Set Dock badge unread count when running under Tauri (no-op in browser). */
@@ -141,7 +172,6 @@ export async function setDockBadge(count: number): Promise<void> {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const win = getCurrentWindow();
-    // Tauri 2 window badge API (macOS / some Linux)
     const w = win as unknown as {
       setBadgeCount?: (n: number | null) => Promise<void>;
     };
