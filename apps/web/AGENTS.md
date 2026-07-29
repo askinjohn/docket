@@ -29,6 +29,8 @@ You are an expert in TypeScript, Angular, and scalable web application developme
 ### Components
 
 - Keep components small and focused on a single responsibility
+- Shell UI lives under `src/app/shell/` (`Sidebar`, `ThreadList`, `ReadingPane`, `ComposeWindow`, `CommandPalette`, `SettingsDialog`). Keep `app.ts` as layout + global hotkeys only.
+- Pure message presentation helpers live in `src/app/core/message-display.ts`; keyboard map in `src/app/shell/shell-hotkeys.ts`.
 - Use `input()` and `output()` functions instead of decorators
 - Use `computed()` for derived state
 - **Prefer inline `template` and `styles` in the component `.ts` file** (same-file components). Avoid separate `.html` / `.css` unless a template is extremely large and the team agrees to split.

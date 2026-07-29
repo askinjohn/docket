@@ -202,6 +202,15 @@ export class MailApiService {
     );
   }
 
+  markUnread(threadId: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean }>(
+        `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/unread`,
+        {},
+      ),
+    );
+  }
+
   star(threadId: string, starred: boolean) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; starred: boolean }>(

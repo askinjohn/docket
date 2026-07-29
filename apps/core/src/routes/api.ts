@@ -330,10 +330,32 @@ api.post('/threads/:id/unarchive', async (c) => {
 api.post('/threads/:id/read', async (c) => {
   try {
     await modifyThreadLabels(decodeURIComponent(c.req.param('id')), [], ['UNREAD']);
+    publish({
+      type: 'mail.changed',
+      reason: 'read',
+      at: new Date().toISOString(),
+    });
     return c.json({ ok: true });
   } catch (e) {
     return c.json(
       { error: e instanceof Error ? e.message : 'read_failed' },
+      400,
+    );
+  }
+});
+
+api.post('/threads/:id/unread', async (c) => {
+  try {
+    await modifyThreadLabels(decodeURIComponent(c.req.param('id')), ['UNREAD'], []);
+    publish({
+      type: 'mail.changed',
+      reason: 'unread',
+      at: new Date().toISOString(),
+    });
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'unread_failed' },
       400,
     );
   }

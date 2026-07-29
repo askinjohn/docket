@@ -123,6 +123,12 @@ export class UiShellService {
   readonly mailView = signal<MailView>('inbox');
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
   readonly settingsOpen = signal(false);
+  /** Keyboard shortcuts cheatsheet (`?`). */
+  readonly helpOpen = signal(false);
+  /**
+   * Incremented when `/` focuses the search box — ThreadList reacts via effect.
+   */
+  readonly searchFocusNonce = signal(0);
   readonly accountMenuOpen = signal(false);
   readonly aiBusy = signal(false);
   readonly summaryBusy = signal(false);
@@ -1197,6 +1203,47 @@ export class UiShellService {
     }
   }
 
+  /** Mark the focused thread unread (`u`) without leaving selection. */
+  async markUnreadSelected(): Promise<void> {
+    const id = this.selectedId();
+    if (!id || !this.isConnected()) return;
+    this.threads.update((list) =>
+      list.map((x) => (x.id === id ? { ...x, unread: true } : x)),
+    );
+    void setDockBadge(this.threads().filter((t) => t.unread).length);
+    try {
+      await this.api.markUnread(id);
+      this.statusMessage.set('Marked unread');
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Mark unread failed');
+      await this.refreshThreads();
+    }
+  }
+
+  focusSearch(): void {
+    this.closeCommandPalette();
+    this.closeSettings();
+    this.closeHelp();
+    this.closeAccountMenu();
+    this.searchFocusNonce.update((n) => n + 1);
+  }
+
+  openHelp(): void {
+    this.helpOpen.set(true);
+    this.closeCommandPalette();
+    this.closeSettings();
+    this.closeAccountMenu();
+  }
+
+  closeHelp(): void {
+    this.helpOpen.set(false);
+  }
+
+  toggleHelp(): void {
+    if (this.helpOpen()) this.closeHelp();
+    else this.openHelp();
+  }
+
   openAttachment(attId: string): void {
     window.open(this.api.attachmentUrl(attId), '_blank', 'noopener,noreferrer');
   }
@@ -1515,6 +1562,9 @@ export class UiShellService {
       case 'star':
         void this.toggleStarSelected();
         break;
+      case 'unread':
+        void this.markUnreadSelected();
+        break;
       case 'summary':
         void this.runDailySummary();
         break;
@@ -1530,11 +1580,20 @@ export class UiShellService {
       case 'settings':
         this.openSettings();
         break;
+      case 'help':
+        this.openHelp();
+        break;
+      case 'search':
+        this.focusSearch();
+        break;
       case 'inbox':
         void this.setMailView('inbox');
         break;
       case 'starred':
         void this.setMailView('starred');
+        break;
+      case 'all':
+        void this.setMailView('all');
         break;
       case 'add-account':
         this.addAccount();

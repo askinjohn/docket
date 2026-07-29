@@ -28,47 +28,48 @@ Phased delivery. **Do not start Phase N+1 features until Phase N exit criteria p
 
 ---
 
-## Phase 1 — Local core + Gmail MVP
+## Phase 1 — Local core + Gmail MVP ✅ (dogfood)
 
 **Goal:** Real mail path: OAuth → sync → SQLite → UI list/read → archive/send.
 
 | Work | Notes |
 |------|--------|
-| Core HTTP server on `127.0.0.1` | Health + mail routes |
-| SQLite schema | accounts, threads, messages, labels, sync state |
-| Gmail OAuth (loopback) | Tokens only in core |
-| Incremental sync | `history.list` / initial partial inbox |
-| Angular: connect screen + inbox | `httpResource` against core |
-| Actions | mark read, archive (remove INBOX), star, reply/send |
-| HTML body sandbox | No script execution |
+| Core HTTP server on `127.0.0.1` | Health + mail routes — Done |
+| SQLite schema | accounts, threads, messages, labels, sync state — Done |
+| Gmail OAuth (loopback) | Tokens only in core — Done |
+| Incremental sync | `history.list` / initial partial inbox — Done |
+| Angular: connect screen + inbox | Shell + mail API service — Done |
+| Actions | mark read, archive, star, reply/send — Done |
+| HTML body sandbox | iframe sandbox — Done (richer sanitizer still open) |
 
 **Exit criteria**
 
-- [ ] Daily-driver read/archive/reply for one Gmail account  
-- [ ] Refresh survives core restart (tokens + cache)  
-- [ ] Automated smoke test for health + auth redirect path  
+- [x] Daily-driver read/archive/reply for one Gmail account  
+- [x] Refresh survives core restart (tokens + cache)  
+- [x] Automated smoke test for health + auth redirect path (`scripts/smoke.sh`)  
 
 **Parallel OK:** UI polish of shell chrome (not blocking on pixel perfection).
 
 ---
 
-## Phase 2 — Superhuman-ish UX
+## Phase 2 — Superhuman-ish UX (partial)
 
 **Goal:** Keyboard-first, dense, customizable chrome.
 
 | Work | Notes |
 |------|--------|
-| Hotkeys | j/k, e, r, c, s, /, Esc, g i, … |
-| Command palette | Angular Aria patterns |
-| Optimistic archive + undo | Instant UI; core reconciles |
-| Themes / density / accent | Config in SQLite |
-| Custom views | Named Gmail queries |
-| Signal Forms compose | Stable Angular 22 forms |
+| Hotkeys | j/k, e, r, c, s, z, x, u, `/`, `g i|s|a`, `?`, ⌘K, Esc — Done |
+| Command palette | Basic list — Done; fuzzy / Aria polish open |
+| Optimistic archive + undo | Instant UI; core reconciles — Done (single-step undo) |
+| Themes / density / accent | Local prefs — Done |
+| Custom views | Named Gmail queries — Open |
+| Signal Forms compose | Still hand-rolled signals — Open |
 
 **Exit criteria**
 
-- [ ] Can triage 20 messages without mouse  
-- [ ] At least one custom view + theme toggle  
+- [x] Can triage core loop without mouse (j/k/e/r/c/s/z)  
+- [ ] At least one custom view + theme toggle (theme yes; custom views no)  
+
 
 ---
 
