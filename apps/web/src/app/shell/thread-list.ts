@@ -1,4 +1,12 @@
-import { Component, inject } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  viewChild,
+} from '@angular/core';
 
 import { UiShellService } from '../core/ui-shell.service';
 
@@ -27,13 +35,14 @@ import { UiShellService } from '../core/ui-shell.service';
         </div>
         <div class="flex items-center gap-1.5">
           <input
+            #searchInput
             type="search"
             class="min-w-0 flex-1 rounded-lg border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/50"
             placeholder="Search Gmail… from: me has:attachment"
             [value]="shell.searchQuery()"
             (input)="onSearchInput($event)"
             (keydown.enter)="shell.runSearch()"
-            title="Enter runs Gmail search (operators supported)"
+            title="Enter runs Gmail search · / to focus"
           />
           @if (shell.searchQuery() || shell.searchActive()) {
             <button
@@ -138,6 +147,17 @@ import { UiShellService } from '../core/ui-shell.service';
               (click)="onThreadClick(thread.id, $event)"
             >
               <span
+                class="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center"
+                aria-hidden="true"
+              >
+                @if (thread.unread) {
+                  <span
+                    class="h-1.5 w-1.5 rounded-full bg-lm-accent shadow-[0_0_6px_var(--color-lm-accent)]"
+                    title="Unread"
+                  ></span>
+                }
+              </span>
+              <span
                 class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[0.65rem]"
                 [class.border-lm-accent]="shell.isChecked(thread.id)"
                 [class.bg-lm-accent]="shell.isChecked(thread.id)"
@@ -149,24 +169,35 @@ import { UiShellService } from '../core/ui-shell.service';
               <span class="min-w-0 flex-1">
                 <div class="mb-0.5 flex justify-between gap-2">
                   <span
-                    class="text-sm text-lm-text"
+                    class="min-w-0 truncate text-sm text-lm-text"
                     [class.font-semibold]="thread.unread"
+                    [class.text-lm-muted]="!thread.unread"
                     >{{ thread.from }}</span
                   >
-                  <span class="shrink-0 text-[0.72rem] text-lm-muted">{{
-                    thread.time
-                  }}</span>
+                  <span
+                    class="shrink-0 text-[0.72rem] tabular-nums text-lm-muted"
+                    [class.text-lm-accent]="thread.unread"
+                    [class.font-medium]="thread.unread"
+                    >{{ thread.time }}</span
+                  >
                 </div>
                 <div
-                  class="mb-0.5 truncate text-[0.82rem]"
+                  class="mb-0.5 flex min-w-0 items-center gap-1 truncate text-[0.82rem]"
                   [class.font-semibold]="thread.unread"
+                  [class.text-lm-text]="thread.unread"
+                  [class.text-lm-muted]="!thread.unread"
                 >
+                  @if (thread.starred) {
+                    <span class="shrink-0 text-[0.75rem] text-amber-400" title="Starred" aria-hidden="true"
+                      >★</span
+                    >
+                  }
                   @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
-                    <span class="mr-1 opacity-85" aria-hidden="true" title="Has attachments"
+                    <span class="shrink-0 opacity-85" aria-hidden="true" title="Has attachments"
                       >📎</span
                     >
                   }
-                  {{ thread.subject }}
+                  <span class="min-w-0 truncate">{{ thread.subject }}</span>
                 </div>
                 <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
               </span>
@@ -226,7 +257,25 @@ import { UiShellService } from '../core/ui-shell.service';
 })
 export class ThreadList {
   protected readonly shell = inject(UiShellService);
+  private readonly injector = inject(Injector);
+  private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
   private threadListNearTopArmed = true;
+
+  constructor() {
+    effect(() => {
+      const nonce = this.shell.searchFocusNonce();
+      if (!nonce) return;
+      afterNextRender(
+        () => {
+          const el = this.searchInput()?.nativeElement;
+          if (!el) return;
+          el.focus();
+          el.select();
+        },
+        { injector: this.injector },
+      );
+    });
+  }
 
   onSearchInput(event: Event): void {
     this.shell.setSearchQuery((event.target as HTMLInputElement).value);

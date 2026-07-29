@@ -58,7 +58,7 @@ Phased delivery. **Do not start Phase N+1 features until Phase N exit criteria p
 
 | Work | Notes |
 |------|--------|
-| Hotkeys | j/k, e, r, c, s, z, x, ⌘K, Esc — Done; `/`, `g i`, `?` still open |
+| Hotkeys | j/k, e, r, c, s, z, x, u, `/`, `g i|s|a`, `?`, ⌘K, Esc — Done |
 | Command palette | Basic list — Done; fuzzy / Aria polish open |
 | Optimistic archive + undo | Instant UI; core reconciles — Done (single-step undo) |
 | Themes / density / accent | Local prefs — Done |

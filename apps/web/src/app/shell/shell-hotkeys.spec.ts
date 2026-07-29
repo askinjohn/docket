@@ -1,13 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import type { UiShellService } from '../core/ui-shell.service';
-import { handleShellKeydown } from './shell-hotkeys';
+import { handleShellKeydown, resetGoChordForTests } from './shell-hotkeys';
 
 function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     composeOpen: () => false,
     replyOpen: () => false,
     commandPaletteOpen: () => false,
+    helpOpen: () => false,
     checkedCount: () => 0,
     selectedId: () => null,
     toggleCommandPalette: vi.fn(),
@@ -18,6 +19,11 @@ function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
     closeCommandPalette: vi.fn(),
     closeSettings: vi.fn(),
     closeAccountMenu: vi.fn(),
+    closeHelp: vi.fn(),
+    toggleHelp: vi.fn(),
+    openHelp: vi.fn(),
+    focusSearch: vi.fn(),
+    setMailView: vi.fn(),
     selectAllVisible: vi.fn(),
     selectNext: vi.fn(),
     selectPrevious: vi.fn(),
@@ -27,6 +33,7 @@ function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
     archiveSelected: vi.fn(),
     undoArchive: vi.fn(),
     toggleStarSelected: vi.fn(),
+    markUnreadSelected: vi.fn(),
     ...overrides,
   } as unknown as UiShellService;
 }
@@ -36,6 +43,7 @@ function key(key: string, opts: Partial<KeyboardEvent> = {}): KeyboardEvent {
     key,
     metaKey: false,
     ctrlKey: false,
+    altKey: false,
     preventDefault: vi.fn(),
     target: document.body,
     ...opts,
@@ -43,6 +51,10 @@ function key(key: string, opts: Partial<KeyboardEvent> = {}): KeyboardEvent {
 }
 
 describe('handleShellKeydown', () => {
+  beforeEach(() => {
+    resetGoChordForTests();
+  });
+
   it('opens command palette on ⌘K', () => {
     const shell = makeShell();
     const event = key('k', { metaKey: true });
@@ -64,6 +76,39 @@ describe('handleShellKeydown', () => {
     expect(shell.archiveSelected).toHaveBeenCalled();
     handleShellKeydown(key('z'), shell);
     expect(shell.undoArchive).toHaveBeenCalled();
+  });
+
+  it('marks unread with u', () => {
+    const shell = makeShell();
+    handleShellKeydown(key('u'), shell);
+    expect(shell.markUnreadSelected).toHaveBeenCalled();
+  });
+
+  it('focuses search with /', () => {
+    const shell = makeShell();
+    handleShellKeydown(key('/'), shell);
+    expect(shell.focusSearch).toHaveBeenCalled();
+  });
+
+  it('opens help with ?', () => {
+    const shell = makeShell();
+    handleShellKeydown(key('?'), shell);
+    expect(shell.toggleHelp).toHaveBeenCalled();
+  });
+
+  it('handles g i / g s / g a go chords', () => {
+    const shell = makeShell();
+    handleShellKeydown(key('g'), shell);
+    handleShellKeydown(key('i'), shell);
+    expect(shell.setMailView).toHaveBeenCalledWith('inbox');
+
+    handleShellKeydown(key('g'), shell);
+    handleShellKeydown(key('s'), shell);
+    expect(shell.setMailView).toHaveBeenCalledWith('starred');
+
+    handleShellKeydown(key('g'), shell);
+    handleShellKeydown(key('a'), shell);
+    expect(shell.setMailView).toHaveBeenCalledWith('all');
   });
 
   it('ignores letter keys while typing in an input', () => {

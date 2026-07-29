@@ -46,6 +46,15 @@ import { UiShellService } from '../core/ui-shell.service';
               <button
                 type="button"
                 class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+                (click)="shell.markUnreadSelected()"
+                title="Mark unread (u)"
+                [disabled]="!shell.isConnected() || thread.unread"
+              >
+                Unread
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
                 (click)="shell.aiSummarizeSelected()"
                 [disabled]="!shell.isConnected() || shell.aiBusy()"
                 title="AI summarize"

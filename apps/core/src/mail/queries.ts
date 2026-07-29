@@ -19,14 +19,33 @@ function kindFromMime(mime: string, filename: string): 'pdf' | 'image' | 'doc' |
   return 'other';
 }
 
+/** Compact relative-ish labels for the dense thread list. */
 function formatTime(ms: number | null): string {
   if (!ms) return '—';
   const d = new Date(ms);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const diff = now.getTime() - d.getTime();
+  if (diff >= 0 && diff < 45_000) return 'now';
+  if (diff >= 0 && diff < 3_600_000) {
+    return `${Math.max(1, Math.floor(diff / 60_000))}m`;
   }
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  if (diff >= 0 && diff < 7 * 86_400_000) {
+    return d.toLocaleDateString([], { weekday: 'short' });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 export function listThreads(options?: {

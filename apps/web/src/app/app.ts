@@ -6,6 +6,7 @@ import { ComposeWindow } from './shell/compose-window';
 import { ReadingPane } from './shell/reading-pane';
 import { handleShellKeydown } from './shell/shell-hotkeys';
 import { SettingsDialog } from './shell/settings-dialog';
+import { ShortcutsHelp } from './shell/shortcuts-help';
 import { Sidebar } from './shell/sidebar';
 import { ThreadList } from './shell/thread-list';
 
@@ -21,6 +22,7 @@ import { ThreadList } from './shell/thread-list';
     ReadingPane,
     CommandPalette,
     SettingsDialog,
+    ShortcutsHelp,
     ComposeWindow,
   ],
   template: `
@@ -34,6 +36,7 @@ import { ThreadList } from './shell/thread-list';
 
     <lm-command-palette />
     <lm-settings-dialog />
+    <lm-shortcuts-help />
     <lm-compose-window />
   `,
   styles: `

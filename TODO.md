@@ -42,6 +42,7 @@
 - [x] Extract `message-display` helpers + unit tests
 - [x] Extract `shell-hotkeys` map + unit tests
 - [x] Refresh `docs/PROJECT_STATUS.md` / product status lines
+- [x] Keyboard polish: `/`, `g i|s|a`, `u` unread, `?` cheatsheet, denser list rows
 - [ ] Further split `ui-shell.service.ts` (mail list vs compose vs account)
 - [ ] Adopt Signal Forms for compose/reply when refactoring compose further
 - [ ] Prefer `resource` / `httpResource` for list/detail fetch paths

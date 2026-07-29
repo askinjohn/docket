@@ -163,6 +163,15 @@ import { UiShellService } from '../core/ui-shell.service';
         <button
           type="button"
           class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+          (click)="shell.openHelp()"
+          title="Keyboard shortcuts (?)"
+        >
+          Shortcuts
+          <span class="ml-auto font-mono text-[0.65rem] opacity-70">?</span>
+        </button>
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
           (click)="shell.openSettings()"
         >
           Settings
