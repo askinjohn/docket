@@ -1,7 +1,7 @@
 # Active TODO — Local Mail
 
-**Updated:** 2026-07-20  
-**Status:** Large product pass landed — dogfood & polish next
+**Updated:** 2026-07-29  
+**Status:** Large product pass landed — dogfood, polish, eng-debt cleanup
 
 ## Shipped in product pass
 
@@ -36,9 +36,18 @@
 - [x] Keep ~100 threads in inbox viewport; auto-refill after archive / when thin
 - [x] Multi-select (⌘/Ctrl-click, Shift-range, x, ⌘A) + Clear + bulk archive
 
+## Engineering debt (recent)
+
+- [x] Split monolithic `app.ts` into `shell/*` components
+- [x] Extract `message-display` helpers + unit tests
+- [x] Extract `shell-hotkeys` map + unit tests
+- [x] Refresh `docs/PROJECT_STATUS.md` / product status lines
+- [ ] Further split `ui-shell.service.ts` (mail list vs compose vs account)
+- [ ] Adopt Signal Forms for compose/reply when refactoring compose further
+- [ ] Prefer `resource` / `httpResource` for list/detail fetch paths
+
 ## Still thin / follow-ups
 
-- [ ] Outbound file attachments on send
 - [ ] Full MCP stdio server binary for Cursor (HTTP bridge works today)
 - [ ] Scheduled daily summary (launchd / cron) — manual button works
 - [ ] Richer HTML sanitizer / remote-image toggle

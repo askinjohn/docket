@@ -24,6 +24,8 @@ Read before large changes:
 | Path | Role |
 |------|------|
 | `apps/web/` | Angular 22 UI (browser or Tauri webview) |
+| `apps/web/src/app/shell/` | Pane/overlay components (sidebar, list, reading, compose, palette, settings) |
+| `apps/web/src/app/core/` | Services + pure helpers (`ui-shell`, mail API, theme, message-display) |
 | `apps/core/` | Local backend on 127.0.0.1 (Gmail, SQLite) |
 | `apps/desktop/` | Tauri 2 Dock shell — primary packaging target |
 | `docs/` | Architecture, decisions, planning artifacts |

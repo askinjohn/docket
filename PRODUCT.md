@@ -1,7 +1,7 @@
 # Product plan — Local Mail
 
-**Status:** Active planning · Phase 0 in progress  
-**Last updated:** 2026-07-20  
+**Status:** Dogfood · Phase 1 mail path done; UX/AI/desktop shipped ahead of roadmap  
+**Last updated:** 2026-07-29  
 **Codename / folder:** `local-mail`
 
 ---
