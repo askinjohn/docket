@@ -735,6 +735,32 @@ export class UiShellService {
     const next = { ...this.theme(), blockRemoteImages: block };
     this.theme.set(next);
     saveThemePrefs(next);
+    // Clearing the global block also clears the per-thread unlock
+    if (!block) this.remoteImagesUnlockedThreadId.set(null);
+  }
+
+  /**
+   * Per-thread unlock for remote images (Amazon etc.) without changing
+   * the global privacy default. Cleared when switching threads.
+   */
+  readonly remoteImagesUnlockedThreadId = signal<string | null>(null);
+
+  /** True when remote images should be blocked for the current thread. */
+  readonly blockRemoteImagesNow = computed(() => {
+    if (!this.theme().blockRemoteImages) return false;
+    const id = this.selectedId();
+    return !id || this.remoteImagesUnlockedThreadId() !== id;
+  });
+
+  showRemoteImagesForThread(): void {
+    const id = this.selectedId();
+    if (!id) return;
+    this.remoteImagesUnlockedThreadId.set(id);
+    this.statusMessage.set('Remote images loaded for this thread');
+  }
+
+  hideRemoteImagesForThread(): void {
+    this.remoteImagesUnlockedThreadId.set(null);
   }
 
   setReplyDock(dock: ReplyDock): void {
@@ -977,6 +1003,10 @@ export class UiShellService {
   }
 
   async selectThread(id: string): Promise<void> {
+    // Per-thread remote-image unlock does not carry across threads
+    if (this.remoteImagesUnlockedThreadId() !== id) {
+      this.remoteImagesUnlockedThreadId.set(null);
+    }
     this.selectedId.set(id);
     this.replyOpen.set(true);
     this.threads.update((list) =>

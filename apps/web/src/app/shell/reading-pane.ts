@@ -1,6 +1,7 @@
 import {
   afterNextRender,
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -9,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 
+import { htmlHasRemoteImages } from '../core/email-body';
 import {
   iconForAttachment,
   isMine,
@@ -91,6 +93,39 @@ import { ReplyPanel } from './reply-panel';
               </button>
             </div>
           </div>
+          @if (showRemoteImagesBanner()) {
+            <div
+              class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-panel px-3 py-2 text-[0.8rem]"
+              role="status"
+            >
+              <span class="text-lm-muted">
+                Remote images are blocked for privacy (placeholders keep layout).
+              </span>
+              <button
+                type="button"
+                class="cursor-pointer rounded-md border-0 bg-lm-accent px-2.5 py-1 text-[0.78rem] font-semibold text-white hover:brightness-110"
+                (click)="shell.showRemoteImagesForThread()"
+              >
+                Show remote images
+              </button>
+            </div>
+          } @else if (
+            shell.theme().blockRemoteImages &&
+            shell.remoteImagesUnlockedThreadId() === thread.id
+          ) {
+            <div
+              class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border/80 bg-lm-bg px-3 py-2 text-[0.78rem] text-lm-muted"
+            >
+              <span>Remote images loaded for this thread only.</span>
+              <button
+                type="button"
+                class="cursor-pointer rounded-md border border-lm-border bg-transparent px-2 py-1 text-[0.75rem] hover:bg-lm-hover"
+                (click)="shell.hideRemoteImagesForThread()"
+              >
+                Block again
+              </button>
+            </div>
+          }
         </header>
 
         <div
@@ -140,7 +175,7 @@ import { ReplyPanel } from './reply-panel';
                     [srcdoc]="
                       msg.bodyHtml
                         | safeSrcdoc
-                          : shell.theme().blockRemoteImages
+                          : shell.blockRemoteImagesNow()
                           : msg.attachments
                     "
                     (load)="onHtmlFrameLoad($event, msg.id)"
@@ -249,7 +284,7 @@ import { ReplyPanel } from './reply-panel';
                         [srcdoc]="
                       msg.bodyHtml
                         | safeSrcdoc
-                          : shell.theme().blockRemoteImages
+                          : shell.blockRemoteImagesNow()
                           : msg.attachments
                     "
                         (load)="onHtmlFrameLoad($event, msg.id)"
@@ -426,6 +461,14 @@ export class ReadingPane {
   private readonly htmlExpandedIds = signal<ReadonlySet<string>>(new Set());
   private readonly htmlTallIds = signal<ReadonlySet<string>>(new Set());
 
+  /** Banner when global block is on and this thread still has remote images. */
+  protected readonly showRemoteImagesBanner = computed(() => {
+    if (!this.shell.blockRemoteImagesNow()) return false;
+    const thread = this.shell.selectedThread();
+    if (!thread) return false;
+    return thread.messages.some((m) => htmlHasRemoteImages(m.bodyHtml));
+  });
+
   constructor() {
     effect(() => {
       const thread = this.shell.selectedThread();
@@ -441,6 +484,9 @@ export class ReadingPane {
         this.htmlExpandedIds.set(new Set());
         this.htmlTallIds.set(new Set());
       }
+
+      // Re-render srcdoc when remote-image unlock toggles
+      void this.shell.blockRemoteImagesNow();
 
       void thread.messages.length;
       void thread.messages.at(-1)?.id;

@@ -12,11 +12,15 @@ describe('email-body sanitizer', () => {
     expect(clean).not.toMatch(/onerror/i);
   });
 
-  it('blocks remote images when requested', () => {
-    const html = '<p>x</p><img src="https://tracker.example/pixel.gif" alt="t">';
+  it('blocks remote images with a compact placeholder (no long text)', () => {
+    const html =
+      '<p>x</p><img src="https://tracker.example/pixel.gif" width="24" height="24" alt="t">';
     const blocked = sanitizeEmailHtml(html, { blockRemoteImages: true });
-    expect(blocked).toContain('Remote image blocked');
+    expect(blocked).toContain('lm-blocked-img-ph');
+    expect(blocked).toContain('data:image/svg+xml');
     expect(blocked).not.toContain('tracker.example');
+    // Must not inject layout-breaking label text into table cells
+    expect(blocked).not.toMatch(/>Remote image blocked</);
   });
 
   it('keeps local attachment proxy images when remote block is on', () => {
