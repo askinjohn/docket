@@ -1,6 +1,27 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 
 import { UiShellService } from '../core/ui-shell.service';
+
+const LABELS_COLLAPSED_KEY = 'local-mail.sidebar.labelsCollapsed';
+const VIEWS_COLLAPSED_KEY = 'local-mail.sidebar.viewsCollapsed';
+
+function loadCollapsed(key: string, fallback = false): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === null) return fallback;
+    return v === '1' || v === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function saveCollapsed(key: string, collapsed: boolean): void {
+  try {
+    localStorage.setItem(key, collapsed ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
 
 @Component({
   selector: 'lm-sidebar',
@@ -98,68 +119,96 @@ import { UiShellService } from '../core/ui-shell.service';
         </button>
 
         @if (shell.customViews().length) {
-          <div
-            class="mt-3 mb-1 px-2.5 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+          <button
+            type="button"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            (click)="toggleViews()"
+            [attr.aria-expanded]="!viewsCollapsed()"
           >
+            <span
+              class="inline-block w-3 text-[0.55rem] transition-transform"
+              [class.rotate-[-90deg]]="viewsCollapsed()"
+              aria-hidden="true"
+              >▾</span
+            >
             Views
-          </div>
-          @for (v of shell.customViews(); track v.id) {
-            <div class="group flex items-center gap-0.5">
-              <button
-                type="button"
-                class="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
-                [class.bg-lm-hover]="
-                  shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
-                "
-                [class.font-medium]="
-                  shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
-                "
-                [class.text-lm-muted]="
-                  !(shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id)
-                "
-                [title]="v.query"
-                (click)="shell.openCustomView(v)"
-              >
-                {{ v.name }}
-              </button>
-              <button
-                type="button"
-                class="hidden shrink-0 rounded px-1.5 text-xs text-lm-muted group-hover:inline hover:bg-lm-hover hover:text-lm-danger"
-                title="Delete view"
-                (click)="shell.removeCustomView(v.id); $event.stopPropagation()"
-              >
-                ×
-              </button>
-            </div>
+            <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
+              shell.customViews().length
+            }}</span>
+          </button>
+          @if (!viewsCollapsed()) {
+            @for (v of shell.customViews(); track v.id) {
+              <div class="group flex items-center gap-0.5">
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+                  [class.bg-lm-hover]="
+                    shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                  "
+                  [class.font-medium]="
+                    shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                  "
+                  [class.text-lm-muted]="
+                    !(shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id)
+                  "
+                  [title]="v.query"
+                  (click)="shell.openCustomView(v)"
+                >
+                  {{ v.name }}
+                </button>
+                <button
+                  type="button"
+                  class="hidden shrink-0 rounded px-1.5 text-xs text-lm-muted group-hover:inline hover:bg-lm-hover hover:text-lm-danger"
+                  title="Delete view"
+                  (click)="shell.removeCustomView(v.id); $event.stopPropagation()"
+                >
+                  ×
+                </button>
+              </div>
+            }
           }
         }
 
         @if (navLabels().length) {
-          <div
-            class="mt-3 mb-1 px-2.5 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+          <button
+            type="button"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            (click)="toggleLabels()"
+            [attr.aria-expanded]="!labelsCollapsed()"
           >
-            Labels
-          </div>
-          @for (lab of navLabels(); track lab.id) {
-            <button
-              type="button"
-              class="flex w-full items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
-              [class.bg-lm-hover]="
-                shell.mailView() === 'label' && shell.activeLabelId() === lab.id
-              "
-              [class.font-medium]="
-                shell.mailView() === 'label' && shell.activeLabelId() === lab.id
-              "
-              [class.text-lm-muted]="
-                !(shell.mailView() === 'label' && shell.activeLabelId() === lab.id)
-              "
-              (click)="shell.openLabel(lab.id)"
+            <span
+              class="inline-block w-3 text-[0.55rem] transition-transform"
+              [class.rotate-[-90deg]]="labelsCollapsed()"
+              aria-hidden="true"
+              >▾</span
             >
-              <span class="min-w-0 truncate">{{ lab.name }}</span>
-              <span class="shrink-0 text-[0.65rem] tabular-nums opacity-70">{{
-                lab.count
-              }}</span>
-            </button>
+            Labels
+            <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
+              navLabels().length
+            }}</span>
+          </button>
+          @if (!labelsCollapsed()) {
+            @for (lab of navLabels(); track lab.id) {
+              <button
+                type="button"
+                class="flex w-full items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+                [class.bg-lm-hover]="
+                  shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+                "
+                [class.font-medium]="
+                  shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+                "
+                [class.text-lm-muted]="
+                  !(shell.mailView() === 'label' && shell.activeLabelId() === lab.id)
+                "
+                (click)="shell.openLabel(lab.id)"
+              >
+                <span class="min-w-0 truncate">{{ lab.name }}</span>
+                <span class="shrink-0 text-[0.65rem] tabular-nums opacity-70">{{
+                  lab.count
+                }}</span>
+              </button>
+            }
           }
         }
       </nav>
@@ -286,6 +335,14 @@ import { UiShellService } from '../core/ui-shell.service';
 export class Sidebar {
   protected readonly shell = inject(UiShellService);
 
+  /** Collapsed by default when there are many labels (saves sidebar space). */
+  protected readonly labelsCollapsed = signal(
+    loadCollapsed(LABELS_COLLAPSED_KEY, true),
+  );
+  protected readonly viewsCollapsed = signal(
+    loadCollapsed(VIEWS_COLLAPSED_KEY, false),
+  );
+
   protected readonly accountInitial = computed(() => {
     const email = this.shell.accountEmail() || '?';
     return email.charAt(0).toUpperCase();
@@ -296,4 +353,20 @@ export class Sidebar {
     const skip = new Set(['INBOX', 'STARRED', 'SENT', 'DRAFT', 'TRASH', 'SPAM']);
     return this.shell.labels().filter((l) => !skip.has(l.id)).slice(0, 24);
   });
+
+  toggleLabels(): void {
+    this.labelsCollapsed.update((v) => {
+      const next = !v;
+      saveCollapsed(LABELS_COLLAPSED_KEY, next);
+      return next;
+    });
+  }
+
+  toggleViews(): void {
+    this.viewsCollapsed.update((v) => {
+      const next = !v;
+      saveCollapsed(VIEWS_COLLAPSED_KEY, next);
+      return next;
+    });
+  }
 }
