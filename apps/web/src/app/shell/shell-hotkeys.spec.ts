@@ -12,6 +12,8 @@ function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
     aiInsightOpen: () => false,
     closeAiInsight: vi.fn(),
     closeReply: vi.fn(),
+    imagePreview: () => null,
+    closeImagePreview: vi.fn(),
     checkedCount: () => 0,
     selectedId: () => null,
     toggleCommandPalette: vi.fn(),

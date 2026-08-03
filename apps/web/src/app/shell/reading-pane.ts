@@ -170,10 +170,26 @@ import { ReplyPanel } from './reply-panel';
                           <button
                             type="button"
                             class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
-                            (click)="shell.openAttachment(file.id)"
-                            title="Download / open"
+                            (click)="
+                              shell.openAttachment(file.id, {
+                                kind: file.kind,
+                                name: file.name,
+                              })
+                            "
+                            [title]="
+                              file.kind === 'image' ? 'View image' : 'Download / open'
+                            "
                           >
-                            <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                            @if (file.kind === 'image') {
+                              <img
+                                class="h-10 w-10 shrink-0 rounded object-cover bg-lm-hover"
+                                [src]="shell.api.attachmentUrl(file.id)"
+                                [alt]="file.name"
+                                loading="lazy"
+                              />
+                            } @else {
+                              <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                            }
                             <span class="flex min-w-0 flex-col">
                               <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
                               <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
@@ -263,9 +279,23 @@ import { ReplyPanel } from './reply-panel';
                             <button
                               type="button"
                               class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
-                              (click)="shell.openAttachment(file.id)"
+                              (click)="
+                                shell.openAttachment(file.id, {
+                                  kind: file.kind,
+                                  name: file.name,
+                                })
+                              "
                             >
-                              <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                              @if (file.kind === 'image') {
+                                <img
+                                  class="h-8 w-8 shrink-0 rounded object-cover"
+                                  [src]="shell.api.attachmentUrl(file.id)"
+                                  [alt]="file.name"
+                                  loading="lazy"
+                                />
+                              } @else {
+                                <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
+                              }
                               <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
                             </button>
                           </li>

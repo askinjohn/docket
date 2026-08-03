@@ -58,6 +58,11 @@ export function handleShellKeydown(
   }
 
   if (event.key === 'Escape') {
+    if (shell.imagePreview()) {
+      event.preventDefault();
+      shell.closeImagePreview();
+      return true;
+    }
     if (shell.helpOpen()) {
       event.preventDefault();
       shell.closeHelp();

@@ -488,12 +488,20 @@ api.post('/messages/send', async (c) => {
 
 api.get('/attachments/:id', async (c) => {
   try {
-    const file = await downloadAttachment(c.req.param('id'));
+    const file = await downloadAttachment(decodeURIComponent(c.req.param('id')));
+    const forceDownload = c.req.query('download') === '1';
+    const isImage = file.mimeType.startsWith('image/');
+    // Inline so <img> / browser tab can display; ?download=1 forces save
+    const disposition =
+      !forceDownload && isImage
+        ? `inline; filename="${file.filename.replace(/"/g, '')}"`
+        : `attachment; filename="${file.filename.replace(/"/g, '')}"`;
     c.header('Content-Type', file.mimeType);
-    c.header(
-      'Content-Disposition',
-      `attachment; filename="${file.filename.replace(/"/g, '')}"`,
-    );
+    c.header('Content-Disposition', disposition);
+    c.header('Cache-Control', 'private, max-age=3600');
+    // Allow sandboxed iframe (srcdoc) to load images from core
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Cross-Origin-Resource-Policy', 'cross-origin');
     return c.body(new Uint8Array(file.data));
   } catch (e) {
     return jsonGmailError(c, e, 'download_failed');

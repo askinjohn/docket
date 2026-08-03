@@ -18,7 +18,16 @@ const SAFETY_STYLE = `
     overflow-wrap: anywhere;
     word-break: break-word;
   }
-  img, video { max-width: 100% !important; height: auto !important; }
+  img, video {
+    max-width: 100% !important;
+    height: auto !important;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  img[src^="http://127.0.0.1"],
+  img[src^="https://127.0.0.1"] {
+    /* local-mail attachment proxy — keep visible */
+  }
   table { max-width: 100% !important; }
   a { color: #1a73e8; }
   pre, code {
@@ -28,14 +37,21 @@ const SAFETY_STYLE = `
     font-size: 12px;
   }
   .lm-blocked-img {
-    display: inline-block;
-    padding: 4px 8px;
-    margin: 2px 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 8px 12px;
+    margin: 4px 0;
     font: 12px/1.4 system-ui, sans-serif;
-    color: #667085;
-    background: #f2f4f7;
+    color: #475467;
+    background: linear-gradient(180deg, #f9fafb 0%, #f2f4f7 100%);
     border: 1px dashed #d0d5dd;
-    border-radius: 4px;
+    border-radius: 8px;
+  }
+  .lm-blocked-img::before {
+    content: "🖼";
+    font-size: 14px;
   }
 `;
 
@@ -63,14 +79,40 @@ export function sanitizeEmailHtml(
     .replace(/javascript:/gi, '');
 
   if (opts.blockRemoteImages) {
+    // Block remote http(s) images, but keep:
+    // - data: URLs
+    // - localhost / 127.0.0.1 attachment proxy (cid rewrites)
     cleaned = cleaned.replace(
-      /<img\b([^>]*?)\bsrc\s*=\s*(['"])(https?:)?\/\/[^'"]+\2([^>]*)>/gi,
-      '<span class="lm-blocked-img" title="Remote image blocked">[image blocked]</span>',
+      /<img\b([^>]*?)\bsrc\s*=\s*(['"])([^'"]+)\2([^>]*)>/gi,
+      (full, pre: string, q: string, src: string, post: string) => {
+        const s = src.trim();
+        if (
+          s.startsWith('data:') ||
+          /^(https?:)?\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(s) ||
+          s.startsWith('http://127.0.0.1') ||
+          s.startsWith('https://127.0.0.1') ||
+          s.startsWith('http://localhost') ||
+          s.startsWith('https://localhost')
+        ) {
+          return full;
+        }
+        if (/^(https?:)?\/\//i.test(s) || /^https?:/i.test(s)) {
+          return '<span class="lm-blocked-img" title="Remote image blocked — enable in Settings → Privacy">Remote image blocked</span>';
+        }
+        // leave relative / cid unresolved as-is (may fail; cid should already be rewritten)
+        return full;
+      },
     );
-    // CSS background-image urls
+    // CSS background-image remote urls (not local core)
     cleaned = cleaned.replace(
-      /url\(\s*(['"]?)https?:\/\/[^)'"]+\1\s*\)/gi,
+      /url\(\s*(['"]?)(https?:\/\/(?!127\.0\.0\.1|localhost)[^)'"]+)\1\s*\)/gi,
       'none',
+    );
+  } else {
+    // Still clamp huge images via CSS; ensure broken src="" doesn't explode layout
+    cleaned = cleaned.replace(
+      /<img\b([^>]*?)\bsrc\s*=\s*(['"])\s*\2/gi,
+      '<img$1src=$2about:blank$2',
     );
   }
 

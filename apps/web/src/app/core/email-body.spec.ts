@@ -15,8 +15,15 @@ describe('email-body sanitizer', () => {
   it('blocks remote images when requested', () => {
     const html = '<p>x</p><img src="https://tracker.example/pixel.gif" alt="t">';
     const blocked = sanitizeEmailHtml(html, { blockRemoteImages: true });
-    expect(blocked).toContain('image blocked');
+    expect(blocked).toContain('Remote image blocked');
     expect(blocked).not.toContain('tracker.example');
+  });
+
+  it('keeps local attachment proxy images when remote block is on', () => {
+    const html =
+      '<img src="http://127.0.0.1:8787/attachments/1%3Aabc">';
+    const kept = sanitizeEmailHtml(html, { blockRemoteImages: true });
+    expect(kept).toContain('127.0.0.1:8787/attachments');
   });
 
   it('keeps remote images when not blocked', () => {

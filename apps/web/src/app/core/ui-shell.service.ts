@@ -46,7 +46,8 @@ import type {
 
 @Service()
 export class UiShellService {
-  private readonly api = inject(MailApiService);
+  /** Exposed for attachment thumbnail URLs in templates. */
+  readonly api = inject(MailApiService);
 
   readonly threads = signal<ShellThreadPreview[]>([]);
   /** Thread open in the reading pane (single focus). */
@@ -1457,8 +1458,30 @@ export class UiShellService {
     else this.openHelp();
   }
 
-  openAttachment(attId: string): void {
-    window.open(this.api.attachmentUrl(attId), '_blank', 'noopener,noreferrer');
+  /** Image lightbox (in-app) or open download URL. */
+  readonly imagePreview = signal<{
+    url: string;
+    name: string;
+  } | null>(null);
+
+  openAttachment(attId: string, opts?: { kind?: string; name?: string }): void {
+    const url = this.api.attachmentUrl(attId);
+    const kind = opts?.kind;
+    const name = opts?.name || 'attachment';
+    if (kind === 'image') {
+      this.imagePreview.set({ url, name });
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  closeImagePreview(): void {
+    this.imagePreview.set(null);
+  }
+
+  downloadAttachment(attId: string): void {
+    const url = `${this.api.attachmentUrl(attId)}?download=1`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   async runDailySummary(): Promise<void> {

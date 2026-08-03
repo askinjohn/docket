@@ -48,15 +48,30 @@ function collectParts(
 ): void {
   if (!part) return;
   const mime = part.mimeType ?? '';
-  if (part.filename && part.body?.attachmentId) {
+  const headers = headerMap(part.headers);
+  const rawCid = headers.get('content-id') ?? null;
+  const contentId = rawCid
+    ? rawCid.replace(/^<|>$/g, '').trim() || null
+    : null;
+  const disposition = (headers.get('content-disposition') ?? '').toLowerCase();
+  const filename =
+    part.filename ||
+    disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.trim() ||
+    '';
+
+  // Inline images often have Content-ID + attachmentId (and sometimes no filename)
+  if (part.body?.attachmentId && (filename || contentId || mime.startsWith('image/'))) {
+    const isInline =
+      disposition.includes('inline') ||
+      Boolean(contentId && (mime.startsWith('image/') || !disposition.includes('attachment')));
     acc.attachments.push({
       id: `${messageId}:${part.body.attachmentId}`,
-      filename: part.filename,
+      filename: filename || (contentId ? `inline-${contentId.slice(0, 12)}` : 'attachment'),
       mime_type: mime || 'application/octet-stream',
       size_bytes: part.body.size ?? 0,
       gmail_attachment_id: part.body.attachmentId,
-      content_id: null,
-      is_inline: 0,
+      content_id: contentId,
+      is_inline: isInline ? 1 : 0,
     });
   }
   if (mime === 'text/plain' && part.body?.data) {

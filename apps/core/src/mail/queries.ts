@@ -1,3 +1,4 @@
+import { appConfig } from '../config.js';
 import { getActiveAccount } from '../db/accounts.js';
 import {
   getDb,
@@ -223,8 +224,11 @@ export function getThreadDetail(threadId: string) {
     .all(threadId) as MessageRow[];
 
   const attStmt = getDb().prepare(
-    `SELECT * FROM attachments WHERE message_id = ? AND is_inline = 0`,
+    `SELECT * FROM attachments WHERE message_id = ?`,
   );
+
+  // Absolute core URL so cid: rewrites work inside sandboxed iframe srcdoc
+  const attachBase = `http://${appConfig.host}:${appConfig.port}/attachments`;
 
   return {
     id: thread.id,
@@ -233,15 +237,20 @@ export function getThreadDetail(threadId: string) {
     time: formatTime(thread.last_message_at),
     unread: Boolean(thread.unread),
     messages: messages.map((m) => {
-      const atts = attStmt.all(m.id) as AttachmentRow[];
+      const allAtts = attStmt.all(m.id) as AttachmentRow[];
+      const bodyHtml = rewriteCidImages(m.body_html || '', allAtts, attachBase);
+      // Chips: non-inline, or anything not referenced as cid in HTML
+      const chipAtts = allAtts.filter(
+        (a) => !a.is_inline || !a.content_id,
+      );
       return {
         id: m.id,
         from: m.from_header,
         to: m.to_header,
         time: formatTime(m.internal_date ?? m.date_ms),
         body: m.body_text || m.snippet || stripHtml(m.body_html),
-        bodyHtml: m.body_html,
-        attachments: atts.map((a) => ({
+        bodyHtml,
+        attachments: chipAtts.map((a) => ({
           id: a.id,
           name: a.filename || 'attachment',
           sizeLabel: formatSize(a.size_bytes),
@@ -251,6 +260,29 @@ export function getThreadDetail(threadId: string) {
       };
     }),
   };
+}
+
+/** Map cid:foo → local attachment URL so inline images render in the UI. */
+function rewriteCidImages(
+  html: string,
+  atts: AttachmentRow[],
+  attachBase: string,
+): string {
+  if (!html || !atts.length) return html;
+  let out = html;
+  for (const a of atts) {
+    if (!a.content_id) continue;
+    const cid = a.content_id.replace(/^<|>$/g, '').trim();
+    if (!cid) continue;
+    const url = `${attachBase}/${encodeURIComponent(a.id)}`;
+    // cid:xxx or cid:xxx@domain (optional angle brackets already stripped)
+    const re = new RegExp(
+      `cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+      'gi',
+    );
+    out = out.replace(re, url);
+  }
+  return out;
 }
 
 function stripHtml(html: string): string {
