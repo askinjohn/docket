@@ -139,6 +139,8 @@ function mockShell() {
     openAttachment: () => undefined,
     closeImagePreview: () => undefined,
     closeAttachmentPreview: () => undefined,
+    requestScrollReadingToTop: () => undefined,
+    scrollReadingToTopNonce: () => 0,
     downloadAttachment: () => undefined,
     imagePreview: () => null,
     attachmentPreview: () => null,

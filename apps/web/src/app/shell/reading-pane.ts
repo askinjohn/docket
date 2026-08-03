@@ -521,6 +521,27 @@ export class ReadingPane {
         { injector: this.injector },
       );
     });
+
+    // After closing full image / attachment viewer → top of reading pane
+    effect(() => {
+      const nonce = this.shell.scrollReadingToTopNonce();
+      if (!nonce) return;
+      afterNextRender(
+        () => {
+          this.scrollReadingToTop();
+          requestAnimationFrame(() => this.scrollReadingToTop());
+        },
+        { injector: this.injector },
+      );
+    });
+  }
+
+  /** Jump to top of the thread (disables chat-style stick-to-bottom). */
+  private scrollReadingToTop(): void {
+    this.stickReadingToBottom = false;
+    const el = this.readingScroll()?.nativeElement;
+    if (!el) return;
+    el.scrollTop = 0;
   }
 
   protected usesHtml(msg: ShellMessage): boolean {
@@ -572,6 +593,14 @@ export class ReadingPane {
     const next = new Set(this.htmlExpandedIds());
     next.delete(msgId);
     this.htmlExpandedIds.set(next);
+    // After collapsing “Show full message”, return to the top of the thread
+    afterNextRender(
+      () => {
+        this.scrollReadingToTop();
+        requestAnimationFrame(() => this.scrollReadingToTop());
+      },
+      { injector: this.injector },
+    );
   }
 
   onHtmlFrameLoad(event: Event, msgId: string): void {

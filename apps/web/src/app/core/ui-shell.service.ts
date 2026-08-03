@@ -1634,8 +1634,20 @@ export class UiShellService {
     }
   }
 
+  /**
+   * Bumped when the reading pane should jump to the top (e.g. after closing
+   * the full image / attachment viewer).
+   */
+  readonly scrollReadingToTopNonce = signal(0);
+
+  requestScrollReadingToTop(): void {
+    this.scrollReadingToTopNonce.update((n) => n + 1);
+  }
+
   closeAttachmentPreview(): void {
     this.attachmentPreview.set(null);
+    // After closing a full-size image/PDF viewer, return to the top of the thread
+    this.requestScrollReadingToTop();
   }
 
   /** @deprecated use closeAttachmentPreview */
