@@ -16,6 +16,7 @@ import {
 } from '../db/accounts.js';
 import { publish, subscribe } from '../events/bus.js';
 import { downloadAttachment } from '../gmail/attachments.js';
+import { contentDispositionHeader } from '../gmail/content-disposition.js';
 import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
 import {
   hydrateThreadFromGmail,
@@ -497,18 +498,18 @@ api.get('/attachments/:id', async (c) => {
       mime.startsWith('text/') ||
       mime === 'application/json' ||
       mime === 'application/xml';
-    // Inline for in-app preview / <img> / PDF iframe; ?download=1 forces save
-    const disposition =
-      !forceDownload && canInline
-        ? `inline; filename="${file.filename.replace(/"/g, '')}"`
-        : `attachment; filename="${file.filename.replace(/"/g, '')}"`;
+    // Inline for in-app preview; ?download=1 forces save.
+    // filename must be ASCII-safe (macOS screenshots use U+202F etc.)
+    const disposition = contentDispositionHeader(
+      file.filename,
+      !forceDownload && canInline ? 'inline' : 'attachment',
+    );
     c.header('Content-Type', mime);
     c.header('Content-Disposition', disposition);
     c.header('Cache-Control', 'private, max-age=3600');
     // Allow sandboxed iframe (srcdoc) + viewer iframe to load from core
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cross-Origin-Resource-Policy', 'cross-origin');
-    // PDFs in iframe sometimes need this relaxed for local apps
     c.header('X-Content-Type-Options', 'nosniff');
     return c.body(new Uint8Array(file.data));
   } catch (e) {

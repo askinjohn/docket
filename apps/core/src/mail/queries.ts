@@ -238,11 +238,18 @@ export function getThreadDetail(threadId: string) {
     unread: Boolean(thread.unread),
     messages: messages.map((m) => {
       const allAtts = attStmt.all(m.id) as AttachmentRow[];
-      const bodyHtml = rewriteCidImages(m.body_html || '', allAtts, attachBase);
-      // Chips: non-inline, or anything not referenced as cid in HTML
-      const chipAtts = allAtts.filter(
-        (a) => !a.is_inline || !a.content_id,
+      const { html: bodyHtml, usedIds } = rewriteCidImages(
+        m.body_html || '',
+        allAtts,
+        attachBase,
       );
+      // Chips: skip pure inline images already shown in the HTML body
+      const chipAtts = allAtts.filter((a) => {
+        if (usedIds.has(a.id) && (a.mime_type || '').startsWith('image/')) {
+          return false;
+        }
+        return true;
+      });
       return {
         id: m.id,
         from: m.from_header,
@@ -262,27 +269,121 @@ export function getThreadDetail(threadId: string) {
   };
 }
 
-/** Map cid:foo → local attachment URL so inline images render in the UI. */
-function rewriteCidImages(
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Map cid:foo → local attachment URL so inline images render in the UI.
+ *
+ * Falls back when content_id was never stored (older syncs):
+ * 1) match Content-ID
+ * 2) match img alt to filename
+ * 3) map remaining cids → remaining image attachments in order
+ */
+export function rewriteCidImages(
   html: string,
   atts: AttachmentRow[],
   attachBase: string,
-): string {
-  if (!html || !atts.length) return html;
+): { html: string; usedIds: Set<string> } {
+  const usedIds = new Set<string>();
+  if (!html || !atts.length) return { html, usedIds };
+
   let out = html;
+  const cidRefs = [
+    ...html.matchAll(/\bcid:([^"'\s>]+)/gi),
+  ].map((m) => m[1]!.replace(/^<|>$/g, '').trim());
+  const uniqueCids = [...new Set(cidRefs.filter(Boolean))];
+  if (!uniqueCids.length) return { html, usedIds };
+
+  const byCid = new Map<string, AttachmentRow>();
   for (const a of atts) {
     if (!a.content_id) continue;
-    const cid = a.content_id.replace(/^<|>$/g, '').trim();
-    if (!cid) continue;
-    const url = `${attachBase}/${encodeURIComponent(a.id)}`;
-    // cid:xxx or cid:xxx@domain (optional angle brackets already stripped)
-    const re = new RegExp(
-      `cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
-      'gi',
-    );
-    out = out.replace(re, url);
+    const key = a.content_id.replace(/^<|>$/g, '').trim().toLowerCase();
+    if (key) byCid.set(key, a);
   }
-  return out;
+
+  const images = () =>
+    atts.filter(
+      (a) =>
+        (a.mime_type || '').startsWith('image/') && !usedIds.has(a.id),
+    );
+
+  for (const cid of uniqueCids) {
+    let att = byCid.get(cid.toLowerCase());
+
+    // alt="CleanShot ….png" near this cid
+    if (!att) {
+      const imgTag =
+        html.match(
+          new RegExp(
+            `<img[^>]*\\bsrc=["']cid:${escapeRegExp(cid)}["'][^>]*>`,
+            'i',
+          ),
+        )?.[0] ??
+        html.match(
+          new RegExp(
+            `<img[^>]*\\bsrc=["']cid:${escapeRegExp(cid)}["'][^>]*>`,
+            'i',
+          ),
+        )?.[0];
+      // also try alt before src order
+      const loose =
+        imgTag ||
+        [
+          ...html.matchAll(/<img\b[^>]*>/gi),
+        ].find((m) =>
+          new RegExp(`cid:${escapeRegExp(cid)}`, 'i').test(m[0]),
+        )?.[0];
+      if (loose) {
+        const alt = loose.match(/\balt=["']([^"']+)["']/i)?.[1]?.trim();
+        if (alt) {
+          att =
+            atts.find(
+              (a) =>
+                a.filename === alt ||
+                (a.filename &&
+                  (alt.includes(a.filename) || a.filename.includes(alt))),
+            ) ?? undefined;
+        }
+      }
+    }
+
+    // single leftover image
+    if (!att) {
+      const imgs = images();
+      if (imgs.length === 1) att = imgs[0];
+    }
+
+    if (!att) continue;
+
+    const url = `${attachBase}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(`cid:${escapeRegExp(cid)}`, 'gi'),
+      url,
+    );
+    usedIds.add(att.id);
+  }
+
+  // Order fallback for any cids still present
+  const still = [...out.matchAll(/\bcid:([^"'\s>]+)/gi)].map((m) =>
+    m[1]!.replace(/^<|>$/g, '').trim(),
+  );
+  const stillUnique = [...new Set(still.filter(Boolean))];
+  const leftoverImages = images();
+  for (let i = 0; i < stillUnique.length; i++) {
+    const att = leftoverImages[i];
+    const cid = stillUnique[i]!;
+    if (!att) break;
+    const url = `${attachBase}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(`cid:${escapeRegExp(cid)}`, 'gi'),
+      url,
+    );
+    usedIds.add(att.id);
+  }
+
+  return { html: out, usedIds };
 }
 
 function stripHtml(html: string): string {

@@ -49,24 +49,43 @@ function collectParts(
   if (!part) return;
   const mime = part.mimeType ?? '';
   const headers = headerMap(part.headers);
-  const rawCid = headers.get('content-id') ?? null;
+  // Gmail may use Content-ID or X-Attachment-Id
+  const rawCid =
+    headers.get('content-id') ??
+    headers.get('content-id'.toLowerCase()) ??
+    headers.get('x-attachment-id') ??
+    null;
   const contentId = rawCid
     ? rawCid.replace(/^<|>$/g, '').trim() || null
     : null;
   const disposition = (headers.get('content-disposition') ?? '').toLowerCase();
-  const filename =
+  let filename =
     part.filename ||
-    disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.trim() ||
+    disposition.match(/filename\*=(?:UTF-8''|utf-8'')([^;]+)/i)?.[1]?.trim() ||
+    disposition.match(/filename="([^"]+)"/i)?.[1]?.trim() ||
+    disposition.match(/filename=([^;\s]+)/i)?.[1]?.trim() ||
     '';
+  try {
+    if (filename.includes('%')) filename = decodeURIComponent(filename);
+  } catch {
+    /* keep raw */
+  }
 
   // Inline images often have Content-ID + attachmentId (and sometimes no filename)
   if (part.body?.attachmentId && (filename || contentId || mime.startsWith('image/'))) {
     const isInline =
       disposition.includes('inline') ||
-      Boolean(contentId && (mime.startsWith('image/') || !disposition.includes('attachment')));
+      Boolean(
+        contentId &&
+          (mime.startsWith('image/') || !disposition.includes('attachment')),
+      ) ||
+      // Gmail inline screenshots: image/* part with attachmentId inside multipart/related
+      (mime.startsWith('image/') && !disposition.includes('attachment'));
     acc.attachments.push({
       id: `${messageId}:${part.body.attachmentId}`,
-      filename: filename || (contentId ? `inline-${contentId.slice(0, 12)}` : 'attachment'),
+      filename:
+        filename ||
+        (contentId ? `inline-${contentId.slice(0, 12)}` : 'attachment'),
       mime_type: mime || 'application/octet-stream',
       size_bytes: part.body.size ?? 0,
       gmail_attachment_id: part.body.attachmentId,
