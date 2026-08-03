@@ -44,6 +44,65 @@ import type {
   ShellThreadPreview,
 } from './shell-models';
 
+export type AttachmentViewMode = 'image' | 'pdf' | 'text' | 'other';
+
+export interface AttachmentPreviewState {
+  id: string;
+  url: string;
+  name: string;
+  kind: string;
+  mimeType: string;
+  sizeLabel: string;
+  view: AttachmentViewMode;
+  kindLabel: string;
+  icon: string;
+  textContent: string;
+  textLoading: boolean;
+  textError: string | null;
+}
+
+function resolveAttachmentView(
+  kind: string,
+  mime: string,
+  name: string,
+): AttachmentViewMode {
+  if (kind === 'image' || mime.startsWith('image/')) return 'image';
+  if (kind === 'pdf' || mime === 'application/pdf' || /\.pdf$/i.test(name)) {
+    return 'pdf';
+  }
+  if (
+    mime.startsWith('text/') ||
+    mime === 'application/json' ||
+    mime === 'application/xml' ||
+    mime === 'application/javascript' ||
+    /\.(txt|md|csv|json|xml|log|html?|css|js|ts|svg)$/i.test(name)
+  ) {
+    return 'text';
+  }
+  return 'other';
+}
+
+function kindLabel(kind: string, mime: string): string {
+  if (kind === 'image' || mime.startsWith('image/')) return 'Image';
+  if (kind === 'pdf' || mime === 'application/pdf') return 'PDF';
+  if (kind === 'doc') return 'Document';
+  if (mime) return mime;
+  return 'File';
+}
+
+function iconForKind(kind: string): string {
+  switch (kind) {
+    case 'pdf':
+      return '📕';
+    case 'image':
+      return '🖼️';
+    case 'doc':
+      return '📘';
+    default:
+      return '📎';
+  }
+}
+
 @Service()
 export class UiShellService {
   /** Exposed for attachment thumbnail URLs in templates. */
@@ -1458,25 +1517,81 @@ export class UiShellService {
     else this.openHelp();
   }
 
-  /** Image lightbox (in-app) or open download URL. */
-  readonly imagePreview = signal<{
-    url: string;
-    name: string;
-  } | null>(null);
+  /**
+   * In-app attachment viewer (images, PDF, text; other = open/download card).
+   * Prefer this over raw window.open so Tauri/webview stay consistent.
+   */
+  readonly attachmentPreview = signal<AttachmentPreviewState | null>(null);
 
-  openAttachment(attId: string, opts?: { kind?: string; name?: string }): void {
+  /** @deprecated use attachmentPreview */
+  readonly imagePreview = this.attachmentPreview;
+
+  openAttachment(
+    attId: string,
+    opts?: { kind?: string; name?: string; mimeType?: string; sizeLabel?: string },
+  ): void {
     const url = this.api.attachmentUrl(attId);
-    const kind = opts?.kind;
     const name = opts?.name || 'attachment';
-    if (kind === 'image') {
-      this.imagePreview.set({ url, name });
-      return;
+    const kind = opts?.kind || 'other';
+    const mime = (opts?.mimeType || '').toLowerCase();
+    const view = resolveAttachmentView(kind, mime, name);
+    const state: AttachmentPreviewState = {
+      id: attId,
+      url,
+      name,
+      kind,
+      mimeType: mime,
+      sizeLabel: opts?.sizeLabel || '',
+      view,
+      kindLabel: kindLabel(kind, mime),
+      icon: iconForKind(kind),
+      textContent: '',
+      textLoading: view === 'text',
+      textError: null,
+    };
+    this.attachmentPreview.set(state);
+
+    if (view === 'text') {
+      void this.loadTextAttachment(attId, url);
     }
-    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  private async loadTextAttachment(attId: string, url: string): Promise<void> {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      // Cap huge files in the viewer
+      const capped =
+        text.length > 400_000
+          ? text.slice(0, 400_000) + '\n\n… (truncated for preview)'
+          : text;
+      this.attachmentPreview.update((p) =>
+        p && p.id === attId
+          ? { ...p, textContent: capped, textLoading: false, textError: null }
+          : p,
+      );
+    } catch (e) {
+      this.attachmentPreview.update((p) =>
+        p && p.id === attId
+          ? {
+              ...p,
+              textLoading: false,
+              textError:
+                e instanceof Error ? e.message : 'Could not load text preview',
+            }
+          : p,
+      );
+    }
+  }
+
+  closeAttachmentPreview(): void {
+    this.attachmentPreview.set(null);
+  }
+
+  /** @deprecated use closeAttachmentPreview */
   closeImagePreview(): void {
-    this.imagePreview.set(null);
+    this.closeAttachmentPreview();
   }
 
   downloadAttachment(attId: string): void {

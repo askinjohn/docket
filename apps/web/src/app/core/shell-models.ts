@@ -8,6 +8,7 @@ export interface ShellAttachment {
   name: string;
   sizeLabel: string;
   kind: 'pdf' | 'image' | 'doc' | 'other';
+  mimeType?: string;
 }
 
 export interface ShellMessage {

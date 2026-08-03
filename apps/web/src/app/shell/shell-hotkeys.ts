@@ -58,9 +58,9 @@ export function handleShellKeydown(
   }
 
   if (event.key === 'Escape') {
-    if (shell.imagePreview()) {
+    if (shell.attachmentPreview()) {
       event.preventDefault();
-      shell.closeImagePreview();
+      shell.closeAttachmentPreview();
       return true;
     }
     if (shell.helpOpen()) {

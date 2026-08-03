@@ -174,11 +174,11 @@ import { ReplyPanel } from './reply-panel';
                               shell.openAttachment(file.id, {
                                 kind: file.kind,
                                 name: file.name,
+                                mimeType: file.mimeType,
+                                sizeLabel: file.sizeLabel,
                               })
                             "
-                            [title]="
-                              file.kind === 'image' ? 'View image' : 'Download / open'
-                            "
+                            title="View attachment"
                           >
                             @if (file.kind === 'image') {
                               <img
@@ -283,8 +283,11 @@ import { ReplyPanel } from './reply-panel';
                                 shell.openAttachment(file.id, {
                                   kind: file.kind,
                                   name: file.name,
+                                  mimeType: file.mimeType,
+                                  sizeLabel: file.sizeLabel,
                                 })
                               "
+                              title="View attachment"
                             >
                               @if (file.kind === 'image') {
                                 <img

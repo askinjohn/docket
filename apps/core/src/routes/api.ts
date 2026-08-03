@@ -490,18 +490,26 @@ api.get('/attachments/:id', async (c) => {
   try {
     const file = await downloadAttachment(decodeURIComponent(c.req.param('id')));
     const forceDownload = c.req.query('download') === '1';
-    const isImage = file.mimeType.startsWith('image/');
-    // Inline so <img> / browser tab can display; ?download=1 forces save
+    const mime = file.mimeType || 'application/octet-stream';
+    const canInline =
+      mime.startsWith('image/') ||
+      mime === 'application/pdf' ||
+      mime.startsWith('text/') ||
+      mime === 'application/json' ||
+      mime === 'application/xml';
+    // Inline for in-app preview / <img> / PDF iframe; ?download=1 forces save
     const disposition =
-      !forceDownload && isImage
+      !forceDownload && canInline
         ? `inline; filename="${file.filename.replace(/"/g, '')}"`
         : `attachment; filename="${file.filename.replace(/"/g, '')}"`;
-    c.header('Content-Type', file.mimeType);
+    c.header('Content-Type', mime);
     c.header('Content-Disposition', disposition);
     c.header('Cache-Control', 'private, max-age=3600');
-    // Allow sandboxed iframe (srcdoc) to load images from core
+    // Allow sandboxed iframe (srcdoc) + viewer iframe to load from core
     c.header('Access-Control-Allow-Origin', '*');
     c.header('Cross-Origin-Resource-Policy', 'cross-origin');
+    // PDFs in iframe sometimes need this relaxed for local apps
+    c.header('X-Content-Type-Options', 'nosniff');
     return c.body(new Uint8Array(file.data));
   } catch (e) {
     return jsonGmailError(c, e, 'download_failed');

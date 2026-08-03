@@ -1,6 +1,7 @@
 import { Component, inject, OnInit } from '@angular/core';
 
 import { UiShellService } from './core/ui-shell.service';
+import { AttachmentViewer } from './shell/attachment-viewer';
 import { CommandPalette } from './shell/command-palette';
 import { ComposeWindow } from './shell/compose-window';
 import { ReadingPane } from './shell/reading-pane';
@@ -24,6 +25,7 @@ import { ThreadList } from './shell/thread-list';
     SettingsDialog,
     ShortcutsHelp,
     ComposeWindow,
+    AttachmentViewer,
   ],
   template: `
     <div
@@ -38,44 +40,7 @@ import { ThreadList } from './shell/thread-list';
     <lm-settings-dialog />
     <lm-shortcuts-help />
     <lm-compose-window />
-
-    @if (shell.imagePreview(); as preview) {
-      <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-        (click)="shell.closeImagePreview()"
-        role="dialog"
-        aria-label="Image preview"
-        aria-modal="true"
-      >
-        <div
-          class="relative flex max-h-full max-w-full flex-col items-center gap-3"
-          (click)="$event.stopPropagation()"
-        >
-          <img
-            class="max-h-[min(85vh,900px)] max-w-[min(92vw,1100px)] rounded-lg object-contain shadow-2xl"
-            [src]="preview.url"
-            [alt]="preview.name"
-          />
-          <div class="flex flex-wrap items-center justify-center gap-2">
-            <span class="max-w-xs truncate text-sm text-white/90">{{ preview.name }}</span>
-            <a
-              class="cursor-pointer rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
-              [href]="preview.url + '?download=1'"
-              target="_blank"
-              rel="noopener"
-              >Download</a
-            >
-            <button
-              type="button"
-              class="cursor-pointer rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
-              (click)="shell.closeImagePreview()"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    }
+    <lm-attachment-viewer />
   `,
   styles: `
     :host {
@@ -99,11 +64,6 @@ export class App implements OnInit {
   }
 
   onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && this.shell.imagePreview()) {
-      event.preventDefault();
-      this.shell.closeImagePreview();
-      return;
-    }
     handleShellKeydown(event, this.shell);
   }
 
