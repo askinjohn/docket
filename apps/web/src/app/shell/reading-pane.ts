@@ -98,25 +98,35 @@ import { ReplyPanel } from './reply-panel';
               class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-panel px-3 py-2 text-[0.8rem]"
               role="status"
             >
-              <span class="text-lm-muted">
-                Remote images are blocked for privacy (placeholders keep layout).
+              <span class="min-w-0 text-lm-muted">
+                Remote images blocked for this thread (privacy). Layout uses placeholders.
               </span>
-              <button
-                type="button"
-                class="cursor-pointer rounded-md border-0 bg-lm-accent px-2.5 py-1 text-[0.78rem] font-semibold text-white hover:brightness-110"
-                (click)="shell.showRemoteImagesForThread()"
-              >
-                Show remote images
-              </button>
+              <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-md border-0 bg-lm-accent px-2.5 py-1 text-[0.78rem] font-semibold text-white hover:brightness-110"
+                  (click)="shell.showRemoteImagesForThread()"
+                >
+                  Show for this thread
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-md border border-lm-border bg-transparent px-2 py-1 text-[0.75rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+                  (click)="shell.setRemoteImagesMode('always')"
+                  title="Load remote images in every email (Settings)"
+                >
+                  Always show
+                </button>
+              </div>
             </div>
           } @else if (
-            shell.theme().blockRemoteImages &&
+            (shell.theme().remoteImagesMode ?? 'ask') === 'ask' &&
             shell.remoteImagesUnlockedThreadId() === thread.id
           ) {
             <div
               class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border/80 bg-lm-bg px-3 py-2 text-[0.78rem] text-lm-muted"
             >
-              <span>Remote images loaded for this thread only.</span>
+              <span>Remote images on for this thread only.</span>
               <button
                 type="button"
                 class="cursor-pointer rounded-md border border-lm-border bg-transparent px-2 py-1 text-[0.75rem] hover:bg-lm-hover"
@@ -461,8 +471,9 @@ export class ReadingPane {
   private readonly htmlExpandedIds = signal<ReadonlySet<string>>(new Set());
   private readonly htmlTallIds = signal<ReadonlySet<string>>(new Set());
 
-  /** Banner when global block is on and this thread still has remote images. */
+  /** Banner only in “ask” mode when this thread still blocks remote images. */
   protected readonly showRemoteImagesBanner = computed(() => {
+    if (!this.shell.canUnlockRemoteImagesForThread()) return false;
     if (!this.shell.blockRemoteImagesNow()) return false;
     const thread = this.shell.selectedThread();
     if (!thread) return false;

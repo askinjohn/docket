@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 
+import { REMOTE_IMAGES_OPTIONS } from '../core/theme';
 import { UiShellService } from '../core/ui-shell.service';
 
 @Component({
@@ -8,13 +9,13 @@ import { UiShellService } from '../core/ui-shell.service';
     @if (shell.settingsOpen()) {
       <div class="fixed inset-0 z-40 bg-black/50" (click)="shell.closeSettings()"></div>
       <div
-        class="fixed top-1/2 left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-lm-border bg-lm-panel p-5 shadow-2xl"
+        class="fixed top-1/2 left-1/2 z-50 max-h-[min(90vh,640px)] w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-lm-border bg-lm-panel p-5 shadow-2xl"
         role="dialog"
-        aria-label="Appearance"
+        aria-label="Settings"
         aria-modal="true"
       >
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="m-0 text-base font-semibold">Appearance</h2>
+          <h2 class="m-0 text-base font-semibold">Settings</h2>
           <button
             type="button"
             class="cursor-pointer rounded border-0 bg-transparent px-2 text-lg text-lm-muted hover:bg-lm-hover hover:text-lm-text"
@@ -115,24 +116,44 @@ import { UiShellService } from '../core/ui-shell.service';
 
         <div>
           <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">
-            Privacy
+            Remote images (CDN)
           </div>
-          <label
-            class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-lm-border px-3 py-2.5 text-sm hover:bg-lm-hover"
-          >
-            <input
-              type="checkbox"
-              class="mt-0.5"
-              [checked]="shell.theme().blockRemoteImages"
-              (change)="onBlockImages($event)"
-            />
-            <span>
-              <span class="block font-medium text-lm-text">Block remote images</span>
-              <span class="mt-0.5 block text-[0.75rem] text-lm-muted">
-                Prevents tracking pixels in HTML mail. Toggle off to load external images.
-              </span>
-            </span>
-          </label>
+          <p class="mb-2 m-0 text-[0.72rem] leading-relaxed text-lm-muted">
+            External images can track opens. Attachments and inline Gmail images still work when
+            blocked.
+          </p>
+          <div class="flex flex-col gap-2" role="radiogroup" aria-label="Remote images">
+            @for (opt of remoteImageOptions; track opt.id) {
+              <button
+                type="button"
+                role="radio"
+                class="rounded-xl border px-3 py-2.5 text-left transition"
+                [attr.aria-checked]="
+                  (shell.theme().remoteImagesMode ?? 'ask') === opt.id
+                "
+                [class.border-lm-accent]="
+                  (shell.theme().remoteImagesMode ?? 'ask') === opt.id
+                "
+                [class.bg-lm-accent/10]="
+                  (shell.theme().remoteImagesMode ?? 'ask') === opt.id
+                "
+                [class.border-lm-border]="
+                  (shell.theme().remoteImagesMode ?? 'ask') !== opt.id
+                "
+                [class.hover:bg-lm-hover]="
+                  (shell.theme().remoteImagesMode ?? 'ask') !== opt.id
+                "
+                (click)="shell.setRemoteImagesMode(opt.id)"
+              >
+                <span class="block text-sm font-semibold text-lm-text">{{
+                  opt.label
+                }}</span>
+                <span class="mt-0.5 block text-[0.72rem] leading-snug text-lm-muted">{{
+                  opt.description
+                }}</span>
+              </button>
+            }
+          </div>
         </div>
       </div>
     }
@@ -143,12 +164,9 @@ export class SettingsDialog {
   protected readonly modes = ['dark', 'light', 'system'] as const;
   protected readonly densities = ['comfortable', 'compact'] as const;
   protected readonly docks = ['bottom', 'right'] as const;
+  protected readonly remoteImageOptions = REMOTE_IMAGES_OPTIONS;
 
   onAccentColor(event: Event): void {
     this.shell.setThemeAccent((event.target as HTMLInputElement).value);
-  }
-
-  onBlockImages(event: Event): void {
-    this.shell.setBlockRemoteImages((event.target as HTMLInputElement).checked);
   }
 }

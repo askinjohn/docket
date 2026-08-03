@@ -3,12 +3,25 @@ export type ThemeDensity = 'compact' | 'comfortable';
 /** Where reply / AI insight panels dock relative to the thread. */
 export type ReplyDock = 'bottom' | 'right';
 
+/**
+ * How HTML mail loads remote/CDN images.
+ * - always: load external images for every thread
+ * - ask: block by default; “Show remote images” unlocks the current thread only
+ * - never: always block (no per-thread unlock)
+ */
+export type RemoteImagesMode = 'always' | 'ask' | 'never';
+
 export interface ThemePrefs {
   mode: ThemeMode;
   accent: string;
   density: ThemeDensity;
-  /** Block remote http(s) images in HTML mail (privacy). Default true. */
+  /**
+   * @deprecated Prefer remoteImagesMode. Kept for older localStorage values.
+   * true ≈ ask/never, false ≈ always.
+   */
   blockRemoteImages: boolean;
+  /** Primary remote-image policy. */
+  remoteImagesMode: RemoteImagesMode;
   /** Reply + AI insight dock position. */
   replyDock: ReplyDock;
 }
@@ -22,6 +35,29 @@ export const ACCENT_PRESETS = [
   { id: 'emerald', label: 'Emerald', value: '#10b981' },
 ] as const;
 
+export const REMOTE_IMAGES_OPTIONS: {
+  id: RemoteImagesMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: 'always',
+    label: 'Always show',
+    description: 'Load CDN images in every email (best layout; allows tracking).',
+  },
+  {
+    id: 'ask',
+    label: 'Ask each thread',
+    description:
+      'Block by default. Use “Show remote images” on a thread when you want them.',
+  },
+  {
+    id: 'never',
+    label: 'Always block',
+    description: 'Never load remote images. Attachments and cid: still work.',
+  },
+];
+
 const STORAGE_KEY = 'local-mail.theme';
 
 export const DEFAULT_THEME: ThemePrefs = {
@@ -29,6 +65,7 @@ export const DEFAULT_THEME: ThemePrefs = {
   accent: '#7c6af7',
   density: 'comfortable',
   blockRemoteImages: true,
+  remoteImagesMode: 'ask',
   replyDock: 'bottom',
 };
 
@@ -36,17 +73,35 @@ function parseReplyDock(v: unknown): ReplyDock {
   return v === 'right' ? 'right' : 'bottom';
 }
 
+function parseRemoteImagesMode(
+  parsed: Partial<ThemePrefs>,
+): RemoteImagesMode {
+  if (
+    parsed.remoteImagesMode === 'always' ||
+    parsed.remoteImagesMode === 'ask' ||
+    parsed.remoteImagesMode === 'never'
+  ) {
+    return parsed.remoteImagesMode;
+  }
+  // Migrate legacy boolean
+  if (parsed.blockRemoteImages === false) return 'always';
+  if (parsed.blockRemoteImages === true) return 'ask';
+  return DEFAULT_THEME.remoteImagesMode;
+}
+
 export function loadThemePrefs(): ThemePrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_THEME };
     const parsed = JSON.parse(raw) as Partial<ThemePrefs>;
+    const remoteImagesMode = parseRemoteImagesMode(parsed);
     return {
       mode: parsed.mode ?? DEFAULT_THEME.mode,
       accent: parsed.accent ?? DEFAULT_THEME.accent,
       density: parsed.density ?? DEFAULT_THEME.density,
-      blockRemoteImages:
-        parsed.blockRemoteImages ?? DEFAULT_THEME.blockRemoteImages,
+      remoteImagesMode,
+      // Keep boolean in sync for any leftover readers
+      blockRemoteImages: remoteImagesMode !== 'always',
       replyDock: parseReplyDock(parsed.replyDock),
     };
   } catch {
@@ -55,7 +110,11 @@ export function loadThemePrefs(): ThemePrefs {
 }
 
 export function saveThemePrefs(prefs: ThemePrefs): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  const normalized: ThemePrefs = {
+    ...prefs,
+    blockRemoteImages: prefs.remoteImagesMode !== 'always',
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
 }
 
 function resolveMode(mode: ThemeMode): 'dark' | 'light' {
@@ -74,7 +133,6 @@ export function applyTheme(prefs: ThemePrefs): void {
   root.dataset['theme'] = resolved;
   root.dataset['density'] = prefs.density;
   root.style.setProperty('--color-lm-accent', prefs.accent);
-  // derive a second accent (slightly greener/lighter mix feel)
   root.style.setProperty('--user-accent', prefs.accent);
 
   if (resolved === 'light') {
@@ -93,6 +151,5 @@ export function applyTheme(prefs: ThemePrefs): void {
     root.style.setProperty('--color-lm-muted', '#8b95a8');
   }
 
-  // Keep accent after mode palette (mode overwrites accents if we set after)
   root.style.setProperty('--color-lm-accent', prefs.accent);
 }

@@ -23,6 +23,7 @@ import {
   applyTheme,
   loadThemePrefs,
   saveThemePrefs,
+  type RemoteImagesMode,
   type ReplyDock,
   type ThemeDensity,
   type ThemeMode,
@@ -731,32 +732,50 @@ export class UiShellService {
     }
   }
 
+  /** @deprecated Prefer setRemoteImagesMode */
   setBlockRemoteImages(block: boolean): void {
-    const next = { ...this.theme(), blockRemoteImages: block };
+    this.setRemoteImagesMode(block ? 'ask' : 'always');
+  }
+
+  setRemoteImagesMode(mode: RemoteImagesMode): void {
+    const next: ThemePrefs = {
+      ...this.theme(),
+      remoteImagesMode: mode,
+      blockRemoteImages: mode !== 'always',
+    };
     this.theme.set(next);
     saveThemePrefs(next);
-    // Clearing the global block also clears the per-thread unlock
-    if (!block) this.remoteImagesUnlockedThreadId.set(null);
+    if (mode === 'always' || mode === 'never') {
+      this.remoteImagesUnlockedThreadId.set(null);
+    }
   }
 
   /**
-   * Per-thread unlock for remote images (Amazon etc.) without changing
-   * the global privacy default. Cleared when switching threads.
+   * Per-thread unlock when mode is “ask”. Cleared when switching threads.
    */
   readonly remoteImagesUnlockedThreadId = signal<string | null>(null);
 
   /** True when remote images should be blocked for the current thread. */
   readonly blockRemoteImagesNow = computed(() => {
-    if (!this.theme().blockRemoteImages) return false;
+    const mode = this.theme().remoteImagesMode ?? 'ask';
+    if (mode === 'always') return false;
+    if (mode === 'never') return true;
+    // ask: blocked unless this thread was unlocked
     const id = this.selectedId();
     return !id || this.remoteImagesUnlockedThreadId() !== id;
   });
 
+  /** Banner only in “ask” mode (not when always-block). */
+  readonly canUnlockRemoteImagesForThread = computed(
+    () => (this.theme().remoteImagesMode ?? 'ask') === 'ask',
+  );
+
   showRemoteImagesForThread(): void {
+    if ((this.theme().remoteImagesMode ?? 'ask') !== 'ask') return;
     const id = this.selectedId();
     if (!id) return;
     this.remoteImagesUnlockedThreadId.set(id);
-    this.statusMessage.set('Remote images loaded for this thread');
+    this.statusMessage.set('Remote images loaded for this thread only');
   }
 
   hideRemoteImagesForThread(): void {
