@@ -68,6 +68,16 @@ export function handleShellKeydown(
       shell.closeCompose();
       return true;
     }
+    if (shell.replyOpen()) {
+      event.preventDefault();
+      shell.closeReply();
+      return true;
+    }
+    if (shell.aiInsightOpen()) {
+      event.preventDefault();
+      shell.closeAiInsight();
+      return true;
+    }
     if (shell.checkedCount() > 0) {
       event.preventDefault();
       shell.clearChecked();

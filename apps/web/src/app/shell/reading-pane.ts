@@ -18,10 +18,12 @@ import {
 import { SafeSrcdocPipe } from '../core/safe-srcdoc.pipe';
 import type { ShellMessage } from '../core/ui-shell.service';
 import { UiShellService } from '../core/ui-shell.service';
+import { AiInsightPanel } from './ai-insight-panel';
+import { ReplyPanel } from './reply-panel';
 
 @Component({
   selector: 'lm-reading-pane',
-  imports: [SafeSrcdocPipe],
+  imports: [SafeSrcdocPipe, AiInsightPanel, ReplyPanel],
   template: `
     <section
       class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-lm-bg"
@@ -59,7 +61,7 @@ import { UiShellService } from '../core/ui-shell.service';
                 [disabled]="!shell.isConnected() || shell.aiBusy()"
                 title="AI summarize"
               >
-                Summarize
+                {{ shell.aiBusy() ? '…' : 'Summarize' }}
               </button>
               <button
                 type="button"
@@ -91,6 +93,12 @@ import { UiShellService } from '../core/ui-shell.service';
           </div>
         </header>
 
+        <div
+          class="flex min-h-0 flex-1"
+          [class.flex-col]="shell.theme().replyDock === 'bottom'"
+          [class.flex-row]="shell.theme().replyDock === 'right'"
+        >
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           #readingScroll
           class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5"
@@ -275,101 +283,56 @@ import { UiShellService } from '../core/ui-shell.service';
           }
         </div>
 
-        @if (shell.replyOpen()) {
-          <footer
-            class="flex max-h-[min(48vh,380px)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-lm-border bg-lm-panel"
-            aria-label="Reply"
+        @if (shell.theme().replyDock === 'bottom') {
+          <div
+            class="flex max-h-[min(52vh,440px)] min-h-0 shrink-0 flex-col overflow-hidden"
           >
-            <div
-              class="flex shrink-0 items-center justify-between gap-3 border-b border-lm-border/70 bg-lm-bg/50 px-4 py-2"
-            >
-              <div class="flex min-w-0 items-center gap-2">
-                <span
-                  class="h-1.5 w-1.5 shrink-0 rounded-full bg-lm-accent"
-                  aria-hidden="true"
-                ></span>
-                <span class="min-w-0 truncate text-[0.82rem] font-semibold text-lm-text"
-                  >Reply to {{ thread.from }}</span
-                >
-              </div>
+            <lm-ai-insight-panel />
+            <lm-reply-panel [replyTo]="thread.from" />
+            @if (
+              !shell.replyOpen() &&
+              !shell.aiInsightOpen() &&
+              shell.isConnected()
+            ) {
               <button
                 type="button"
-                class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-                (click)="shell.closeReply()"
-                aria-label="Close reply"
-                title="Close (Esc)"
+                class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
+                (click)="shell.openReply()"
               >
-                ×
+                Reply to this thread ·
+                <kbd
+                  class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
+                  >r</kbd
+                >
               </button>
-            </div>
-            <textarea
-              class="min-h-24 max-h-44 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-[0.92rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted/65"
-              rows="5"
-              [value]="shell.replyBody()"
-              (input)="onReplyInput($event)"
-              placeholder="Write your reply…"
-            ></textarea>
-            @if (shell.replyAttachments().length) {
-              <ul
-                class="m-0 flex list-none flex-wrap gap-1.5 border-t border-lm-border/60 px-4 py-2"
-              >
-                @for (file of shell.replyAttachments(); track file.id) {
-                  <li
-                    class="inline-flex max-w-52 items-center gap-1.5 rounded-lg border border-lm-border bg-lm-bg px-2 py-1 text-[0.72rem]"
-                  >
-                    <span class="truncate font-medium">{{ file.name }}</span>
-                    <span class="text-lm-muted">{{ file.sizeLabel }}</span>
-                    <button
-                      type="button"
-                      class="cursor-pointer border-0 bg-transparent px-1 text-lm-muted hover:text-lm-text"
-                      (click)="shell.removeReplyAttachment(file.id)"
-                      [attr.aria-label]="'Remove ' + file.name"
-                    >
-                      ×
-                    </button>
-                  </li>
-                }
-              </ul>
             }
-            <div
-              class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-lm-border bg-lm-bg/40 px-4 py-2.5"
-            >
-              <div class="flex items-center gap-2">
-                <label
-                  class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.78rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-                >
-                  Attach
-                  <input
-                    type="file"
-                    class="sr-only"
-                    multiple
-                    (change)="onReplyFiles($event)"
-                  />
-                </label>
-                <span class="text-[0.7rem] text-lm-muted">⌘↵ send</span>
-              </div>
+          </div>
+        }
+        </div>
+
+        @if (shell.theme().replyDock === 'right') {
+          <aside
+            class="flex w-[min(400px,42%)] min-w-[280px] shrink-0 flex-col overflow-hidden border-l border-lm-border bg-lm-panel"
+            aria-label="Side panels"
+          >
+            <lm-ai-insight-panel class="min-h-0 flex-1" />
+            <lm-reply-panel class="min-h-0 flex-1" [replyTo]="thread.from" />
+            @if (
+              !shell.replyOpen() &&
+              !shell.aiInsightOpen() &&
+              shell.isConnected()
+            ) {
               <button
                 type="button"
-                class="cursor-pointer rounded-lg border-0 bg-lm-accent px-3.5 py-1.5 text-[0.82rem] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                (click)="shell.sendReply()"
-                [disabled]="shell.sending() || !shell.isConnected()"
+                class="m-3 cursor-pointer rounded-lg border border-lm-border bg-lm-bg px-3 py-3 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
+                (click)="shell.openReply()"
               >
-                {{ shell.sending() ? 'Sending…' : 'Send' }}
+                Reply · <kbd class="font-mono text-xs">r</kbd>
               </button>
-            </div>
-          </footer>
-        } @else if (shell.isConnected()) {
-          <button
-            type="button"
-            class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
-            (click)="shell.openReply()"
-          >
-            Reply to this thread ·
-            <kbd class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
-              >r</kbd
-            >
-          </button>
+            }
+          </aside>
         }
+        </div>
       } @else {
         <div class="m-auto text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</div>
       }
@@ -440,6 +403,12 @@ export class ReadingPane {
       void thread.messages.at(-1)?.id;
       void this.shell.detailLoading();
       void this.shell.replyOpen();
+      void this.shell.aiInsightOpen();
+
+      // Close panels when switching threads
+      if (isNewThread) {
+        this.shell.closeAiInsight();
+      }
 
       const force = isNewThread || this.stickReadingToBottom;
 
@@ -568,13 +537,4 @@ export class ReadingPane {
     requestAnimationFrame(() => this.scrollReadingToLatest(false));
   }
 
-  onReplyInput(event: Event): void {
-    this.shell.setReplyBody((event.target as HTMLTextAreaElement).value);
-  }
-
-  onReplyFiles(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    void this.shell.addReplyFiles(input.files);
-    input.value = '';
-  }
 }

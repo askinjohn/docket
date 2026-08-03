@@ -1,5 +1,6 @@
 import { Service, computed, inject, signal } from '@angular/core';
 
+import { parseInsightText } from './ai-insight';
 import { apiErrorInfo } from './api-error';
 import {
   MailApiService,
@@ -22,6 +23,7 @@ import {
   applyTheme,
   loadThemePrefs,
   saveThemePrefs,
+  type ReplyDock,
   type ThemeDensity,
   type ThemeMode,
   type ThemePrefs,
@@ -110,6 +112,10 @@ export class UiShellService {
   readonly accountMenuOpen = signal(false);
   readonly aiBusy = signal(false);
   readonly summaryBusy = signal(false);
+  /** AI summary / insight panel (not the reply composer). */
+  readonly aiInsightOpen = signal(false);
+  readonly aiInsightText = signal('');
+  readonly aiInsightMode = signal<string | null>(null);
   readonly coreStatus = signal<CoreStatus>('checking');
   readonly accountEmail = signal<string | null>(null);
   readonly accounts = signal<PublicAccount[]>([]);
@@ -669,6 +675,43 @@ export class UiShellService {
     const next = { ...this.theme(), blockRemoteImages: block };
     this.theme.set(next);
     saveThemePrefs(next);
+  }
+
+  setReplyDock(dock: ReplyDock): void {
+    const next = { ...this.theme(), replyDock: dock };
+    this.theme.set(next);
+    saveThemePrefs(next);
+  }
+
+  toggleReplyDock(): void {
+    this.setReplyDock(this.theme().replyDock === 'right' ? 'bottom' : 'right');
+  }
+
+  closeAiInsight(): void {
+    this.aiInsightOpen.set(false);
+  }
+
+  /** Copy insight into the reply composer (user can edit before send). */
+  insertInsightIntoReply(): void {
+    const parsed = parseInsightText(this.aiInsightText());
+    const text = parsed.plainText.trim();
+    if (!text) return;
+    const existing = this.replyBody().trim();
+    this.replyBody.set(existing ? `${existing}\n\n${text}` : text);
+    this.replyOpen.set(true);
+    this.composeOpen.set(false);
+    this.statusMessage.set('Summary inserted into reply — edit before send');
+  }
+
+  async copyAiInsight(): Promise<void> {
+    const text = parseInsightText(this.aiInsightText()).plainText.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      this.statusMessage.set('Summary copied');
+    } catch {
+      this.statusMessage.set('Could not copy to clipboard');
+    }
   }
 
   openSettings(): void {
@@ -1439,11 +1482,17 @@ export class UiShellService {
     this.aiBusy.set(true);
     try {
       const res = await this.api.aiSummarize(id);
-      this.statusMessage.set(`AI summary (${res.mode}) ready — see reply box`);
-      this.replyBody.set(res.text);
-      this.replyOpen.set(true);
+      this.aiInsightText.set(res.text);
+      this.aiInsightMode.set(res.mode ?? null);
+      this.aiInsightOpen.set(true);
+      // Do not put summary into the reply composer
+      this.statusMessage.set(
+        res.mode === 'template'
+          ? 'Summary ready (template — configure Ollama/OpenAI for better results)'
+          : `Summary ready (${res.mode})`,
+      );
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'AI failed');
+      this.handleGmailFailure(e, 'AI failed');
     } finally {
       this.aiBusy.set(false);
     }
@@ -1457,9 +1506,10 @@ export class UiShellService {
       const res = await this.api.aiDraft(id);
       this.replyBody.set(res.text);
       this.replyOpen.set(true);
+      this.composeOpen.set(false);
       this.statusMessage.set(`Draft ready (${res.mode})`);
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'AI failed');
+      this.handleGmailFailure(e, 'AI failed');
     } finally {
       this.aiBusy.set(false);
     }

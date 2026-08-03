@@ -1,5 +1,7 @@
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type ThemeDensity = 'compact' | 'comfortable';
+/** Where reply / AI insight panels dock relative to the thread. */
+export type ReplyDock = 'bottom' | 'right';
 
 export interface ThemePrefs {
   mode: ThemeMode;
@@ -7,6 +9,8 @@ export interface ThemePrefs {
   density: ThemeDensity;
   /** Block remote http(s) images in HTML mail (privacy). Default true. */
   blockRemoteImages: boolean;
+  /** Reply + AI insight dock position. */
+  replyDock: ReplyDock;
 }
 
 export const ACCENT_PRESETS = [
@@ -25,7 +29,12 @@ export const DEFAULT_THEME: ThemePrefs = {
   accent: '#7c6af7',
   density: 'comfortable',
   blockRemoteImages: true,
+  replyDock: 'bottom',
 };
+
+function parseReplyDock(v: unknown): ReplyDock {
+  return v === 'right' ? 'right' : 'bottom';
+}
 
 export function loadThemePrefs(): ThemePrefs {
   try {
@@ -38,6 +47,7 @@ export function loadThemePrefs(): ThemePrefs {
       density: parsed.density ?? DEFAULT_THEME.density,
       blockRemoteImages:
         parsed.blockRemoteImages ?? DEFAULT_THEME.blockRemoteImages,
+      replyDock: parseReplyDock(parsed.replyDock),
     };
   } catch {
     return { ...DEFAULT_THEME };

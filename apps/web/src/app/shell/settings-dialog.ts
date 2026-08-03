@@ -90,6 +90,29 @@ import { UiShellService } from '../core/ui-shell.service';
           </div>
         </div>
 
+        <div class="mb-4">
+          <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">
+            Reply panel
+          </div>
+          <div class="flex gap-2">
+            @for (d of docks; track d) {
+              <button
+                type="button"
+                class="flex-1 rounded-lg border px-2 py-2 text-sm capitalize"
+                [class.border-lm-accent]="shell.theme().replyDock === d"
+                [class.bg-lm-accent/15]="shell.theme().replyDock === d"
+                [class.border-lm-border]="shell.theme().replyDock !== d"
+                (click)="shell.setReplyDock(d)"
+              >
+                {{ d }}
+              </button>
+            }
+          </div>
+          <p class="mt-2 m-0 text-[0.72rem] text-lm-muted">
+            Bottom under the thread, or right side of the reading pane.
+          </p>
+        </div>
+
         <div>
           <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">
             Privacy
@@ -119,6 +142,7 @@ export class SettingsDialog {
   protected readonly shell = inject(UiShellService);
   protected readonly modes = ['dark', 'light', 'system'] as const;
   protected readonly densities = ['comfortable', 'compact'] as const;
+  protected readonly docks = ['bottom', 'right'] as const;
 
   onAccentColor(event: Event): void {
     this.shell.setThemeAccent((event.target as HTMLInputElement).value);
