@@ -1,7 +1,8 @@
 import { Pipe, PipeTransform, inject } from '@angular/core';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 
-import { wrapEmailHtml } from './email-body';
+import { rewriteRemainingCids, wrapEmailHtml } from './email-body';
+import { environment } from '../../environments/environment';
 
 /** Pure pipe so srcdoc is stable across change detection (avoids iframe reload loops). */
 @Pipe({ name: 'safeSrcdoc' })
@@ -11,8 +12,15 @@ export class SafeSrcdocPipe implements PipeTransform {
   transform(
     bodyHtml: string | null | undefined,
     blockRemoteImages = true,
+    attachments: { id: string; name: string; kind?: string; mimeType?: string }[] = [],
   ): SafeHtml {
-    const doc = wrapEmailHtml(bodyHtml ?? '', { blockRemoteImages });
+    const attachBase = `${environment.coreBaseUrl}/attachments`;
+    const withCids = rewriteRemainingCids(
+      bodyHtml ?? '',
+      attachments,
+      attachBase,
+    );
+    const doc = wrapEmailHtml(withCids, { blockRemoteImages });
     return this.sanitizer.bypassSecurityTrustHtml(doc);
   }
 }

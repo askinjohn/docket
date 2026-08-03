@@ -137,7 +137,12 @@ import { ReplyPanel } from './reply-panel';
                     class="message-html-frame"
                     title="Message body"
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                    [srcdoc]="msg.bodyHtml | safeSrcdoc:shell.theme().blockRemoteImages"
+                    [srcdoc]="
+                      msg.bodyHtml
+                        | safeSrcdoc
+                          : shell.theme().blockRemoteImages
+                          : msg.attachments
+                    "
                     (load)="onHtmlFrameLoad($event, msg.id)"
                   ></iframe>
                 </div>
@@ -241,7 +246,12 @@ import { ReplyPanel } from './reply-panel';
                         class="message-html-frame"
                         title="Message body"
                         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                        [srcdoc]="msg.bodyHtml | safeSrcdoc:shell.theme().blockRemoteImages"
+                        [srcdoc]="
+                      msg.bodyHtml
+                        | safeSrcdoc
+                          : shell.theme().blockRemoteImages
+                          : msg.attachments
+                    "
                         (load)="onHtmlFrameLoad($event, msg.id)"
                       ></iframe>
                     </div>

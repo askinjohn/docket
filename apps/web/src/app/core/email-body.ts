@@ -120,6 +120,94 @@ export function sanitizeEmailHtml(
 }
 
 /**
+ * Last-chance client rewrite: if any cid: remains (stale cache / missed
+ * Content-ID), map by alt filename or single remaining image attachment.
+ */
+export function rewriteRemainingCids(
+  html: string,
+  attachments: { id: string; name: string; kind?: string; mimeType?: string }[],
+  attachBaseUrl: string,
+): string {
+  if (!html || !attachments.length || !/cid:/i.test(html)) return html;
+
+  const base = attachBaseUrl.replace(/\/$/, '');
+  let out = html;
+  const cids = [
+    ...html.matchAll(/\bcid:([^"'\s>]+)/gi),
+  ].map((m) => m[1]!.replace(/^<|>$/g, '').trim());
+  const unique = [...new Set(cids.filter(Boolean))];
+  const used = new Set<string>();
+
+  const images = () =>
+    attachments.filter(
+      (a) =>
+        !used.has(a.id) &&
+        (a.kind === 'image' ||
+          (a.mimeType || '').startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name)),
+    );
+
+  for (const cid of unique) {
+    let att: (typeof attachments)[0] | undefined;
+
+    // Match alt="filename" on the same <img>
+    const tag = [...out.matchAll(/<img\b[^>]*>/gi)].find((m) =>
+      new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(
+        m[0],
+      ),
+    )?.[0];
+    if (tag) {
+      const alt = tag.match(/\balt=["']([^"']+)["']/i)?.[1]?.trim();
+      if (alt) {
+        att = attachments.find(
+          (a) =>
+            a.name === alt ||
+            alt.includes(a.name) ||
+            a.name.includes(alt),
+        );
+      }
+    }
+    if (!att) {
+      const imgs = images();
+      if (imgs.length === 1) att = imgs[0];
+    }
+    if (!att) continue;
+
+    const url = `${base}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(
+        `cid:${cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+        'gi',
+      ),
+      url,
+    );
+    used.add(att.id);
+  }
+
+  // Order fallback
+  const still = [
+    ...out.matchAll(/\bcid:([^"'\s>]+)/gi),
+  ].map((m) => m[1]!.replace(/^<|>$/g, '').trim());
+  const stillU = [...new Set(still.filter(Boolean))];
+  const leftover = images();
+  for (let i = 0; i < stillU.length; i++) {
+    const att = leftover[i];
+    if (!att) break;
+    const url = `${base}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(
+        `cid:${stillU[i]!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+        'gi',
+      ),
+      url,
+    );
+    used.add(att.id);
+  }
+
+  return out;
+}
+
+/**
  * Prepare message HTML for iframe srcdoc.
  * Gmail often sends a full HTML document — nest that inside another <html>
  * and the browser shows a blank white page. We detect full docs and inject

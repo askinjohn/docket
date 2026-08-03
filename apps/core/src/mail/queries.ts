@@ -238,18 +238,13 @@ export function getThreadDetail(threadId: string) {
     unread: Boolean(thread.unread),
     messages: messages.map((m) => {
       const allAtts = attStmt.all(m.id) as AttachmentRow[];
-      const { html: bodyHtml, usedIds } = rewriteCidImages(
+      const { html: bodyHtml } = rewriteCidImages(
         m.body_html || '',
         allAtts,
         attachBase,
       );
-      // Chips: skip pure inline images already shown in the HTML body
-      const chipAtts = allAtts.filter((a) => {
-        if (usedIds.has(a.id) && (a.mime_type || '').startsWith('image/')) {
-          return false;
-        }
-        return true;
-      });
+      // Always return attachments as chips (even if inlined) so the user can
+      // still open the viewer if the iframe image fails to load.
       return {
         id: m.id,
         from: m.from_header,
@@ -257,7 +252,7 @@ export function getThreadDetail(threadId: string) {
         time: formatTime(m.internal_date ?? m.date_ms),
         body: m.body_text || m.snippet || stripHtml(m.body_html),
         bodyHtml,
-        attachments: chipAtts.map((a) => ({
+        attachments: allAtts.map((a) => ({
           id: a.id,
           name: a.filename || 'attachment',
           sizeLabel: formatSize(a.size_bytes),
