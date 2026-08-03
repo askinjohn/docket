@@ -1,8 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { draftReply, resolveAiMode, summarizeThread } from '../ai/provider.js';
 import { appConfig, googleConfigured } from '../config.js';
+import {
+  GmailAuthExpiredError,
+  isGmailAuthExpired,
+} from '../gmail/auth-errors.js';
 import {
   deleteAccount,
   getActiveAccount,
@@ -40,6 +44,34 @@ import {
 import { buildDailySummary } from '../summary/daily.js';
 
 export const api = new Hono();
+
+/** Map Gmail OAuth expiry to 401 so the UI can open sign-in. */
+function jsonGmailError(
+  c: Context,
+  e: unknown,
+  fallback = 'request_failed',
+) {
+  if (e instanceof GmailAuthExpiredError || isGmailAuthExpired(e)) {
+    return c.json(
+      {
+        error: 'Gmail session expired. Sign in again.',
+        code: 'auth_expired',
+      },
+      401,
+    );
+  }
+  const message = e instanceof Error ? e.message : fallback;
+  if (isGmailAuthExpired(message)) {
+    return c.json(
+      {
+        error: 'Gmail session expired. Sign in again.',
+        code: 'auth_expired',
+      },
+      401,
+    );
+  }
+  return c.json({ error: message }, 400);
+}
 
 api.get('/health', (c) => {
   const account = getActiveAccount();
@@ -234,8 +266,7 @@ api.post('/sync', async (c) => {
       newMail: result.newMail ?? [],
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'sync_failed';
-    return c.json({ error: message }, 400);
+    return jsonGmailError(c, e, 'sync_failed');
   }
 });
 
@@ -303,10 +334,7 @@ api.post('/search', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'search_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'search_failed');
   }
 });
 
@@ -342,10 +370,7 @@ api.post('/threads/:id/archive', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'archive_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'archive_failed');
   }
 });
 
@@ -360,10 +385,7 @@ api.post('/threads/:id/unarchive', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'unarchive_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'unarchive_failed');
   }
 });
 
@@ -377,10 +399,7 @@ api.post('/threads/:id/read', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'read_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'read_failed');
   }
 });
 
@@ -394,10 +413,7 @@ api.post('/threads/:id/unread', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'unread_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'unread_failed');
   }
 });
 
@@ -415,10 +431,7 @@ api.post('/threads/:id/star', async (c) => {
     });
     return c.json({ ok: true, starred });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'star_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'star_failed');
   }
 });
 
@@ -441,10 +454,7 @@ api.post('/threads/:id/reply', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'send_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'send_failed');
   }
 });
 
@@ -472,10 +482,7 @@ api.post('/messages/send', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'send_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'send_failed');
   }
 });
 
@@ -489,10 +496,7 @@ api.get('/attachments/:id', async (c) => {
     );
     return c.body(new Uint8Array(file.data));
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'download_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'download_failed');
   }
 });
 
@@ -501,10 +505,7 @@ api.post('/summary/daily', (c) => {
     const result = buildDailySummary();
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'summary_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'summary_failed');
   }
 });
 
@@ -515,10 +516,7 @@ api.post('/ai/summarize', async (c) => {
     const result = await summarizeThread(body.threadId);
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'ai_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'ai_failed');
   }
 });
 
@@ -529,10 +527,7 @@ api.post('/ai/draft', async (c) => {
     const result = await draftReply(body.threadId);
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'ai_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'ai_failed');
   }
 });
 
@@ -582,10 +577,7 @@ api.post('/mcp/call', async (c) => {
     }
     return c.json({ error: 'unknown_tool' }, 400);
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'mcp_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'mcp_failed');
   }
 });
 

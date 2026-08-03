@@ -17,7 +17,18 @@ import { UiShellService } from '../core/ui-shell.service';
         <span class="text-sm font-semibold tracking-tight text-lm-text">Local Mail</span>
       </div>
 
-      @if (shell.isConnected()) {
+      @if (shell.coreStatus() === 'auth-expired') {
+        <button
+          type="button"
+          class="mb-2 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+          (click)="shell.connectGmail()"
+        >
+          Sign in again
+        </button>
+        <p class="mb-5 px-1 text-[0.7rem] leading-relaxed text-lm-muted">
+          Gmail session expired. Sign in to load new mail.
+        </p>
+      } @else if (shell.isConnected()) {
         <button
           type="button"
           class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
@@ -154,7 +165,7 @@ import { UiShellService } from '../core/ui-shell.service';
       </nav>
 
       <div class="mt-auto space-y-1 border-t border-lm-border/60 pt-3">
-        @if (shell.isConnected()) {
+        @if (shell.isConnected() || shell.coreStatus() === 'auth-expired') {
           <div class="relative">
             <button
               type="button"
@@ -188,6 +199,16 @@ import { UiShellService } from '../core/ui-shell.service';
                       {{ acc.email }}
                     </button>
                   }
+                  <div class="my-1 border-t border-lm-border"></div>
+                }
+                @if (shell.coreStatus() === 'auth-expired') {
+                  <button
+                    type="button"
+                    class="block w-full px-3 py-2 text-left text-xs font-semibold text-lm-accent hover:bg-lm-hover"
+                    (click)="shell.connectGmail(); shell.closeAccountMenu()"
+                  >
+                    Sign in again
+                  </button>
                   <div class="my-1 border-t border-lm-border"></div>
                 }
                 <button

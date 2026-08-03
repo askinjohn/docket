@@ -45,6 +45,7 @@ export type CoreStatus =
   | 'offline'
   | 'online-disconnected'
   | 'online-connected'
+  | 'auth-expired'
   | 'misconfigured';
 
 export interface PendingAttachment {

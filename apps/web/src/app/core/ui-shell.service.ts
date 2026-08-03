@@ -1,5 +1,6 @@
 import { Service, computed, inject, signal } from '@angular/core';
 
+import { apiErrorInfo } from './api-error';
 import {
   MailApiService,
   type ApiLabel,
@@ -146,6 +147,9 @@ export class UiShellService {
   );
 
   private lastCheckedAnchor: string | null = null;
+  /** Avoid spamming Google OAuth windows on concurrent failures. */
+  private authRedirectInFlight = false;
+  private lastAuthRedirectAt = 0;
 
   readonly emptyInboxHint = computed(() => {
     switch (this.coreStatus()) {
@@ -155,6 +159,8 @@ export class UiShellService {
         return 'Core is offline. Start: cd apps/core && npm run dev';
       case 'misconfigured':
         return 'Add GOOGLE_CLIENT_ID and SECRET to apps/core/.env';
+      case 'auth-expired':
+        return 'Gmail session expired. Sign in again to load new mail.';
       case 'online-disconnected':
         return 'Connect Gmail to load your inbox.';
       case 'online-connected':
@@ -165,6 +171,45 @@ export class UiShellService {
         return '';
     }
   });
+
+  /**
+   * When Google rejects the refresh token, flip UI to re-login and open OAuth.
+   * Safe to call from any Gmail API failure path.
+   */
+  handleAuthExpired(source = 'api'): void {
+    this.coreStatus.set('auth-expired');
+    this.stopBackgroundSync();
+    this.statusMessage.set(
+      'Gmail session expired — opening Google sign-in…',
+    );
+
+    const now = Date.now();
+    // Debounce: one OAuth window per 15s even if many requests fail
+    if (this.authRedirectInFlight || now - this.lastAuthRedirectAt < 15_000) {
+      this.statusMessage.set(
+        'Gmail session expired. Click “Sign in again” if the browser did not open.',
+      );
+      return;
+    }
+    this.authRedirectInFlight = true;
+    this.lastAuthRedirectAt = now;
+    void this.connectGmail()
+      .catch(() => undefined)
+      .finally(() => {
+        this.authRedirectInFlight = false;
+      });
+    void source;
+  }
+
+  /** Shared catch for shell Gmail actions — redirects on expired tokens. */
+  private handleGmailFailure(e: unknown, fallback: string): void {
+    const info = apiErrorInfo(e);
+    if (info.authExpired) {
+      this.handleAuthExpired(fallback);
+      return;
+    }
+    this.statusMessage.set(info.message || fallback);
+  }
 
   async bootstrap(): Promise<void> {
     applyTheme(this.theme());
@@ -189,6 +234,8 @@ export class UiShellService {
         this.connectLiveEvents();
         this.startBackgroundSync();
         this.requestNotifyPermission();
+        // Probe Gmail credentials immediately — expired tokens open sign-in
+        void this.quietSync();
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
@@ -231,8 +278,12 @@ export class UiShellService {
       if (res.synced > 0 || (res.newMail && res.newMail.length > 0)) {
         await this.refreshThreads();
       }
-    } catch {
-      /* stay quiet on background failures */
+    } catch (e) {
+      const info = apiErrorInfo(e);
+      if (info.authExpired) {
+        this.handleAuthExpired('quiet-sync');
+      }
+      /* other background failures stay quiet */
     }
   }
 
@@ -521,7 +572,12 @@ export class UiShellService {
       );
       await this.refreshThreads();
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Search failed');
+      const info = apiErrorInfo(e);
+      if (info.authExpired) {
+        this.handleAuthExpired('search');
+        return;
+      }
+      this.statusMessage.set(info.message || 'Search failed');
       // Fall back to local filter
       this.searchActive.set(true);
       await this.refreshThreads();
@@ -993,10 +1049,10 @@ export class UiShellService {
     } catch (e) {
       // Drop matching undo entry
       this.archiveUndoStack = this.archiveUndoStack.filter(
-        (e) => e.thread.id !== id,
+        (entry) => entry.thread.id !== id,
       );
       this.syncUndoSignals();
-      this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
+      this.handleGmailFailure(e, 'Archive failed');
       await this.refreshThreads();
     }
   }
@@ -1061,6 +1117,7 @@ export class UiShellService {
           this.activeAccountId.set(status.accountId ?? null);
           this.accounts.set(status.accounts ?? []);
           this.coreStatus.set('online-connected');
+          this.authRedirectInFlight = false;
           this.statusMessage.set(
             `Connected as ${status.email}. Syncing inbox…`,
           );
@@ -1092,7 +1149,7 @@ export class UiShellService {
       await this.refreshThreads();
       void this.refreshNavMeta();
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Sync failed');
+      this.handleGmailFailure(e, 'Sync failed');
     } finally {
       this.syncing.set(false);
     }
@@ -1295,7 +1352,7 @@ export class UiShellService {
         this.selectedId.set(thread.id);
       }
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Undo failed');
+      this.handleGmailFailure(e, 'Undo failed');
       await this.refreshThreads();
     }
   }
@@ -1311,7 +1368,7 @@ export class UiShellService {
     try {
       await this.api.star(id, starred);
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Star failed');
+      this.handleGmailFailure(e, 'Star failed');
       await this.refreshThreads();
     }
   }
@@ -1328,7 +1385,7 @@ export class UiShellService {
       await this.api.markUnread(id);
       this.statusMessage.set('Marked unread');
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Mark unread failed');
+      this.handleGmailFailure(e, 'Mark unread failed');
       await this.refreshThreads();
     }
   }
@@ -1602,7 +1659,7 @@ export class UiShellService {
       window.setTimeout(() => void this.quietSync(), 4_000);
       window.setTimeout(() => void this.quietSync(), 12_000);
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');
+      this.handleGmailFailure(e, 'Send failed');
     } finally {
       this.sending.set(false);
     }
@@ -1752,7 +1809,7 @@ export class UiShellService {
       await this.loadThreadDetail(id);
       window.setTimeout(() => void this.quietSync(), 4_000);
     } catch (e) {
-      this.statusMessage.set(e instanceof Error ? e.message : 'Send failed');
+      this.handleGmailFailure(e, 'Send failed');
     } finally {
       this.sending.set(false);
     }
