@@ -72,7 +72,7 @@ import { UiShellService } from '../core/ui-shell.service';
           </div>
         </div>
 
-        <div>
+        <div class="mb-4">
           <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">Density</div>
           <div class="flex gap-2">
             @for (d of densities; track d) {
@@ -89,6 +89,28 @@ import { UiShellService } from '../core/ui-shell.service';
             }
           </div>
         </div>
+
+        <div>
+          <div class="mb-2 text-xs font-medium tracking-wide text-lm-muted uppercase">
+            Privacy
+          </div>
+          <label
+            class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-lm-border px-3 py-2.5 text-sm hover:bg-lm-hover"
+          >
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              [checked]="shell.theme().blockRemoteImages"
+              (change)="onBlockImages($event)"
+            />
+            <span>
+              <span class="block font-medium text-lm-text">Block remote images</span>
+              <span class="mt-0.5 block text-[0.75rem] text-lm-muted">
+                Prevents tracking pixels in HTML mail. Toggle off to load external images.
+              </span>
+            </span>
+          </label>
+        </div>
       </div>
     }
   `,
@@ -100,5 +122,9 @@ export class SettingsDialog {
 
   onAccentColor(event: Event): void {
     this.shell.setThemeAccent((event.target as HTMLInputElement).value);
+  }
+
+  onBlockImages(event: Event): void {
+    this.shell.setBlockRemoteImages((event.target as HTMLInputElement).checked);
   }
 }

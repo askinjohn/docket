@@ -8,8 +8,11 @@ import { wrapEmailHtml } from './email-body';
 export class SafeSrcdocPipe implements PipeTransform {
   private readonly sanitizer = inject(DomSanitizer);
 
-  transform(bodyHtml: string | null | undefined): SafeHtml {
-    const doc = wrapEmailHtml(bodyHtml ?? '');
+  transform(
+    bodyHtml: string | null | undefined,
+    blockRemoteImages = true,
+  ): SafeHtml {
+    const doc = wrapEmailHtml(bodyHtml ?? '', { blockRemoteImages });
     return this.sanitizer.bypassSecurityTrustHtml(doc);
   }
 }

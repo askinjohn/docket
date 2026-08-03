@@ -18,8 +18,21 @@ export function getDb(): Db {
        ON CONFLICT(key) DO NOTHING`,
     ).run();
     migrateCompositeThreadIds(db);
+    ensureMailViewsTable(db);
   }
   return db;
+}
+
+/** Idempotent for DBs created before mail_views existed. */
+function ensureMailViewsTable(database: Db): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS mail_views (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      query TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
 }
 
 /**

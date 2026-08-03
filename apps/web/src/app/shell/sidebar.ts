@@ -40,7 +40,7 @@ import { UiShellService } from '../core/ui-shell.service';
         </button>
       }
 
-      <nav class="flex flex-col gap-0.5 px-0.5">
+      <nav class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-0.5">
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
@@ -66,6 +66,17 @@ import { UiShellService } from '../core/ui-shell.service';
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+          [class.bg-lm-hover]="shell.mailView() === 'sent'"
+          [class.text-lm-text]="shell.mailView() === 'sent'"
+          [class.font-medium]="shell.mailView() === 'sent'"
+          [class.text-lm-muted]="shell.mailView() !== 'sent'"
+          (click)="shell.setMailView('sent')"
+        >
+          Sent
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
           [class.bg-lm-hover]="shell.mailView() === 'all'"
           [class.text-lm-text]="shell.mailView() === 'all'"
           [class.font-medium]="shell.mailView() === 'all'"
@@ -74,6 +85,72 @@ import { UiShellService } from '../core/ui-shell.service';
         >
           All
         </button>
+
+        @if (shell.customViews().length) {
+          <div
+            class="mt-3 mb-1 px-2.5 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+          >
+            Views
+          </div>
+          @for (v of shell.customViews(); track v.id) {
+            <div class="group flex items-center gap-0.5">
+              <button
+                type="button"
+                class="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+                [class.bg-lm-hover]="
+                  shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                "
+                [class.font-medium]="
+                  shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                "
+                [class.text-lm-muted]="
+                  !(shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id)
+                "
+                [title]="v.query"
+                (click)="shell.openCustomView(v)"
+              >
+                {{ v.name }}
+              </button>
+              <button
+                type="button"
+                class="hidden shrink-0 rounded px-1.5 text-xs text-lm-muted group-hover:inline hover:bg-lm-hover hover:text-lm-danger"
+                title="Delete view"
+                (click)="shell.removeCustomView(v.id); $event.stopPropagation()"
+              >
+                ×
+              </button>
+            </div>
+          }
+        }
+
+        @if (navLabels().length) {
+          <div
+            class="mt-3 mb-1 px-2.5 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+          >
+            Labels
+          </div>
+          @for (lab of navLabels(); track lab.id) {
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+              [class.bg-lm-hover]="
+                shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+              "
+              [class.font-medium]="
+                shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+              "
+              [class.text-lm-muted]="
+                !(shell.mailView() === 'label' && shell.activeLabelId() === lab.id)
+              "
+              (click)="shell.openLabel(lab.id)"
+            >
+              <span class="min-w-0 truncate">{{ lab.name }}</span>
+              <span class="shrink-0 text-[0.65rem] tabular-nums opacity-70">{{
+                lab.count
+              }}</span>
+            </button>
+          }
+        }
       </nav>
 
       <div class="mt-auto space-y-1 border-t border-lm-border/60 pt-3">
@@ -191,5 +268,11 @@ export class Sidebar {
   protected readonly accountInitial = computed(() => {
     const email = this.shell.accountEmail() || '?';
     return email.charAt(0).toUpperCase();
+  });
+
+  /** Hide system labels that already have primary nav entries. */
+  protected readonly navLabels = computed(() => {
+    const skip = new Set(['INBOX', 'STARRED', 'SENT', 'DRAFT', 'TRASH', 'SPAM']);
+    return this.shell.labels().filter((l) => !skip.has(l.id)).slice(0, 24);
   });
 }

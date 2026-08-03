@@ -48,15 +48,25 @@ function formatTime(ms: number | null): string {
   });
 }
 
+export type ThreadListView =
+  | 'inbox'
+  | 'starred'
+  | 'all'
+  | 'sent'
+  | 'label';
+
 export function listThreads(options?: {
   q?: string;
-  view?: 'inbox' | 'starred' | 'all';
+  view?: ThreadListView;
+  /** Gmail label id when view === 'label' (e.g. CATEGORY_UPDATES, Label_12). */
+  label?: string;
 }) {
   const account = getActiveAccount();
   if (!account) return { account: null, threads: [] as unknown[] };
 
   const view = options?.view ?? 'inbox';
   const q = (options?.q ?? '').trim().toLowerCase();
+  const label = (options?.label ?? '').trim();
 
   let rows: ThreadRow[];
   if (view === 'starred') {
@@ -73,6 +83,25 @@ export function listThreads(options?: {
          ORDER BY last_message_at DESC LIMIT 250`,
       )
       .all(account.id) as ThreadRow[];
+  } else if (view === 'sent') {
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads
+         WHERE account_id = ?
+           AND label_ids LIKE '%SENT%'
+         ORDER BY last_message_at DESC LIMIT 250`,
+      )
+      .all(account.id) as ThreadRow[];
+  } else if (view === 'label' && label) {
+    // label_ids stored as JSON array text — substring match is good enough for Gmail ids
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads
+         WHERE account_id = ?
+           AND label_ids LIKE ?
+         ORDER BY last_message_at DESC LIMIT 250`,
+      )
+      .all(account.id, `%${label}%`) as ThreadRow[];
   } else {
     rows = getDb()
       .prepare(
@@ -114,6 +143,68 @@ export function listThreads(options?: {
     account: { id: account.id, email: account.email },
     threads,
   };
+}
+
+/** Labels seen in the local cache for the active account (plus common system ones). */
+export function listLabels(): {
+  id: string;
+  name: string;
+  system: boolean;
+  count: number;
+}[] {
+  const account = getActiveAccount();
+  if (!account) return [];
+
+  const counts = new Map<string, number>();
+  const rows = getDb()
+    .prepare(`SELECT label_ids FROM threads WHERE account_id = ?`)
+    .all(account.id) as { label_ids: string }[];
+
+  for (const row of rows) {
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(row.label_ids || '[]') as string[];
+    } catch {
+      ids = [];
+    }
+    for (const id of ids) {
+      if (!id || id === 'UNREAD') continue;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+
+  const systemNames: Record<string, string> = {
+    INBOX: 'Inbox',
+    STARRED: 'Starred',
+    SENT: 'Sent',
+    DRAFT: 'Drafts',
+    TRASH: 'Trash',
+    SPAM: 'Spam',
+    IMPORTANT: 'Important',
+    CATEGORY_PERSONAL: 'Personal',
+    CATEGORY_SOCIAL: 'Social',
+    CATEGORY_PROMOTIONS: 'Promotions',
+    CATEGORY_UPDATES: 'Updates',
+    CATEGORY_FORUMS: 'Forums',
+  };
+
+  const out: { id: string; name: string; system: boolean; count: number }[] =
+    [];
+  for (const [id, count] of counts) {
+    const system = Boolean(systemNames[id]) || id.startsWith('CATEGORY_');
+    out.push({
+      id,
+      name: systemNames[id] ?? (id.startsWith('Label_') ? id : id),
+      system,
+      count,
+    });
+  }
+
+  out.sort((a, b) => {
+    if (a.system !== b.system) return a.system ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return out;
 }
 
 export function getThreadDetail(threadId: string) {

@@ -27,9 +27,16 @@ import {
 } from '../gmail/sync.js';
 import {
   getThreadDetail,
+  listLabels,
   listThreads,
   suggestContacts,
+  type ThreadListView,
 } from '../mail/queries.js';
+import {
+  createMailView,
+  deleteMailView,
+  listMailViews,
+} from '../mail/views.js';
 import { buildDailySummary } from '../summary/daily.js';
 
 export const api = new Hono();
@@ -234,12 +241,45 @@ api.post('/sync', async (c) => {
 
 api.get('/threads', (c) => {
   const q = c.req.query('q') ?? undefined;
-  const view = (c.req.query('view') as 'inbox' | 'starred' | 'all') || 'inbox';
+  const view = (c.req.query('view') as ThreadListView) || 'inbox';
+  const label = c.req.query('label') ?? undefined;
   return c.json({
-    ...listThreads({ q, view }),
+    ...listThreads({ q, view, label }),
     searchHasMore: searchHasMorePages(),
     inboxHasMore: inboxHasMorePages(),
   });
+});
+
+/** Distinct Gmail labels present in the local cache. */
+api.get('/labels', (c) => {
+  return c.json({ labels: listLabels() });
+});
+
+/** Named Gmail-query views (custom sidebar entries). */
+api.get('/views', (c) => {
+  return c.json({ views: listMailViews() });
+});
+
+api.post('/views', async (c) => {
+  const body = await c.req
+    .json()
+    .catch(() => ({} as { name?: string; query?: string }));
+  try {
+    const view = createMailView(body.name ?? '', body.query ?? '');
+    return c.json({ ok: true, view });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'view_create_failed' },
+      400,
+    );
+  }
+});
+
+api.delete('/views/:id', (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id)) return c.json({ error: 'invalid id' }, 400);
+  const ok = deleteMailView(id);
+  return c.json({ ok });
 });
 
 /**

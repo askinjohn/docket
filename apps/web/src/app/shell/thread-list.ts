@@ -1,6 +1,7 @@
 import {
   afterNextRender,
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -54,6 +55,16 @@ import { UiShellService } from '../core/ui-shell.service';
               Clear
             </button>
           }
+          @if (shell.searchActive() && shell.searchQuery().trim()) {
+            <button
+              type="button"
+              class="shrink-0 cursor-pointer rounded-lg border border-lm-accent/40 bg-lm-accent/10 px-2 py-1.5 text-[0.75rem] font-medium text-lm-text hover:bg-lm-accent/20"
+              (click)="shell.addCustomViewFromSearch()"
+              title="Save this Gmail query as a sidebar view"
+            >
+              Save view
+            </button>
+          }
         </div>
         @if (shell.searchActive() && shell.searchQuery()) {
           <div class="text-[0.68rem] text-lm-muted">
@@ -71,17 +82,15 @@ import { UiShellService } from '../core/ui-shell.service';
           class="mx-2.5 mt-2 flex items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-accent/10 px-2.5 py-1.5 text-[0.78rem] text-lm-muted"
           role="status"
         >
-          <span class="min-w-0 flex-1 truncate">{{
-            shell.statusMessage() || (shell.undoAvailable() ? 'Archived' : '')
-          }}</span>
+          <span class="min-w-0 flex-1 truncate">{{ statusBannerText() }}</span>
           @if (shell.undoAvailable()) {
             <button
               type="button"
               class="shrink-0 cursor-pointer rounded-md border border-lm-accent/40 bg-lm-accent/20 px-2 py-0.5 text-[0.72rem] font-semibold text-lm-text hover:bg-lm-accent/30"
               (click)="shell.undoArchive()"
-              title="Undo archive (z)"
+              title="Undo archive (z) — multi-step stack"
             >
-              Undo
+              {{ undoButtonLabel() }}
             </button>
           }
         </div>
@@ -260,6 +269,19 @@ export class ThreadList {
   private readonly injector = inject(Injector);
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
   private threadListNearTopArmed = true;
+
+  protected readonly statusBannerText = computed(() => {
+    const msg = this.shell.statusMessage();
+    if (msg) return msg;
+    if (!this.shell.undoAvailable()) return '';
+    const n = this.shell.undoCount();
+    return n > 1 ? `Archived · ${n} undos` : 'Archived';
+  });
+
+  protected readonly undoButtonLabel = computed(() => {
+    const n = this.shell.undoCount();
+    return n > 1 ? `Undo (${n})` : 'Undo';
+  });
 
   constructor() {
     effect(() => {

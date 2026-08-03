@@ -1,5 +1,10 @@
 /** Helpers for displaying email bodies safely in the UI. */
 
+export interface WrapEmailHtmlOptions {
+  /** When true, remote http(s) images are replaced with a placeholder. */
+  blockRemoteImages?: boolean;
+}
+
 const SAFETY_STYLE = `
   html, body {
     margin: 0 !important;
@@ -22,6 +27,16 @@ const SAFETY_STYLE = `
     word-break: break-word;
     font-size: 12px;
   }
+  .lm-blocked-img {
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 2px 0;
+    font: 12px/1.4 system-ui, sans-serif;
+    color: #667085;
+    background: #f2f4f7;
+    border: 1px dashed #d0d5dd;
+    border-radius: 4px;
+  }
 `;
 
 /** Prefer HTML when present; plain text cleaned for readability. */
@@ -30,15 +45,49 @@ export function prefersHtml(bodyHtml: string | undefined | null): boolean {
 }
 
 /**
+ * Strip active content and optionally remote images before iframe srcdoc.
+ */
+export function sanitizeEmailHtml(
+  html: string,
+  opts: WrapEmailHtmlOptions = {},
+): string {
+  let cleaned = html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[\s\S]*?>[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[\s\S]*?>/gi, '')
+    .replace(/<link[\s\S]*?>/gi, '')
+    .replace(/<meta[^>]+http-equiv[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[^'"]*\2/gi, ' $1="#"')
+    .replace(/javascript:/gi, '');
+
+  if (opts.blockRemoteImages) {
+    cleaned = cleaned.replace(
+      /<img\b([^>]*?)\bsrc\s*=\s*(['"])(https?:)?\/\/[^'"]+\2([^>]*)>/gi,
+      '<span class="lm-blocked-img" title="Remote image blocked">[image blocked]</span>',
+    );
+    // CSS background-image urls
+    cleaned = cleaned.replace(
+      /url\(\s*(['"]?)https?:\/\/[^)'"]+\1\s*\)/gi,
+      'none',
+    );
+  }
+
+  return cleaned;
+}
+
+/**
  * Prepare message HTML for iframe srcdoc.
  * Gmail often sends a full HTML document — nest that inside another <html>
  * and the browser shows a blank white page. We detect full docs and inject
  * safety CSS + base target instead of double-wrapping.
  */
-export function wrapEmailHtml(html: string): string {
-  let cleaned = html
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+export function wrapEmailHtml(
+  html: string,
+  opts: WrapEmailHtmlOptions = {},
+): string {
+  let cleaned = sanitizeEmailHtml(html, opts);
 
   const inject = `
 <meta charset="utf-8" />
@@ -51,7 +100,6 @@ export function wrapEmailHtml(html: string): string {
     /<!DOCTYPE/i.test(cleaned) || /<html[\s>]/i.test(cleaned);
 
   if (looksFullDoc) {
-    // Inject into <head> if present
     if (/<head[\s>]/i.test(cleaned)) {
       cleaned = cleaned.replace(/<head([^>]*)>/i, `<head$1>${inject}`);
     } else if (/<html([^>]*)>/i.test(cleaned)) {
@@ -65,7 +113,6 @@ export function wrapEmailHtml(html: string): string {
     return cleaned;
   }
 
-  // Fragment only — wrap once
   return `<!DOCTYPE html>
 <html>
 <head>${inject}</head>

@@ -1,7 +1,7 @@
 # Active TODO — Local Mail
 
-**Updated:** 2026-07-29  
-**Status:** Large product pass landed — dogfood, polish, eng-debt cleanup
+**Updated:** 2026-08-03  
+**Status:** Backlog pass — views/labels, undo stack, palette, MCP stdio, e2e, packaging docs
 
 ## Shipped in product pass
 
@@ -43,18 +43,20 @@
 - [x] Extract `shell-hotkeys` map + unit tests
 - [x] Refresh `docs/PROJECT_STATUS.md` / product status lines
 - [x] Keyboard polish: `/`, `g i|s|a`, `u` unread, `?` cheatsheet, denser list rows
-- [ ] Further split `ui-shell.service.ts` (mail list vs compose vs account)
-- [ ] Adopt Signal Forms for compose/reply when refactoring compose further
+- [x] Extract shell models (`shell-models.ts`); further service split still optional
+- [ ] Adopt Signal Forms for compose/reply (typeahead + attachments still hand signals)
 - [ ] Prefer `resource` / `httpResource` for list/detail fetch paths
 
 ## Still thin / follow-ups
 
-- [ ] Full MCP stdio server binary for Cursor (HTTP bridge works today)
-- [ ] Scheduled daily summary (launchd / cron) — manual button works
-- [ ] Richer HTML sanitizer / remote-image toggle
-- [ ] Production notarized `.app` packaging polish
-- [ ] E2E Playwright against core
-- [ ] Multi-step undo stack (currently last archive only)
+- [x] MCP stdio server (`npm run mcp` / `docs/MCP.md`) — read/summary/draft tools
+- [x] Scheduled daily summary (`scripts/install-daily-summary-launchd.sh`)
+- [x] Richer HTML sanitizer / remote-image toggle (Settings → Privacy)
+- [x] Packaging docs (`docs/PACKAGING.md`) — notarization still needs your Apple certs
+- [x] E2E Playwright smoke (`npm run e2e` with core+web up)
+- [x] Multi-step undo stack (archive stack, `z` pops)
+- [x] Labels + custom Gmail query views + Sent
+- [x] Fuzzy command palette
 
 ## How to try new features
 

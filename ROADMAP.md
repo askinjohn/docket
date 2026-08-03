@@ -62,13 +62,14 @@ Phased delivery. **Do not start Phase N+1 features until Phase N exit criteria p
 | Command palette | Basic list — Done; fuzzy / Aria polish open |
 | Optimistic archive + undo | Instant UI; core reconciles — Done (single-step undo) |
 | Themes / density / accent | Local prefs — Done |
-| Custom views | Named Gmail queries — Open |
+| Custom views | Named Gmail queries — Done (Save view + sidebar) |
 | Signal Forms compose | Still hand-rolled signals — Open |
 
 **Exit criteria**
 
 - [x] Can triage core loop without mouse (j/k/e/r/c/s/z)  
-- [ ] At least one custom view + theme toggle (theme yes; custom views no)  
+- [x] At least one custom view + theme toggle  
+
 
 
 ---

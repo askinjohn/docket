@@ -5,6 +5,8 @@ export interface ThemePrefs {
   mode: ThemeMode;
   accent: string;
   density: ThemeDensity;
+  /** Block remote http(s) images in HTML mail (privacy). Default true. */
+  blockRemoteImages: boolean;
 }
 
 export const ACCENT_PRESETS = [
@@ -22,6 +24,7 @@ export const DEFAULT_THEME: ThemePrefs = {
   mode: 'dark',
   accent: '#7c6af7',
   density: 'comfortable',
+  blockRemoteImages: true,
 };
 
 export function loadThemePrefs(): ThemePrefs {
@@ -33,6 +36,8 @@ export function loadThemePrefs(): ThemePrefs {
       mode: parsed.mode ?? DEFAULT_THEME.mode,
       accent: parsed.accent ?? DEFAULT_THEME.accent,
       density: parsed.density ?? DEFAULT_THEME.density,
+      blockRemoteImages:
+        parsed.blockRemoteImages ?? DEFAULT_THEME.blockRemoteImages,
     };
   } catch {
     return { ...DEFAULT_THEME };

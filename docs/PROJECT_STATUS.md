@@ -1,7 +1,7 @@
 # Project status
 
 **Phase:** Dogfood / polish (Phase 1 mail path done; Phase 2–6 pieces shipped early)  
-**As of:** 2026-07-29  
+**As of:** 2026-08-03  
 
 ## Done
 
@@ -13,13 +13,14 @@
 - MCP-style tools over HTTP, SSE `/events`
 - Optimistic archive + undo, Cmd+K palette, theme/density/accent
 - UI modularized: shell components under `apps/web/src/app/shell/`
-- `docs/GMAIL_SETUP.md`
+- Labels, Sent, custom Gmail-query views; multi-step archive undo; fuzzy palette
+- HTML sanitizer + remote-image block toggle; MCP stdio; launchd daily summary; Playwright smoke
+- `docs/GMAIL_SETUP.md`, `docs/MCP.md`, `docs/PACKAGING.md`
 
 ## In progress
 
-- Superhuman-ish UX completeness (more hotkeys, labels/views, palette fuzzy)
-- HTML sanitizer / remote-image toggle
-- Packaging polish (notarized `.app`)
+- Signal Forms for compose; `httpResource` for list/detail
+- Notarized public `.app` (needs Apple Developer identity — see `docs/PACKAGING.md`)
 
 ## Blocked / needs human
 

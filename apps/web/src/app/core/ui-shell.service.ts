@@ -2,8 +2,11 @@ import { Service, computed, inject, signal } from '@angular/core';
 
 import {
   MailApiService,
+  type ApiLabel,
+  type ApiMailView,
   type ApiThread,
   type ApiThreadDetail,
+  type ApiThreadView,
   type PublicAccount,
 } from './mail-api.service';
 import {
@@ -23,52 +26,20 @@ import {
   type ThemePrefs,
 } from './theme';
 
-export interface ShellAttachment {
-  id: string;
-  name: string;
-  sizeLabel: string;
-  kind: 'pdf' | 'image' | 'doc' | 'other';
-}
-
-export interface ShellMessage {
-  id: string;
-  from: string;
-  to: string;
-  time: string;
-  body: string;
-  bodyHtml: string;
-  attachments: ShellAttachment[];
-}
-
-export interface ShellThreadPreview {
-  id: string;
-  from: string;
-  subject: string;
-  snippet: string;
-  time: string;
-  unread: boolean;
-  starred?: boolean;
-  messages: ShellMessage[];
-  hasAttachments?: boolean;
-}
-
-export type MailView = 'inbox' | 'starred' | 'all';
-
-export type CoreStatus =
-  | 'checking'
-  | 'offline'
-  | 'online-disconnected'
-  | 'online-connected'
-  | 'misconfigured';
-
-/** Pending outbound file (base64) for compose / reply. */
-export interface PendingAttachment {
-  id: string;
-  name: string;
-  mimeType: string;
-  sizeLabel: string;
-  contentBase64: string;
-}
+export type {
+  CoreStatus,
+  MailView,
+  PendingAttachment,
+  ShellAttachment,
+  ShellMessage,
+  ShellThreadPreview,
+} from './shell-models';
+import type {
+  CoreStatus,
+  MailView,
+  PendingAttachment,
+  ShellThreadPreview,
+} from './shell-models';
 
 @Service()
 export class UiShellService {
@@ -121,6 +92,12 @@ export class UiShellService {
   private contactSuggestSeq = 0;
   readonly searchQuery = signal('');
   readonly mailView = signal<MailView>('inbox');
+  /** Active Gmail label id when mailView === 'label'. */
+  readonly activeLabelId = signal<string | null>(null);
+  /** Active custom view when mailView === 'custom'. */
+  readonly activeCustomViewId = signal<number | null>(null);
+  readonly labels = signal<ApiLabel[]>([]);
+  readonly customViews = signal<ApiMailView[]>([]);
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
   readonly settingsOpen = signal(false);
   /** Keyboard shortcuts cheatsheet (`?`). */
@@ -138,15 +115,17 @@ export class UiShellService {
   readonly activeAccountId = signal<number | null>(null);
   readonly phaseLabel = signal('Local Mail');
   readonly accentPresets = ACCENT_PRESETS;
-  /** True while an archive can still be undone (short window). */
+  /** True while at least one archive can still be undone. */
   readonly undoAvailable = signal(false);
+  readonly undoCount = signal(0);
   private eventsAbort: AbortController | null = null;
   private bgSyncTimer: ReturnType<typeof setInterval> | null = null;
-  private pendingArchiveUndo: {
+  /** Multi-step undo stack (most recent last). Each entry times out after 12s. */
+  private archiveUndoStack: {
     thread: ShellThreadPreview;
     index: number;
     timer: ReturnType<typeof setTimeout>;
-  } | null = null;
+  }[] = [];
   /** Batch mail.new within a short window so bursts don't spam banners. */
   private pendingNewMail: {
     threadId: string;
@@ -206,6 +185,7 @@ export class UiShellService {
         this.activeAccountId.set(health.account.id ?? null);
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
+        void this.refreshNavMeta();
         this.connectLiveEvents();
         this.startBackgroundSync();
         this.requestNotifyPermission();
@@ -277,12 +257,38 @@ export class UiShellService {
     }
   }
 
+  private syncUndoSignals(): void {
+    this.undoCount.set(this.archiveUndoStack.length);
+    this.undoAvailable.set(this.archiveUndoStack.length > 0);
+  }
+
   private clearArchiveUndo(): void {
-    if (this.pendingArchiveUndo) {
-      clearTimeout(this.pendingArchiveUndo.timer);
-      this.pendingArchiveUndo = null;
+    for (const entry of this.archiveUndoStack) {
+      clearTimeout(entry.timer);
     }
-    this.undoAvailable.set(false);
+    this.archiveUndoStack = [];
+    this.syncUndoSignals();
+  }
+
+  private pushArchiveUndo(thread: ShellThreadPreview, index: number): void {
+    const entry = {
+      thread,
+      index,
+      timer: setTimeout(() => {
+        this.archiveUndoStack = this.archiveUndoStack.filter((e) => e !== entry);
+        this.syncUndoSignals();
+        if (!this.archiveUndoStack.length && this.statusMessage()?.includes('undo')) {
+          this.statusMessage.set(null);
+        }
+      }, 12_000),
+    };
+    this.archiveUndoStack.push(entry);
+    // Cap stack so a bulk archive session can't grow unbounded
+    while (this.archiveUndoStack.length > 30) {
+      const old = this.archiveUndoStack.shift();
+      if (old) clearTimeout(old.timer);
+    }
+    this.syncUndoSignals();
   }
 
   private connectLiveEvents(): void {
@@ -526,12 +532,87 @@ export class UiShellService {
 
   async setMailView(view: MailView): Promise<void> {
     this.mailView.set(view);
+    if (view !== 'label') this.activeLabelId.set(null);
+    if (view !== 'custom') this.activeCustomViewId.set(null);
     // Leaving search when switching primary views keeps UX clear
+    if (view !== 'custom' && this.searchActive()) {
+      this.searchQuery.set('');
+      this.searchActive.set(false);
+    }
+    await this.refreshThreads();
+  }
+
+  async openLabel(labelId: string): Promise<void> {
+    this.activeLabelId.set(labelId);
+    this.activeCustomViewId.set(null);
+    this.mailView.set('label');
     if (this.searchActive()) {
       this.searchQuery.set('');
       this.searchActive.set(false);
     }
     await this.refreshThreads();
+  }
+
+  async openCustomView(view: ApiMailView): Promise<void> {
+    this.activeCustomViewId.set(view.id);
+    this.activeLabelId.set(null);
+    this.mailView.set('custom');
+    this.searchQuery.set(view.query);
+    await this.runSearch();
+  }
+
+  async refreshNavMeta(): Promise<void> {
+    if (!this.isConnected()) {
+      this.labels.set([]);
+      this.customViews.set([]);
+      return;
+    }
+    try {
+      const [labelsRes, viewsRes] = await Promise.all([
+        this.api.listLabels(),
+        this.api.listViews(),
+      ]);
+      this.labels.set(labelsRes.labels ?? []);
+      this.customViews.set(viewsRes.views ?? []);
+    } catch {
+      /* offline / core old */
+    }
+  }
+
+  async addCustomViewFromSearch(): Promise<void> {
+    const q = this.searchQuery().trim();
+    if (!q) {
+      this.statusMessage.set('Run a search first, then save as view.');
+      return;
+    }
+    const name = window.prompt('Name for this view', q.slice(0, 40));
+    if (!name?.trim()) return;
+    try {
+      const res = await this.api.createView(name.trim(), q);
+      await this.refreshNavMeta();
+      this.statusMessage.set(`Saved view “${res.view.name}”`);
+      await this.openCustomView(res.view);
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Save view failed');
+    }
+  }
+
+  async removeCustomView(id: number): Promise<void> {
+    try {
+      await this.api.deleteView(id);
+      if (this.activeCustomViewId() === id) {
+        await this.setMailView('inbox');
+      }
+      await this.refreshNavMeta();
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Delete view failed');
+    }
+  }
+
+  setBlockRemoteImages(block: boolean): void {
+    const next = { ...this.theme(), blockRemoteImages: block };
+    this.theme.set(next);
+    saveThemePrefs(next);
   }
 
   openSettings(): void {
@@ -579,14 +660,31 @@ export class UiShellService {
     this.setThemeMode(mode);
   }
 
+  private listViewParams(): {
+    q?: string;
+    view: ApiThreadView;
+    label?: string;
+  } {
+    if (this.searchActive() && this.searchQuery().trim()) {
+      return { q: this.searchQuery(), view: 'all' };
+    }
+    const mv = this.mailView();
+    if (mv === 'label' && this.activeLabelId()) {
+      return { view: 'label', label: this.activeLabelId()! };
+    }
+    if (mv === 'custom') {
+      return { q: this.searchQuery() || undefined, view: 'all' };
+    }
+    if (mv === 'sent' || mv === 'starred' || mv === 'all' || mv === 'inbox') {
+      return { view: mv };
+    }
+    return { view: 'inbox' };
+  }
+
   async refreshThreads(opts?: { skipFill?: boolean }): Promise<void> {
     this.listLoading.set(true);
     try {
-      const res = await this.api.listThreads({
-        q: this.searchQuery() || undefined,
-        // Search results can include non-inbox threads
-        view: this.searchActive() && this.searchQuery().trim() ? 'all' : this.mailView(),
-      });
+      const res = await this.api.listThreads(this.listViewParams());
       if (res.account?.email) {
         this.accountEmail.set(res.account.email);
       }
@@ -817,16 +915,22 @@ export class UiShellService {
       remaining[0]?.id ??
       null;
 
-    // Optimistic remove
+    // Push undos for each removed thread (reverse order so z undoes last first)
+    for (let i = list.length - 1; i >= 0; i--) {
+      const t = list[i]!;
+      if (idSet.has(t.id)) this.pushArchiveUndo(t, i);
+    }
+
     this.threads.set(remaining);
     this.clearChecked();
-    this.clearArchiveUndo(); // bulk: no single-thread undo for now
     if (nextFocus) void this.selectThread(nextFocus);
     else {
       this.selectedId.set(null);
       this.replyOpen.set(false);
     }
-    this.statusMessage.set(`Archiving ${ids.length}…`);
+    this.statusMessage.set(
+      `Archiving ${ids.length}… · z undoes (${this.undoCount()})`,
+    );
 
     let ok = 0;
     let fail = 0;
@@ -841,7 +945,7 @@ export class UiShellService {
     this.statusMessage.set(
       fail
         ? `Archived ${ok}, failed ${fail}`
-        : `Archived ${ok} thread${ok === 1 ? '' : 's'}`,
+        : `Archived ${ok} · z to undo (${this.undoCount()})`,
     );
     void this.ensureListFilled();
     if (fail) await this.refreshThreads();
@@ -858,12 +962,9 @@ export class UiShellService {
     if (idx < 0) return;
     const removed = list[idx]!;
 
-    this.clearArchiveUndo();
-
     // Optimistic remove + jump to next
     const next = list[idx + 1] ?? list[idx - 1] ?? null;
     this.threads.update((ts) => ts.filter((t) => t.id !== id));
-    // Drop from multi-select if present
     if (this.checkedIds().has(id)) {
       const c = new Set(this.checkedIds());
       c.delete(id);
@@ -875,14 +976,12 @@ export class UiShellService {
       this.replyOpen.set(false);
     }
 
-    // Undo window (~8s), Gmail-style `z`
-    this.pendingArchiveUndo = {
-      thread: removed,
-      index: idx,
-      timer: setTimeout(() => this.clearArchiveUndo(), 8_000),
-    };
-    this.undoAvailable.set(true);
-    this.statusMessage.set('Archived — press z to undo');
+    this.pushArchiveUndo(removed, idx);
+    this.statusMessage.set(
+      this.undoCount() > 1
+        ? `Archived · z undoes (${this.undoCount()} stacked)`
+        : 'Archived — press z to undo',
+    );
 
     if (this.hasMoreMail()) {
       void this.ensureListFilled();
@@ -892,7 +991,11 @@ export class UiShellService {
       await this.api.archive(id);
       void this.ensureListFilled();
     } catch (e) {
-      this.clearArchiveUndo();
+      // Drop matching undo entry
+      this.archiveUndoStack = this.archiveUndoStack.filter(
+        (e) => e.thread.id !== id,
+      );
+      this.syncUndoSignals();
       this.statusMessage.set(e instanceof Error ? e.message : 'Archive failed');
       await this.refreshThreads();
     }
@@ -987,6 +1090,7 @@ export class UiShellService {
       );
       this.ingestNewMailNotices(res.newMail);
       await this.refreshThreads();
+      void this.refreshNavMeta();
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Sync failed');
     } finally {
@@ -1149,9 +1253,12 @@ export class UiShellService {
     this.replyAttachments.update((list) => list.filter((a) => a.id !== id));
   }
 
-  /** Restore the last archived thread to the inbox (hotkey `z`). */
+  /** Restore the most recently archived thread (hotkey `z`); stack supports multi-step. */
   async undoArchive(): Promise<void> {
-    const pending = this.pendingArchiveUndo;
+    const pending = this.archiveUndoStack.pop();
+    if (pending) clearTimeout(pending.timer);
+    this.syncUndoSignals();
+
     if (!pending || !this.isConnected()) {
       if (!this.undoAvailable()) {
         this.statusMessage.set('Nothing to undo');
@@ -1160,7 +1267,6 @@ export class UiShellService {
     }
 
     const { thread, index } = pending;
-    this.clearArchiveUndo();
 
     // Optimistic restore at original list position
     this.threads.update((list) => {
@@ -1170,13 +1276,20 @@ export class UiShellService {
       return next;
     });
     this.selectedId.set(thread.id);
-    this.statusMessage.set('Restoring…');
+    this.statusMessage.set(
+      this.undoCount()
+        ? `Restoring… (${this.undoCount()} more undo)`
+        : 'Restoring…',
+    );
 
     try {
       await this.api.unarchive(thread.id);
-      this.statusMessage.set('Restored to inbox');
+      this.statusMessage.set(
+        this.undoCount()
+          ? `Restored · ${this.undoCount()} more on z`
+          : 'Restored to inbox',
+      );
       await this.loadThreadDetail(thread.id);
-      // Keep list consistent with server labels / snippet
       await this.refreshThreads();
       if (this.threads().some((t) => t.id === thread.id)) {
         this.selectedId.set(thread.id);
@@ -1509,6 +1622,7 @@ export class UiShellService {
       this.accountEmail.set(res.account.email);
       this.clearMailbox();
       await this.refreshThreads();
+      void this.refreshNavMeta();
       this.statusMessage.set(`Switched to ${res.account.email}`);
     } catch (e) {
       this.statusMessage.set(e instanceof Error ? e.message : 'Switch failed');
@@ -1594,6 +1708,12 @@ export class UiShellService {
         break;
       case 'all':
         void this.setMailView('all');
+        break;
+      case 'sent':
+        void this.setMailView('sent');
+        break;
+      case 'save-view':
+        void this.addCustomViewFromSearch();
         break;
       case 'add-account':
         this.addAccount();

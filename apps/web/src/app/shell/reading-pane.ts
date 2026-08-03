@@ -129,7 +129,7 @@ import { UiShellService } from '../core/ui-shell.service';
                     class="message-html-frame"
                     title="Message body"
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                    [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                    [srcdoc]="msg.bodyHtml | safeSrcdoc:shell.theme().blockRemoteImages"
                     (load)="onHtmlFrameLoad($event, msg.id)"
                   ></iframe>
                 </div>
@@ -217,7 +217,7 @@ import { UiShellService } from '../core/ui-shell.service';
                         class="message-html-frame"
                         title="Message body"
                         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                        [srcdoc]="msg.bodyHtml | safeSrcdoc"
+                        [srcdoc]="msg.bodyHtml | safeSrcdoc:shell.theme().blockRemoteImages"
                         (load)="onHtmlFrameLoad($event, msg.id)"
                       ></iframe>
                     </div>
