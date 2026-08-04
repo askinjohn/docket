@@ -253,21 +253,51 @@ function saveCollapsed(key: string, collapsed: boolean): void {
 
             @if (shell.accountMenuOpen()) {
               <div
-                class="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
+                class="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[min(50vh,320px)] overflow-y-auto rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
               >
-                @if (shell.accounts().length > 1) {
+                <div
+                  class="px-3 pt-2 pb-1 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+                >
+                  Accounts
+                </div>
+                @if (shell.accounts().length) {
                   @for (acc of shell.accounts(); track acc.id) {
                     <button
                       type="button"
-                      class="block w-full truncate px-3 py-2 text-left text-xs hover:bg-lm-hover"
-                      [class.text-lm-accent]="shell.activeAccountId() === acc.id"
+                      class="flex w-full items-center gap-2 truncate px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                      [class.text-lm-accent]="shell.isActiveAccount(acc)"
+                      [class.font-semibold]="shell.isActiveAccount(acc)"
+                      [class.bg-lm-accent/10]="shell.isActiveAccount(acc)"
                       (click)="shell.switchAccount(acc.id); shell.closeAccountMenu()"
+                      [title]="
+                        shell.isActiveAccount(acc)
+                          ? 'Current account'
+                          : 'Switch to ' + acc.email
+                      "
                     >
-                      {{ acc.email }}
+                      <span class="min-w-0 flex-1 truncate">{{ acc.email }}</span>
+                      @if (shell.isActiveAccount(acc)) {
+                        <span class="shrink-0 text-[0.65rem] text-lm-accent">✓</span>
+                      }
                     </button>
                   }
-                  <div class="my-1 border-t border-lm-border"></div>
+                } @else if (shell.accountEmail()) {
+                  <div
+                    class="flex items-center gap-2 truncate px-3 py-2 text-xs font-semibold text-lm-accent"
+                  >
+                    <span class="min-w-0 flex-1 truncate">{{ shell.accountEmail() }}</span>
+                    <span class="shrink-0 text-[0.65rem]">✓</span>
+                  </div>
                 }
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-lm-accent hover:bg-lm-hover"
+                  (click)="shell.addAccount(); shell.closeAccountMenu()"
+                  title="Connect another Gmail account"
+                >
+                  + Add account
+                </button>
+                <div class="my-1 border-t border-lm-border"></div>
                 @if (shell.coreStatus() === 'auth-expired') {
                   <button
                     type="button"
@@ -291,13 +321,6 @@ function saveCollapsed(key: string, collapsed: boolean): void {
                   (click)="shell.runDailySummary(); shell.closeAccountMenu()"
                 >
                   Daily summary
-                </button>
-                <button
-                  type="button"
-                  class="block w-full px-3 py-2 text-left text-xs hover:bg-lm-hover"
-                  (click)="shell.addAccount(); shell.closeAccountMenu()"
-                >
-                  Add account
                 </button>
                 <button
                   type="button"

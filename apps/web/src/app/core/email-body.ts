@@ -3,40 +3,241 @@
 export interface WrapEmailHtmlOptions {
   /** When true, remote http(s) images are replaced with a placeholder. */
   blockRemoteImages?: boolean;
+  /**
+   * When true (default), strip quoted reply history so each card shows only
+   * that message’s new content. Pass false to show the full MIME body.
+   */
+  trimQuotedHistory?: boolean;
+  /**
+   * Chat-style surface: transparent background, app text color (not a white
+   * “document frame” inside the thread).
+   */
+  chatSurface?: boolean;
+  /** Text color for chatSurface (hex). Defaults to light-on-dark. */
+  chatTextColor?: string;
+  /** Link color for chatSurface. */
+  chatLinkColor?: string;
 }
 
-const SAFETY_STYLE = `
+/**
+ * Remove quoted reply chains from HTML so conversation cards don’t each
+ * repeat the whole thread (Gmail/Outlook paste “On … wrote:” + prior bodies).
+ * Display-only — does not change stored mail.
+ */
+export function stripQuotedReplyHtml(html: string): string {
+  if (!html?.trim()) return html;
+  let out = html;
+
+  // Gmail / common client quote containers (and everything after)
+  const cutPatterns: RegExp[] = [
+    /<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>[\s\S]*$/i,
+    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*$/i,
+    /<div[^>]*class="[^"]*yahoo_quoted[^"]*"[^>]*>[\s\S]*$/i,
+    /<div[^>]*id="divRplyFwdMsg"[^>]*>[\s\S]*$/i,
+    /<div[^>]*class="[^"]*moz-cite-prefix[^"]*"[^>]*>[\s\S]*$/i,
+    /<div[^>]*id="appendonsend"[^>]*>[\s\S]*$/i,
+    /<blockquote[\s\S]*$/i,
+    // “On Tue… wrote:” may wrap across tags/newlines (email mid-line)
+    /(?:<br\s*\/?>|\r?\n|\s)*On\s+[\s\S]{5,500}?wrote:\s*(?:<br\s*\/?>|\s)*[\s\S]*$/i,
+    /(?:<br\s*\/?>|\r?\n|\s)*-----Original Message-----[\s\S]*$/i,
+    /(?:<br\s*\/?>|\r?\n|\s)*_{5,}\s*From:[\s\S]*$/i,
+  ];
+
+  for (const re of cutPatterns) {
+    const next = out.replace(re, '');
+    if (next !== out && next.replace(/<[^>]+>/g, '').trim().length > 0) {
+      out = next;
+    }
+  }
+
+  // Trailing empty markup
+  out = out
+    .replace(/(?:<br\s*\/?>|&nbsp;|\s)*$/i, '')
+    .replace(/(?:<div[^>]*>\s*<\/div>\s*)+$/i, '')
+    .trim();
+
+  // Never leave a blank card — fall back to original
+  const textLen = out.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length;
+  if (textLen < 2) return html;
+  return out;
+}
+
+/** True if HTML looks like it still contains a reply quote chain. */
+export function htmlHasQuotedHistory(html: string | undefined | null): boolean {
+  if (!html) return false;
+  if (/gmail_quote|yahoo_quoted|moz-cite-prefix|divRplyFwdMsg/i.test(html)) {
+    return true;
+  }
+  if (/<blockquote[\s>]/i.test(html)) return true;
+  if (/On\s+[\s\S]{5,400}?wrote:/i.test(html)) return true;
+  if (/-----Original Message-----/i.test(html)) return true;
+  return false;
+}
+
+/**
+ * Strip plain-text quote tails.
+ * Handles wrapped “On … wrote:” (address split across lines) and `>` blocks.
+ */
+export function stripQuotedReplyPlain(text: string): string {
+  if (!text?.trim()) return text;
+  let t = text.replace(/\r\n/g, '\n');
+
+  // Multi-line “On … wrote:” — Gmail often wraps mid <email>
+  const onWrote = t.search(/(?:^|\n)On\s+[\s\S]{5,500}?wrote:\s*(?:\n|$)/i);
+  if (onWrote >= 0) {
+    t = t.slice(0, onWrote);
+  }
+
+  const lines = t.split('\n');
+  const out: string[] = [];
+  for (const line of lines) {
+    const tr = line.trim();
+    if (/^-{2,}\s*Original Message/i.test(tr)) break;
+    // First quoted line ends the new content
+    if (/^>/.test(tr) && out.some((l) => l.trim().length > 0)) break;
+    if (/^From:\s*.+@/i.test(tr) && out.length > 1) break;
+    out.push(line);
+  }
+  while (out.length && !out[out.length - 1]!.trim()) out.pop();
+  const joined = out.join('\n').trim();
+  return joined.length >= 2 ? joined : text;
+}
+
+/**
+ * Drop email signatures / legal footers so chat shows the actual message only.
+ */
+export function stripEmailSignature(text: string): string {
+  if (!text?.trim()) return text;
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const tr = lines[i]!.trim();
+    if (!tr) {
+      // blank line: only keep if we still have body; stop if next looks like sig
+      const next = lines.slice(i + 1).find((l) => l.trim())?.trim() ?? '';
+      if (
+        out.length > 0 &&
+        next &&
+        /^(med vänlig hälsning|kind regards|best regards|warm regards|regards[,!]?|cheers[,!]?|thanks[,!]?|thank you|hälsningar|sent from my|get outlook|switchboard\s*:|support\s*:|tel\s*:|phone\s*:|mobile\s*:|www\.|http)/i.test(
+          next,
+        )
+      ) {
+        break;
+      }
+      out.push(lines[i]!);
+      continue;
+    }
+    if (/^--\s*$|^—$|^_{3,}$|^-{3,}$/.test(tr) && out.length > 0) break;
+    if (
+      /^(med vänlig hälsning|kind regards|best regards|warm regards|regards[,!]?|cheers[,!]?|thanks[,!]?|thank you|hälsningar|sent from my|get outlook for)/i.test(
+        tr,
+      ) &&
+      out.length > 0
+    ) {
+      break;
+    }
+    if (
+      /^(switchboard|support|tel|phone|mobile|fax)\s*:/i.test(tr) &&
+      out.length > 1
+    ) {
+      break;
+    }
+    // Privacy / legal one-liners
+    if (
+      /personuppgifter|privacy policy|confidential|disclaimer/i.test(tr) &&
+      out.length > 2
+    ) {
+      break;
+    }
+    out.push(lines[i]!);
+  }
+  while (out.length && !out[out.length - 1]!.trim()) out.pop();
+  // Drop trailing URL-only lines
+  while (
+    out.length > 1 &&
+    /^https?:\/\/\S+$/i.test(out[out.length - 1]!.trim())
+  ) {
+    out.pop();
+  }
+  const joined = out.join('\n').trim();
+  return joined.length >= 2 ? joined : text;
+}
+
+function buildSafetyStyle(opts: WrapEmailHtmlOptions = {}): string {
+  const chat = opts.chatSurface === true;
+  // Chat HTML: keep a soft paper surface with *dark* text so nested white
+  // tables stay readable (light-on-white was the washed-out Creditsafe bug).
+  const text = opts.chatTextColor || (chat ? '#1a1a1a' : '#1a1a1a');
+  const link = opts.chatLinkColor || (chat ? '#2563eb' : '#1a73e8');
+  const bg = chat ? '#f4f5f7' : '#ffffff';
+
+  return `
   html, body {
     margin: 0 !important;
     padding: 0 !important;
-    background: #ffffff !important;
-    color: #1a1a1a;
+    background: ${bg} !important;
+    color: ${text};
+  }
+  html {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
   }
   body {
-    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    padding: 8px 4px 16px !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    font: 14.5px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: ${chat ? '10px 12px' : '8px 4px 16px'} !important;
+    overflow-x: auto !important;
+    overflow-wrap: break-word;
+    word-break: normal;
+    min-width: 0;
+    text-align: left !important;
+    color: ${text} !important;
+  }
+  ${
+    chat
+      ? `
+  body, body p, body div, body td, body th, body li, body span, body font {
+    text-align: left !important;
+  }
+  body center, body [align="center"],
+  body [style*="text-align:center"], body [style*="text-align: center"] {
+    text-align: left !important;
+  }
+  `
+      : ''
   }
   img, video {
     max-width: 100% !important;
     height: auto !important;
     display: inline-block;
     vertical-align: middle;
+    border-radius: ${chat ? '6px' : '0'};
   }
   img[src^="http://127.0.0.1"],
   img[src^="https://127.0.0.1"] {
     /* local-mail attachment proxy — keep visible */
   }
-  table { max-width: 100% !important; }
-  a { color: #1a73e8; }
+  table {
+    max-width: 100% !important;
+    width: auto !important;
+    border-collapse: collapse;
+  }
+  td, th {
+    word-break: normal !important;
+    overflow-wrap: break-word;
+    white-space: normal;
+    vertical-align: top;
+    text-align: left !important;
+  }
+  th {
+    white-space: nowrap;
+  }
+  a { color: ${link} !important; }
   pre, code {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    white-space: pre;
+    overflow-x: auto;
+    max-width: 100%;
     font-size: 12px;
   }
-  /* Compact placeholder — must NOT inject long text (destroys Amazon-style layouts) */
   img.lm-blocked-img-ph {
     display: inline-block !important;
     vertical-align: middle;
@@ -49,6 +250,7 @@ const SAFETY_STYLE = `
     box-sizing: border-box;
   }
 `;
+}
 
 /** Prefer HTML when present; plain text cleaned for readability. */
 export function prefersHtml(bodyHtml: string | undefined | null): boolean {
@@ -264,6 +466,36 @@ export function rewriteRemainingCids(
 }
 
 /**
+ * Sanitized HTML fragment for in-bubble rich chat (code / tables / images).
+ * Quotes stripped by default; no full-document wrapper (use with [innerHTML]).
+ */
+export function prepareChatBubbleHtml(
+  html: string,
+  opts: WrapEmailHtmlOptions & {
+    attachments?: { id: string; name: string; kind?: string; mimeType?: string }[];
+    attachBaseUrl?: string;
+  } = {},
+): string {
+  const trimQuotes = opts.trimQuotedHistory !== false;
+  let h = trimQuotes ? stripQuotedReplyHtml(html) : html;
+  h = sanitizeEmailHtml(h, opts);
+  // Drop author styles so chat CSS controls look (code/tables/images)
+  h = h.replace(/<style[\s\S]*?<\/style>/gi, '');
+  h = h.replace(/<\/?font\b[^>]*>/gi, '');
+  // Extract body if full document
+  const bodyMatch = h.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (bodyMatch) h = bodyMatch[1] ?? h;
+  h = h
+    .replace(/<!DOCTYPE[\s\S]*?>/gi, '')
+    .replace(/<\/?html\b[^>]*>/gi, '')
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, '');
+  if (opts.attachments?.length && opts.attachBaseUrl) {
+    h = rewriteRemainingCids(h, opts.attachments, opts.attachBaseUrl);
+  }
+  return h.trim();
+}
+
+/**
  * Prepare message HTML for iframe srcdoc.
  * Gmail often sends a full HTML document — nest that inside another <html>
  * and the browser shows a blank white page. We detect full docs and inject
@@ -273,13 +505,17 @@ export function wrapEmailHtml(
   html: string,
   opts: WrapEmailHtmlOptions = {},
 ): string {
-  let cleaned = sanitizeEmailHtml(html, opts);
+  const trimQuotes = opts.trimQuotedHistory !== false;
+  let cleaned = sanitizeEmailHtml(
+    trimQuotes ? stripQuotedReplyHtml(html) : html,
+    opts,
+  );
 
   const inject = `
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <base target="_blank" rel="noopener noreferrer" />
-<style>${SAFETY_STYLE}</style>
+<style>${buildSafetyStyle(opts)}</style>
 `;
 
   const looksFullDoc =

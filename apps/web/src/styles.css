@@ -27,6 +27,8 @@ body {
   background: var(--color-lm-bg);
   color: var(--color-lm-text);
   font-family: var(--font-lm);
+  /* Scale set by theme.ts (--font-size-scale); rem sizes track user preference */
+  font-size: 1rem;
   -webkit-font-smoothing: antialiased;
 }
 

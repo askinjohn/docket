@@ -13,6 +13,10 @@ export class SafeSrcdocPipe implements PipeTransform {
     bodyHtml: string | null | undefined,
     blockRemoteImages = true,
     attachments: { id: string; name: string; kind?: string; mimeType?: string }[] = [],
+    /** When true (default), hide quoted reply history in this card. */
+    trimQuotedHistory = true,
+    /** Blend HTML into chat bubble (transparent surface). */
+    chatSurface = true,
   ): SafeHtml {
     const attachBase = `${environment.coreBaseUrl}/attachments`;
     const withCids = rewriteRemainingCids(
@@ -20,7 +24,11 @@ export class SafeSrcdocPipe implements PipeTransform {
       attachments,
       attachBase,
     );
-    const doc = wrapEmailHtml(withCids, { blockRemoteImages });
+    const doc = wrapEmailHtml(withCids, {
+      blockRemoteImages,
+      trimQuotedHistory,
+      chatSurface,
+    });
     return this.sanitizer.bypassSecurityTrustHtml(doc);
   }
 }

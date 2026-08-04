@@ -21,12 +21,17 @@
 
 ## ✨ Features
 
-- ⚡ **Superhuman-Inspired Keyboard Navigation** — Move through your inbox effortlessly using intuitive single-key shortcuts (`j`/`k`, `e` to archive, `r` to reply, `c` to compose, `z` to undo).
-- ✉️ **Docked Writing Window** — Floating compose modal with live recipient auto-suggestions generated from local email history (`GET /contacts/suggest`), support for `Cc`, and dirty-state confirmation safeguards.
-- ↩️ **Undo Archive & Auto Sync** — Instant optimistic actions with 8-second undo windows, backed by silent 60s background sync.
-- 🔔 **Native macOS Notifications** — Full integration with macOS Notification Center via Tauri 2, badge unread count badges, and browser Web Notification fallback.
-- 🔐 **Flexible Token Storage** — Choose between local encrypted SQLite storage or native OS Keychain integration via `keytar`.
-- 🤖 **Local AI & Hybrid Assistance** — Optional local AI integration via Ollama (`llama3.2`) or OpenAI API for thread summaries and draft generation.
+- ⚡ **Superhuman-Inspired Keyboard Navigation** — Move through your inbox with single-key shortcuts (`j`/`k`, `e` archive, `r` reply, `c` compose, `z` undo, `x` multi-select).
+- 💬 **Chat-style reading pane** — Conversation bubbles (yours right, theirs left). Default **Plain** view strips quotes/signatures; toggle **Full email** for original HTML. Rich in-bubble code, tables, and images when useful.
+- ✉️ **Docked Writing Window** — Floating compose with local contact suggestions, `Cc`, and dirty-state safeguards.
+- 🖱️ **Multi-select** — Click-drag range select, ⌘/Ctrl-click, Shift-range, bulk archive; open thread always included in archive.
+- ↩️ **Undo Archive & Auto Sync** — Multi-step undo stack, optimistic UI, quiet background sync.
+- 🔔 **Native macOS Notifications** — Tauri Notification Center + Dock badge, with browser fallback. **Settings → Notifications → Test** to verify.
+- 🎨 **Appearance** — Dark / light / system, accent colors, density, **font family** (sans / system / serif / mono) and **font size** in Settings.
+- 🔐 **Flexible Token Storage** — SQLite or native OS Keychain via `keytar`.
+- 👥 **Multi-account** — Switch Gmail accounts from the sidebar menu; OAuth test users required while the Cloud app is in Testing.
+- 🖼️ **Attachments & images** — Inline/cid images, attachment viewer, remote-image policy (always / ask per thread / never).
+- 🤖 **Local AI & Hybrid Assistance** — Optional Ollama or OpenAI for summaries and draft replies.
 
 ---
 
@@ -102,14 +107,18 @@ For step-by-step instructions with screenshots, read [docs/GMAIL_SETUP.md](./doc
 
 | Shortcut | Action |
 | :--- | :--- |
-| `j` / `k` or `↓` / `↑` | Move selection down / up |
-| `Enter` / `o` | Open selected email thread |
-| `e` | Archive thread |
-| `z` | Undo last action (within 8s) |
-| `r` | Reply to thread |
-| `c` | Open Compose window |
-| `Cmd + Enter` / `Ctrl + Enter` | Send draft / email |
-| `Esc` | Close view or modal |
+| `j` / `k` | Next / previous thread |
+| `e` | Archive (selection or focused) |
+| `z` | Undo archive (stack) |
+| `x` | Toggle check on focused thread |
+| `⌘`/`Ctrl`-click · Shift-click · click-drag | Multi-select |
+| `r` | Reply |
+| `c` | Compose |
+| `⌘`/`Ctrl`+`Enter` | Send |
+| `?` | Shortcuts sheet |
+| `Esc` | Clear selection / close modal |
+
+In a thread header: **Plain** (default chat) · **Full email** (original HTML).
 
 ---
 

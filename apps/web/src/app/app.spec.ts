@@ -12,6 +12,8 @@ function mockShell() {
     accountEmail: () => null,
     accounts: () => [],
     activeAccountId: () => null,
+    isActiveAccount: () => false,
+    refreshAccounts: async () => undefined,
     isConnected: () => false,
     listLoading: () => false,
     detailLoading: () => false,

@@ -12,17 +12,23 @@ import {
   type PublicAccount,
 } from './mail-api.service';
 import {
+  getNotifyPermissionState,
   onNotifyOpenThread,
   requestNotifyPermission,
   setDockBadge,
   showNotification,
+  type NotifyPermissionState,
 } from './notify';
 import { openExternalUrl } from './open-external';
 import {
   ACCENT_PRESETS,
   applyTheme,
+  FONT_FAMILY_OPTIONS,
+  FONT_SIZE_OPTIONS,
   loadThemePrefs,
   saveThemePrefs,
+  type FontFamily,
+  type FontSize,
   type RemoteImagesMode,
   type ReplyDock,
   type ThemeDensity,
@@ -186,6 +192,70 @@ export class UiShellService {
   readonly accountEmail = signal<string | null>(null);
   readonly accounts = signal<PublicAccount[]>([]);
   readonly activeAccountId = signal<number | null>(null);
+
+  /**
+   * Keep accounts list + active id + display email in lockstep.
+   * Prevents “✓ on gmail while footer shows work@…” desync.
+   */
+  private applyAccountSession(opts: {
+    accounts?: PublicAccount[] | null;
+    activeId?: number | null;
+    account?: { id?: number | null; email?: string | null } | null;
+  }): void {
+    if (opts.accounts) {
+      this.accounts.set(
+        opts.accounts.map((a) => ({
+          ...a,
+          id: Number(a.id),
+        })),
+      );
+    }
+
+    const list = this.accounts();
+    let id =
+      opts.activeId != null
+        ? Number(opts.activeId)
+        : opts.account?.id != null
+          ? Number(opts.account.id)
+          : this.activeAccountId();
+    let email =
+      opts.account?.email?.trim() ||
+      this.accountEmail();
+
+    // Prefer explicit activeId → email from list
+    if (id != null && Number.isFinite(id)) {
+      const row = list.find((a) => Number(a.id) === id);
+      if (row) email = row.email;
+    } else if (email) {
+      const row = list.find(
+        (a) => a.email.toLowerCase() === email!.toLowerCase(),
+      );
+      if (row) id = Number(row.id);
+    }
+
+    if (email) this.accountEmail.set(email);
+    if (id != null && Number.isFinite(id)) this.activeAccountId.set(id);
+  }
+
+  /** True if this sidebar row is the open/active mailbox. */
+  isActiveAccount(acc: { id: number; email: string }): boolean {
+    const id = this.activeAccountId();
+    if (id != null && Number(id) === Number(acc.id)) return true;
+    return false;
+  }
+
+  /** Re-fetch accounts + active id (e.g. when opening the account menu). */
+  async refreshAccounts(): Promise<void> {
+    try {
+      const res = await this.api.listAccounts();
+      this.applyAccountSession({
+        accounts: res.accounts,
+        activeId: res.activeId,
+      });
+    } catch {
+      /* ignore — offline / race */
+    }
+  }
   readonly phaseLabel = signal('Local Mail');
   readonly accentPresets = ACCENT_PRESETS;
   /** True while at least one archive can still be undone. */
@@ -301,10 +371,12 @@ export class UiShellService {
         );
         return;
       }
-      this.accounts.set(health.accounts ?? []);
+      this.applyAccountSession({
+        accounts: health.accounts ?? [],
+        account: health.account,
+        activeId: health.account?.id ?? null,
+      });
       if (health.account?.email) {
-        this.accountEmail.set(health.account.email);
-        this.activeAccountId.set(health.account.id ?? null);
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
         void this.refreshNavMeta();
@@ -535,18 +607,24 @@ export class UiShellService {
     if (batch.length === 1) {
       const m = batch[0]!;
       console.info('[notify] show', m.from, m.subject);
-      await showNotification({
+      const result = await showNotification({
         title: m.from,
         body: m.subject,
         threadId: m.threadId,
       });
+      // Always surface in-app so dogfood works even if OS banners are suppressed
+      this.statusMessage.set(
+        result.ok
+          ? `New mail: ${m.from} — ${m.subject}`
+          : `New mail (notify failed): ${m.from} — ${m.subject}`,
+      );
       return;
     }
 
     // Multiple arrivals: one summary + open first
     const first = batch[0]!;
     console.info('[notify] show batch', batch.length);
-    await showNotification({
+    const result = await showNotification({
       title: `${batch.length} new messages`,
       body: batch
         .slice(0, 3)
@@ -554,17 +632,29 @@ export class UiShellService {
         .join('\n'),
       threadId: first.threadId,
     });
+    this.statusMessage.set(
+      result.ok
+        ? `${batch.length} new messages`
+        : `${batch.length} new messages (OS notify failed — check Settings → Notifications)`,
+    );
   }
 
   /** Dev / Settings: verify Notification Center without waiting for mail. */
   async testNotification(): Promise<void> {
     await requestNotifyPermission();
-    await showNotification({
+    await this.refreshNotifyStatus();
+    const result = await showNotification({
       title: 'Local Mail',
-      body: 'Test notification — if you see this, macOS notify works.',
+      body: 'Test notification — if you see this, notifications work.',
       threadId: this.selectedId() ?? undefined,
     });
-    this.statusMessage.set('Test notification sent (check Notification Center)');
+    await this.refreshNotifyStatus();
+    this.statusMessage.set(
+      result.ok
+        ? `Notification sent (${result.channel}). ${result.detail}`
+        : `Notification failed. ${result.detail}`,
+    );
+    console.info('[notify] test result', result);
   }
 
   private requestNotifyPermission(): void {
@@ -833,6 +923,7 @@ export class UiShellService {
     this.settingsOpen.set(true);
     this.accountMenuOpen.set(false);
     this.commandPaletteOpen.set(false);
+    void this.refreshNotifyStatus();
   }
 
   closeSettings(): void {
@@ -840,7 +931,10 @@ export class UiShellService {
   }
 
   toggleAccountMenu(): void {
-    this.accountMenuOpen.update((v) => !v);
+    const opening = !this.accountMenuOpen();
+    this.accountMenuOpen.set(opening);
+    // Always re-sync which mailbox is active when the menu opens
+    if (opening) void this.refreshAccounts();
   }
 
   closeAccountMenu(): void {
@@ -866,6 +960,34 @@ export class UiShellService {
     this.theme.set(next);
     saveThemePrefs(next);
     applyTheme(next);
+  }
+
+  setFontFamily(fontFamily: FontFamily): void {
+    const next = { ...this.theme(), fontFamily };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
+  setFontSize(fontSize: FontSize): void {
+    const next = { ...this.theme(), fontSize };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
+  readonly fontFamilyOptions = FONT_FAMILY_OPTIONS;
+  readonly fontSizeOptions = FONT_SIZE_OPTIONS;
+
+  /** Live status line for Settings → Notifications. */
+  readonly notifyStatus = signal<{
+    state: NotifyPermissionState;
+    runtime: 'tauri' | 'browser';
+    label: string;
+  } | null>(null);
+
+  async refreshNotifyStatus(): Promise<void> {
+    this.notifyStatus.set(await getNotifyPermissionState());
   }
 
   /** Cycle dark ↔ light (palette shortcut). */
@@ -899,8 +1021,8 @@ export class UiShellService {
     this.listLoading.set(true);
     try {
       const res = await this.api.listThreads(this.listViewParams());
-      if (res.account?.email) {
-        this.accountEmail.set(res.account.email);
+      if (res.account) {
+        this.applyAccountSession({ account: res.account });
       }
       // Prefer server paging flags when present
       if (this.searchActive() && res.searchHasMore != null) {
@@ -1328,9 +1450,11 @@ export class UiShellService {
       try {
         const status = await this.api.authStatus();
         if (status.connected && status.email) {
-          this.accountEmail.set(status.email);
-          this.activeAccountId.set(status.accountId ?? null);
-          this.accounts.set(status.accounts ?? []);
+          this.applyAccountSession({
+            accounts: status.accounts ?? [],
+            activeId: status.accountId ?? null,
+            account: { id: status.accountId, email: status.email },
+          });
           this.coreStatus.set('online-connected');
           this.authRedirectInFlight = false;
           this.statusMessage.set(
@@ -1983,12 +2107,17 @@ export class UiShellService {
   }
 
   async switchAccount(accountId: number): Promise<void> {
-    if (accountId === this.activeAccountId()) return;
+    const id = Number(accountId);
+    if (id === Number(this.activeAccountId())) return;
     this.statusMessage.set('Switching account…');
     try {
-      const res = await this.api.setActiveAccount(accountId);
-      this.activeAccountId.set(res.account.id);
-      this.accountEmail.set(res.account.email);
+      const res = await this.api.setActiveAccount(id);
+      this.applyAccountSession({
+        account: res.account,
+        activeId: res.account.id,
+      });
+      // Refresh full list so ✓ stays correct if another was added mid-session
+      await this.refreshAccounts();
       this.clearMailbox();
       await this.refreshThreads();
       void this.refreshNavMeta();
@@ -2006,9 +2135,9 @@ export class UiShellService {
     }
     try {
       const res = await this.api.removeAccount(id);
-      this.accounts.set(res.accounts);
+      this.applyAccountSession({ accounts: res.accounts });
       if (res.accounts.length) {
-        await this.switchAccount(res.accounts[0]!.id);
+        await this.switchAccount(Number(res.accounts[0]!.id));
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);

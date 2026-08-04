@@ -351,12 +351,15 @@ api.get('/contacts/suggest', (c) => {
 api.get('/threads/:id', async (c) => {
   // IDs are composite "accountId:gmailThreadId" — client encodes them
   const id = decodeURIComponent(c.req.param('id'));
-  let detail = getThreadDetail(id);
-  // Thread row without messages (or missing) — pull full thread from Gmail once
-  if (!detail || detail.messages.length === 0) {
-    const ok = await hydrateThreadFromGmail(id);
-    if (ok) detail = getThreadDetail(id);
+  // Always re-pull the full Gmail thread on open so conversation history is complete.
+  // Local cache can lag after partial sync, send, or multi-account switches — only
+  // hydrating when empty left reply threads looking like a single “You” bubble.
+  try {
+    await hydrateThreadFromGmail(id);
+  } catch (e) {
+    console.warn('[threads] hydrate failed', id, e);
   }
+  const detail = getThreadDetail(id);
   if (!detail) return c.json({ error: 'not_found' }, 404);
   return c.json(detail);
 });
