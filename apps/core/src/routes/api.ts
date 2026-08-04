@@ -647,6 +647,8 @@ function authResultPage(opts: {
   body: string;
 }): string {
   const accent = opts.ok ? '#3dd6c6' : '#f07178';
+  // Browsers only allow window.close() for script-opened popups. OAuth opens in a
+  // normal system-browser tab (often with noopener), so we fall back to a shortcut hint.
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -659,13 +661,77 @@ function authResultPage(opts: {
   p{margin:.5rem 0;line-height:1.5;color:#8b95a8}
   p strong{color:#e8ecf4}
   .hint{font-size:.85rem;margin-top:1.25rem}
-  button{margin-top:1rem;padding:.5rem 1rem;border-radius:8px;border:0;background:#7c6af7;color:#fff;font:inherit;cursor:pointer}
+  .fallback{display:none;margin-top:1rem;padding:.75rem 1rem;border-radius:8px;border:1px solid #2a3344;background:#0b0d12;font-size:.9rem;color:#e8ecf4}
+  .fallback kbd{display:inline-block;padding:.15rem .45rem;border-radius:4px;border:1px solid #3a4558;background:#1a2030;font:600 .85rem ui-monospace,Menlo,monospace;color:#fff}
+  .actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem;align-items:center}
+  button{padding:.55rem 1rem;border-radius:8px;border:0;background:#7c6af7;color:#fff;font:inherit;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button.secondary{background:transparent;border:1px solid #2a3344;color:#e8ecf4}
 </style></head>
 <body><div class="card">
   <h1>${opts.title}</h1>
   <p>${opts.body}</p>
-  <p class="hint">This window can be closed. Local Mail stays in the Dock app.</p>
-  <button type="button" onclick="window.close()">Close tab</button>
+  <p class="hint">Local Mail stays in the Dock app — you only need to leave this browser tab.</p>
+  <div class="actions">
+    <button type="button" id="closeBtn">Close tab</button>
+    <button type="button" class="secondary" id="doneBtn" hidden>Done — return to Local Mail</button>
+  </div>
+  <div class="fallback" id="fallback" role="status">
+    Browsers block scripts from closing this tab. Press <kbd id="shortcut">⌘W</kbd> (or click the tab’s ×).
+  </div>
 </div>
+<script>
+(function () {
+  var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
+    (navigator.userAgentData && navigator.userAgentData.platform === 'macOS');
+  var shortcut = isMac ? '⌘W' : 'Ctrl+W';
+  var shortcutEl = document.getElementById('shortcut');
+  if (shortcutEl) shortcutEl.textContent = shortcut;
+
+  function showFallback() {
+    var fb = document.getElementById('fallback');
+    var btn = document.getElementById('closeBtn');
+    var done = document.getElementById('doneBtn');
+    if (fb) fb.style.display = 'block';
+    if (btn) {
+      btn.textContent = 'Press ' + shortcut;
+      btn.title = 'Browsers only allow Close for popups they opened themselves';
+    }
+    if (done) done.hidden = false;
+  }
+
+  function tryClose() {
+    try {
+      if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); } catch (e) {}
+      }
+    } catch (e) {}
+    // Standard close (works for true popups only)
+    window.close();
+    // Last-ditch: replace with blank then close (still blocked in most browsers)
+    try {
+      window.open('', '_self');
+      window.close();
+    } catch (e) {}
+    setTimeout(showFallback, 150);
+  }
+
+  var closeBtn = document.getElementById('closeBtn');
+  var doneBtn = document.getElementById('doneBtn');
+  if (closeBtn) closeBtn.addEventListener('click', tryClose);
+  if (doneBtn) doneBtn.addEventListener('click', function () {
+    // Soft dismiss: blank the page so user knows auth is finished
+    document.body.innerHTML =
+      '<div class="card" style="text-align:center">' +
+      '<h1 style="color:${accent}">Signed in</h1>' +
+      '<p style="color:#8b95a8">Close this tab with <kbd style="padding:.15rem .45rem;border-radius:4px;border:1px solid #3a4558;background:#1a2030;font:600 .85rem ui-monospace,Menlo,monospace;color:#fff">' +
+      shortcut +
+      '</kbd> and return to Local Mail.</p></div>';
+  });
+
+  // Auto-attempt once on success (no-op when browser blocks it)
+  ${opts.ok ? 'setTimeout(tryClose, 400);' : ''}
+})();
+</script>
 </body></html>`;
 }
