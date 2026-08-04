@@ -121,16 +121,25 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         @if (shell.customViews().length) {
           <button
             type="button"
-            class="mt-3 mb-0.5 flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
             (click)="toggleViews()"
             [attr.aria-expanded]="!viewsCollapsed()"
           >
-            <span
-              class="inline-block w-3 text-[0.55rem] transition-transform"
-              [class.rotate-[-90deg]]="viewsCollapsed()"
+            <svg
+              class="size-3 shrink-0 opacity-80 transition-transform duration-150"
+              [class.-rotate-90]="viewsCollapsed()"
+              viewBox="0 0 12 12"
+              fill="none"
               aria-hidden="true"
-              >▾</span
             >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
             Views
             <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
               shell.customViews().length
@@ -172,16 +181,25 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         @if (navLabels().length) {
           <button
             type="button"
-            class="mt-3 mb-0.5 flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
             (click)="toggleLabels()"
             [attr.aria-expanded]="!labelsCollapsed()"
           >
-            <span
-              class="inline-block w-3 text-[0.55rem] transition-transform"
-              [class.rotate-[-90deg]]="labelsCollapsed()"
+            <svg
+              class="size-3 shrink-0 opacity-80 transition-transform duration-150"
+              [class.-rotate-90]="labelsCollapsed()"
+              viewBox="0 0 12 12"
+              fill="none"
               aria-hidden="true"
-              >▾</span
             >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
             Labels
             <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
               navLabels().length

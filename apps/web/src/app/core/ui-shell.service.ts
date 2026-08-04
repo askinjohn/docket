@@ -113,7 +113,7 @@ export class UiShellService {
   /** Thread open in the reading pane (single focus). */
   readonly selectedId = signal<string | null>(null);
   /**
-   * Multi-select set for bulk actions (⌘/Ctrl-click, Shift-range).
+   * Multi-select set for bulk actions (⌘/Ctrl-click, Shift-range, click-drag).
    * Independent of selectedId until a bulk action runs.
    */
   readonly checkedIds = signal<ReadonlySet<string>>(new Set());
@@ -122,6 +122,11 @@ export class UiShellService {
   readonly syncing = signal(false);
   readonly sending = signal(false);
   readonly statusMessage = signal<string | null>(null);
+
+  /** Dismiss the thread-list status toast (e.g. remote-images notice). */
+  clearStatusMessage(): void {
+    this.statusMessage.set(null);
+  }
   readonly commandPaletteOpen = signal(false);
   readonly replyOpen = signal(false);
   readonly composeOpen = signal(false);
@@ -214,6 +219,11 @@ export class UiShellService {
   );
 
   private lastCheckedAnchor: string | null = null;
+  /**
+   * Thread ids optimistically archived but not yet confirmed by the API.
+   * Filtered out of list refreshes so SSE / ensureListFilled cannot resurrect them.
+   */
+  private readonly pendingArchiveIds = new Set<string>();
   /** Avoid spamming Google OAuth windows on concurrent failures. */
   private authRedirectInFlight = false;
   private lastAuthRedirectAt = 0;
@@ -913,20 +923,24 @@ export class UiShellService {
       // Keep already-loaded message bodies — list refresh used to wipe them to []
       // and race with detail load ("No messages loaded for this thread").
       const prevById = new Map(this.threads().map((t) => [t.id, t]));
-      const mapped: ShellThreadPreview[] = res.threads.map((t: ApiThread) => {
-        const prev = prevById.get(t.id);
-        return {
-          id: t.id,
-          from: t.from,
-          subject: t.subject,
-          snippet: t.snippet,
-          time: t.time,
-          unread: t.unread,
-          starred: t.starred,
-          hasAttachments: t.hasAttachments,
-          messages: prev?.messages?.length ? prev.messages : [],
-        };
-      });
+      // Drop threads mid-archive so SSE/sync cannot put the open one back.
+      const pending = this.pendingArchiveIds;
+      const mapped: ShellThreadPreview[] = res.threads
+        .filter((t: ApiThread) => !pending.has(t.id))
+        .map((t: ApiThread) => {
+          const prev = prevById.get(t.id);
+          return {
+            id: t.id,
+            from: t.from,
+            subject: t.subject,
+            snippet: t.snippet,
+            time: t.time,
+            unread: t.unread,
+            starred: t.starred,
+            hasAttachments: t.hasAttachments,
+            messages: prev?.messages?.length ? prev.messages : [],
+          };
+        });
       this.threads.set(mapped);
       // Drop checks that are no longer in the list
       if (this.checkedIds().size) {
@@ -1051,10 +1065,29 @@ export class UiShellService {
   }
 
   /**
+   * Replace multi-select with the inclusive list range between two thread ids.
+   * Used by click-drag selection and Shift-click ranges.
+   */
+  setCheckedRange(fromId: string, toId: string): void {
+    const list = this.threads();
+    const a = list.findIndex((t) => t.id === fromId);
+    const b = list.findIndex((t) => t.id === toId);
+    if (a < 0 || b < 0) return;
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    const next = new Set<string>();
+    for (let i = lo; i <= hi; i++) {
+      next.add(list[i]!.id);
+    }
+    this.checkedIds.set(next);
+    this.lastCheckedAnchor = toId;
+  }
+
+  /**
    * Thread list click with multi-select modifiers.
    * - plain: open thread (and clear multi-select)
    * - ⌘/Ctrl: toggle check without leaving current reading focus
    * - Shift: range check from last anchor
+   * - click-drag: handled separately via setCheckedRange
    */
   async onThreadListClick(
     id: string,
@@ -1064,21 +1097,10 @@ export class UiShellService {
     const range = event.shiftKey;
 
     if (range && this.lastCheckedAnchor) {
-      const list = this.threads();
-      const a = list.findIndex((t) => t.id === this.lastCheckedAnchor);
-      const b = list.findIndex((t) => t.id === id);
-      if (a >= 0 && b >= 0) {
-        const [lo, hi] = a < b ? [a, b] : [b, a];
-        const next = new Set(this.checkedIds());
-        for (let i = lo; i <= hi; i++) {
-          next.add(list[i]!.id);
-        }
-        this.checkedIds.set(next);
-        this.lastCheckedAnchor = id;
-        // Also focus the end of the range
-        await this.selectThread(id);
-        return;
-      }
+      this.setCheckedRange(this.lastCheckedAnchor, id);
+      // Also focus the end of the range
+      await this.selectThread(id);
+      return;
     }
 
     if (multi) {
@@ -1098,19 +1120,29 @@ export class UiShellService {
     await this.selectThread(id);
   }
 
-  /** Archive every checked thread, or the focused one if none checked. */
+  /**
+   * Archive multi-select if any, otherwise the open/focused thread.
+   * Always includes the open thread when multi-select is active so the
+   * reading-pane conversation cannot be left behind.
+   */
   async archiveSelected(): Promise<void> {
-    const checked = [...this.checkedIds()];
-    if (checked.length > 1) {
-      await this.archiveMany(checked);
+    const targets = new Set(this.checkedIds());
+    const focused = this.selectedId();
+    if (focused) targets.add(focused);
+
+    if (!targets.size) {
+      this.statusMessage.set('Select a thread to archive.');
       return;
     }
-    if (checked.length === 1) {
-      // Treat single check as the target
-      this.selectedId.set(checked[0]!);
+
+    const ids = [...targets];
+    if (ids.length === 1) {
+      this.selectedId.set(ids[0]!);
       this.clearChecked();
+      await this.archiveFocusedOnly();
+      return;
     }
-    await this.archiveFocusedOnly();
+    await this.archiveMany(ids);
   }
 
   private async archiveMany(ids: string[]): Promise<void> {
@@ -1118,10 +1150,29 @@ export class UiShellService {
     const idSet = new Set(ids);
     const list = this.threads();
     const remaining = list.filter((t) => !idSet.has(t.id));
-    const nextFocus =
-      remaining.find((t) => t.id === this.selectedId())?.id ??
-      remaining[0]?.id ??
-      null;
+    // Prefer the next thread after the open one, not always list top
+    const focusIdx = list.findIndex((t) => t.id === this.selectedId());
+    let nextFocus: string | null = null;
+    if (focusIdx >= 0) {
+      for (let i = focusIdx + 1; i < list.length; i++) {
+        if (!idSet.has(list[i]!.id)) {
+          nextFocus = list[i]!.id;
+          break;
+        }
+      }
+      if (!nextFocus) {
+        for (let i = focusIdx - 1; i >= 0; i--) {
+          if (!idSet.has(list[i]!.id)) {
+            nextFocus = list[i]!.id;
+            break;
+          }
+        }
+      }
+    }
+    nextFocus ??= remaining[0]?.id ?? null;
+
+    // Block list refresh from resurrecting these until Gmail confirms
+    for (const id of ids) this.pendingArchiveIds.add(id);
 
     // Push undos for each removed thread (reverse order so z undoes last first)
     for (let i = list.length - 1; i >= 0; i--) {
@@ -1141,22 +1192,29 @@ export class UiShellService {
     );
 
     let ok = 0;
-    let fail = 0;
-    for (const id of ids) {
-      try {
-        await this.api.archive(id);
-        ok += 1;
-      } catch {
-        fail += 1;
+    const failed: string[] = [];
+    try {
+      for (const id of ids) {
+        try {
+          await this.api.archive(id);
+          ok += 1;
+        } catch {
+          failed.push(id);
+        }
       }
+      this.statusMessage.set(
+        failed.length
+          ? `Archived ${ok}, failed ${failed.length}`
+          : `Archived ${ok} · z to undo (${this.undoCount()})`,
+      );
+      // Allow failed ids back into the list on the next refresh
+      for (const id of failed) this.pendingArchiveIds.delete(id);
+      if (failed.length) await this.refreshThreads();
+      else await this.ensureListFilled();
+    } finally {
+      // Clear only after refill so mid-flight SSE still filters them out
+      for (const id of ids) this.pendingArchiveIds.delete(id);
     }
-    this.statusMessage.set(
-      fail
-        ? `Archived ${ok}, failed ${fail}`
-        : `Archived ${ok} · z to undo (${this.undoCount()})`,
-    );
-    void this.ensureListFilled();
-    if (fail) await this.refreshThreads();
   }
 
   private async archiveFocusedOnly(): Promise<void> {
@@ -1167,8 +1225,13 @@ export class UiShellService {
     }
     const list = this.threads();
     const idx = list.findIndex((t) => t.id === id);
-    if (idx < 0) return;
+    if (idx < 0) {
+      this.statusMessage.set('Open a thread in the list to archive.');
+      return;
+    }
     const removed = list[idx]!;
+
+    this.pendingArchiveIds.add(id);
 
     // Optimistic remove + jump to next
     const next = list[idx + 1] ?? list[idx - 1] ?? null;
@@ -1191,13 +1254,10 @@ export class UiShellService {
         : 'Archived — press z to undo',
     );
 
-    if (this.hasMoreMail()) {
-      void this.ensureListFilled();
-    }
-
     try {
       await this.api.archive(id);
-      void this.ensureListFilled();
+      // Only refill after Gmail + local DB have dropped INBOX
+      await this.ensureListFilled();
     } catch (e) {
       // Drop matching undo entry
       this.archiveUndoStack = this.archiveUndoStack.filter(
@@ -1205,7 +1265,10 @@ export class UiShellService {
       );
       this.syncUndoSignals();
       this.handleGmailFailure(e, 'Archive failed');
+      this.pendingArchiveIds.delete(id);
       await this.refreshThreads();
+    } finally {
+      this.pendingArchiveIds.delete(id);
     }
   }
 
