@@ -63,7 +63,7 @@ function templateSummarize(threadId: string): string {
     .join('\n');
 
   return [
-    `**Summary** (template — no LLM configured)`,
+    `**Summary** (template)`,
     '',
     `**Subject:** ${thread.subject || '(no subject)'}`,
     `**From:** ${thread.from_name || thread.from_email}`,
@@ -71,8 +71,6 @@ function templateSummarize(threadId: string): string {
     '',
     '**Recent points:**',
     bullets || '- (no text body)',
-    '',
-    `_Account ${account.email}_`,
   ].join('\n');
 }
 

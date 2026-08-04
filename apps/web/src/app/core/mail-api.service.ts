@@ -64,6 +64,22 @@ export interface ApiThreadDetail {
   messages: ApiMessage[];
 }
 
+export type ApiThreadView = 'inbox' | 'starred' | 'all' | 'sent' | 'label';
+
+export interface ApiLabel {
+  id: string;
+  name: string;
+  system: boolean;
+  count: number;
+}
+
+export interface ApiMailView {
+  id: number;
+  name: string;
+  query: string;
+  created_at: number;
+}
+
 @Service()
 export class MailApiService {
   private readonly http = inject(HttpClient);
@@ -112,10 +128,15 @@ export class MailApiService {
     return `${this.baseUrl}/auth/gmail/start`;
   }
 
-  listThreads(opts?: { q?: string; view?: 'inbox' | 'starred' | 'all' }) {
+  listThreads(opts?: {
+    q?: string;
+    view?: ApiThreadView;
+    label?: string;
+  }) {
     const params = new URLSearchParams();
     if (opts?.q) params.set('q', opts.q);
     if (opts?.view) params.set('view', opts.view);
+    if (opts?.label) params.set('label', opts.label);
     const qs = params.toString();
     return firstValueFrom(
       this.http.get<{
@@ -124,6 +145,33 @@ export class MailApiService {
         searchHasMore?: boolean;
         inboxHasMore?: boolean;
       }>(`${this.baseUrl}/threads${qs ? `?${qs}` : ''}`),
+    );
+  }
+
+  listLabels() {
+    return firstValueFrom(
+      this.http.get<{ labels: ApiLabel[] }>(`${this.baseUrl}/labels`),
+    );
+  }
+
+  listViews() {
+    return firstValueFrom(
+      this.http.get<{ views: ApiMailView[] }>(`${this.baseUrl}/views`),
+    );
+  }
+
+  createView(name: string, query: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; view: ApiMailView }>(
+        `${this.baseUrl}/views`,
+        { name, query },
+      ),
+    );
+  }
+
+  deleteView(id: number) {
+    return firstValueFrom(
+      this.http.delete<{ ok: boolean }>(`${this.baseUrl}/views/${id}`),
     );
   }
 

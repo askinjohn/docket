@@ -58,6 +58,11 @@ export function handleShellKeydown(
   }
 
   if (event.key === 'Escape') {
+    if (shell.attachmentPreview()) {
+      event.preventDefault();
+      shell.closeAttachmentPreview();
+      return true;
+    }
     if (shell.helpOpen()) {
       event.preventDefault();
       shell.closeHelp();
@@ -66,6 +71,16 @@ export function handleShellKeydown(
     if (shell.composeOpen()) {
       event.preventDefault();
       shell.closeCompose();
+      return true;
+    }
+    if (shell.replyOpen()) {
+      event.preventDefault();
+      shell.closeReply();
+      return true;
+    }
+    if (shell.aiInsightOpen()) {
+      event.preventDefault();
+      shell.closeAiInsight();
       return true;
     }
     if (shell.checkedCount() > 0) {

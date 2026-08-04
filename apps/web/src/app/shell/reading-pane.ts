@@ -1,6 +1,7 @@
 import {
   afterNextRender,
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -9,19 +10,26 @@ import {
   viewChild,
 } from '@angular/core';
 
+import { htmlHasRemoteImages } from '../core/email-body';
 import {
+  chatBodyMode,
   iconForAttachment,
   isMine,
+  messageDisplayName,
   messagePlainText,
   messageUsesHtml,
+  type ChatBodyMode,
 } from '../core/message-display';
+import { SafeChatHtmlPipe } from '../core/safe-chat-html.pipe';
 import { SafeSrcdocPipe } from '../core/safe-srcdoc.pipe';
 import type { ShellMessage } from '../core/ui-shell.service';
 import { UiShellService } from '../core/ui-shell.service';
+import { AiInsightPanel } from './ai-insight-panel';
+import { ReplyPanel } from './reply-panel';
 
 @Component({
   selector: 'lm-reading-pane',
-  imports: [SafeSrcdocPipe],
+  imports: [SafeSrcdocPipe, SafeChatHtmlPipe, AiInsightPanel, ReplyPanel],
   template: `
     <section
       class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-lm-bg"
@@ -30,9 +38,46 @@ import { UiShellService } from '../core/ui-shell.service';
       @if (shell.selectedThread(); as thread) {
         <header class="shrink-0 border-b border-lm-border px-5 py-3.5">
           <div class="flex items-start justify-between gap-4">
-            <h2 class="m-0 min-w-0 text-[1.05rem] font-semibold tracking-tight break-words">
-              {{ thread.subject }}
-            </h2>
+            <div class="min-w-0">
+              <h2 class="m-0 text-[1.05rem] font-semibold tracking-tight break-words">
+                {{ thread.subject }}
+              </h2>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                @if (shell.detailLoading()) {
+                  <span class="text-[0.75rem] text-lm-muted">Loading…</span>
+                }
+                <div
+                  class="inline-flex overflow-hidden rounded-lg border border-lm-border"
+                  role="group"
+                  aria-label="Message display mode"
+                >
+                  <button
+                    type="button"
+                    class="cursor-pointer border-0 px-2.5 py-1 text-[0.75rem] font-medium transition"
+                    [class.bg-lm-accent]="threadViewMode(thread.id) === 'plain'"
+                    [class.text-white]="threadViewMode(thread.id) === 'plain'"
+                    [class.bg-transparent]="threadViewMode(thread.id) !== 'plain'"
+                    [class.text-lm-muted]="threadViewMode(thread.id) !== 'plain'"
+                    (click)="setThreadViewMode(thread.id, 'plain')"
+                    title="Chat-style text (default)"
+                  >
+                    Plain
+                  </button>
+                  <button
+                    type="button"
+                    class="cursor-pointer border-0 border-l border-lm-border px-2.5 py-1 text-[0.75rem] font-medium transition"
+                    [class.bg-lm-accent]="threadViewMode(thread.id) === 'html'"
+                    [class.text-white]="threadViewMode(thread.id) === 'html'"
+                    [class.bg-transparent]="threadViewMode(thread.id) !== 'html'"
+                    [class.text-lm-muted]="threadViewMode(thread.id) !== 'html'"
+                    (click)="setThreadViewMode(thread.id, 'html')"
+                    title="Original HTML layout (tables, images, branding)"
+                  >
+                    Full email
+                  </button>
+                </div>
+              </div>
+            </div>
             <div class="flex shrink-0 flex-wrap justify-end gap-1">
               <button
                 type="button"
@@ -59,7 +104,7 @@ import { UiShellService } from '../core/ui-shell.service';
                 [disabled]="!shell.isConnected() || shell.aiBusy()"
                 title="AI summarize"
               >
-                Summarize
+                {{ shell.aiBusy() ? '…' : 'Summarize' }}
               </button>
               <button
                 type="button"
@@ -89,287 +134,249 @@ import { UiShellService } from '../core/ui-shell.service';
               </button>
             </div>
           </div>
+          @if (showRemoteImagesBanner()) {
+            <div
+              class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-panel px-3 py-2 text-[0.8rem]"
+              role="status"
+            >
+              <span class="min-w-0 text-lm-muted">
+                Remote images blocked for this thread (privacy). Layout uses placeholders.
+              </span>
+              <div class="flex shrink-0 flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-md border-0 bg-lm-accent px-2.5 py-1 text-[0.78rem] font-semibold text-white hover:brightness-110"
+                  (click)="shell.showRemoteImagesForThread()"
+                >
+                  Show for this thread
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-md border border-lm-border bg-transparent px-2 py-1 text-[0.75rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+                  (click)="shell.setRemoteImagesMode('always')"
+                  title="Load remote images in every email (Settings)"
+                >
+                  Always show
+                </button>
+              </div>
+            </div>
+          } @else if (
+            (shell.theme().remoteImagesMode ?? 'ask') === 'ask' &&
+            shell.remoteImagesUnlockedThreadId() === thread.id
+          ) {
+            <div
+              class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-lm-border/80 bg-lm-bg px-3 py-2 text-[0.78rem] text-lm-muted"
+            >
+              <span>Remote images on for this thread only.</span>
+              <button
+                type="button"
+                class="cursor-pointer rounded-md border border-lm-border bg-transparent px-2 py-1 text-[0.75rem] hover:bg-lm-hover"
+                (click)="shell.hideRemoteImagesForThread()"
+              >
+                Block again
+              </button>
+            </div>
+          }
         </header>
 
         <div
+          class="flex min-h-0 flex-1"
+          [class.flex-col]="shell.theme().replyDock === 'bottom'"
+          [class.flex-row]="shell.theme().replyDock === 'right'"
+        >
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
           #readingScroll
-          class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-5"
+          class="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6"
           (scroll)="onReadingScroll()"
         >
           @if (shell.detailLoading() && thread.messages.length === 0) {
-            <div
-              class="mb-3 min-h-64 max-w-3xl animate-pulse rounded-2xl border border-lm-border bg-lm-panel px-5 py-4"
-              aria-busy="true"
-            >
-              <div class="mb-4 h-4 w-1/3 rounded bg-lm-hover"></div>
-              <div class="mb-2 h-3 w-full rounded bg-lm-hover"></div>
-              <div class="mb-2 h-3 w-5/6 rounded bg-lm-hover"></div>
-              <div class="h-3 w-2/3 rounded bg-lm-hover"></div>
-              <p class="mt-6 text-sm text-lm-muted">Loading message…</p>
+            <div class="flex w-full flex-col gap-3" aria-busy="true">
+              <div class="h-16 w-3/4 max-w-md animate-pulse rounded-2xl bg-lm-panel"></div>
+              <div class="ml-auto h-14 w-2/3 max-w-md animate-pulse rounded-2xl bg-lm-accent/15"></div>
+              <p class="text-sm text-lm-muted">Loading conversation…</p>
             </div>
           }
-          @for (msg of thread.messages; track msg.id) {
-            @if (usesHtml(msg) && !mine(msg)) {
-              <article
-                class="msg-incoming mb-4 w-full max-w-3xl overflow-hidden rounded-2xl border border-lm-border bg-lm-panel shadow-sm"
+
+          <!-- Minimal chat: plain stays bubble-width; rich/iframe use more of the pane. -->
+          <div class="chat-thread flex w-full flex-col gap-2.5">
+            @for (msg of thread.messages; track msg.id) {
+              <div
+                class="chat-row group flex w-full"
+                [class.justify-start]="!mine(msg) || bodyMode(msg) === 'iframe'"
+                [class.justify-end]="mine(msg) && bodyMode(msg) !== 'iframe'"
               >
-                <div class="flex items-start justify-between gap-4 border-b border-lm-border px-5 py-3">
-                  <div class="min-w-0">
-                    <div class="text-sm font-semibold break-words text-lm-text">{{ msg.from }}</div>
-                    <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
-                  </div>
-                  <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
-                </div>
                 <div
-                  class="message-html-wrap w-full bg-white"
-                  [class.is-expanded]="isHtmlExpanded(msg.id)"
-                  [attr.data-msg-id]="msg.id"
+                  class="flex min-w-0 flex-col"
+                  [class.chat-col-plain]="bodyMode(msg) === 'plain'"
+                  [class.chat-col-rich]="bodyMode(msg) === 'rich'"
+                  [class.chat-col-iframe]="bodyMode(msg) === 'iframe'"
+                  [class.items-end]="mine(msg) && bodyMode(msg) !== 'iframe'"
+                  [class.items-start]="!mine(msg) || bodyMode(msg) === 'iframe'"
                 >
-                  <iframe
-                    class="message-html-frame"
-                    title="Message body"
-                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                    [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                    (load)="onHtmlFrameLoad($event, msg.id)"
-                  ></iframe>
-                </div>
-                @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
-                  <button
-                    type="button"
-                    class="w-full cursor-pointer border-0 border-t border-lm-border bg-lm-bg/80 px-4 py-2 text-left text-[0.78rem] font-medium text-lm-accent hover:bg-lm-hover"
-                    (click)="expandHtml(msg.id)"
+                  <div
+                    class="chat-bubble min-w-0 max-w-full px-3.5 py-2.5"
+                    [class.w-fit]="bodyMode(msg) === 'plain'"
+                    [class.w-full]="bodyMode(msg) !== 'plain'"
+                    [class.chat-bubble-mine]="mine(msg) && bodyMode(msg) !== 'iframe'"
+                    [class.chat-bubble-theirs]="!mine(msg) || bodyMode(msg) === 'iframe'"
+                    [class.chat-bubble-doc]="bodyMode(msg) === 'iframe'"
+                    [title]="bubbleTitle(msg)"
                   >
-                    Show full message ↓
-                  </button>
-                }
-                @if (isHtmlExpanded(msg.id)) {
-                  <button
-                    type="button"
-                    class="w-full cursor-pointer border-0 border-t border-lm-border bg-lm-bg/80 px-4 py-2 text-left text-[0.78rem] font-medium text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-                    (click)="collapseHtml(msg.id)"
-                  >
-                    Collapse message ↑
-                  </button>
-                }
-                @if (msg.attachments.length) {
-                  <div class="border-t border-lm-border px-5 py-3" aria-label="Attachments">
-                    <div class="mb-2 text-[0.72rem] tracking-wide text-lm-muted uppercase">
-                      Attachments · {{ msg.attachments.length }}
-                    </div>
-                    <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
-                      @for (file of msg.attachments; track file.id) {
-                        <li>
+                    @switch (bodyMode(msg)) {
+                      @case ('plain') {
+                        <div
+                          class="chat-plain whitespace-pre-wrap text-[0.9375rem] leading-relaxed break-words text-lm-text"
+                        >
+                          {{ plainText(msg, false) }}
+                        </div>
+                      }
+                      @case ('rich') {
+                        <div
+                          class="chat-rich text-[0.9375rem] leading-relaxed text-lm-text"
+                          [innerHTML]="
+                            msg.bodyHtml
+                              | safeChatHtml
+                                : shell.blockRemoteImagesNow()
+                                : msg.attachments
+                                : true
+                          "
+                        ></div>
+                      }
+                      @default {
+                        <div
+                          class="message-html-wrap w-full min-w-0"
+                          [class.is-expanded]="isHtmlExpanded(msg.id)"
+                          [attr.data-msg-id]="msg.id"
+                        >
+                          <iframe
+                            class="message-html-frame"
+                            title="Message body"
+                            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                            [srcdoc]="
+                              msg.bodyHtml
+                                | safeSrcdoc
+                                  : shell.blockRemoteImagesNow()
+                                  : msg.attachments
+                                  : true
+                                  : true
+                            "
+                            (load)="onHtmlFrameLoad($event, msg.id)"
+                          ></iframe>
+                        </div>
+                        @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
                           <button
                             type="button"
-                            class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
-                            (click)="shell.openAttachment(file.id)"
-                            title="Download / open"
+                            class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted opacity-0 transition group-hover:opacity-100 hover:text-lm-accent"
+                            (click)="expandHtml(msg.id)"
+                          >
+                            Show more
+                          </button>
+                        }
+                        @if (isHtmlExpanded(msg.id)) {
+                          <button
+                            type="button"
+                            class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted hover:text-lm-text"
+                            (click)="collapseHtml(msg.id)"
+                          >
+                            Show less
+                          </button>
+                        }
+                      }
+                    }
+
+                    @if (msg.attachments.length) {
+                      <div
+                        class="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2"
+                        aria-label="Attachments"
+                      >
+                        @for (file of msg.attachments; track file.id) {
+                          <button
+                            type="button"
+                            class="inline-flex max-w-44 cursor-pointer items-center gap-1 rounded-md bg-black/15 px-1.5 py-0.5 text-left text-[0.7rem] text-lm-text hover:bg-lm-hover"
+                            (click)="
+                              shell.openAttachment(file.id, {
+                                kind: file.kind,
+                                name: file.name,
+                                mimeType: file.mimeType,
+                                sizeLabel: file.sizeLabel,
+                              })
+                            "
+                            [title]="file.name"
                           >
                             <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
-                            <span class="flex min-w-0 flex-col">
-                              <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
-                              <span class="text-[0.68rem] text-lm-muted">{{ file.sizeLabel }}</span>
-                            </span>
+                            <span class="min-w-0 truncate">{{ file.name }}</span>
                           </button>
-                        </li>
-                      }
-                    </ul>
-                  </div>
-                }
-              </article>
-            } @else {
-              <div
-                class="mb-3 flex w-full"
-                [class.justify-end]="mine(msg)"
-                [class.justify-start]="!mine(msg)"
-              >
-                <article
-                  class="overflow-hidden rounded-2xl border px-4 py-3.5 shadow-sm"
-                  [class.max-w-xl]="mine(msg)"
-                  [class.max-w-3xl]="!mine(msg)"
-                  [class.w-full]="!mine(msg)"
-                  [class.border-lm-border]="!mine(msg)"
-                  [class.bg-lm-panel]="!mine(msg)"
-                  [class.border-lm-accent/45]="mine(msg)"
-                  [class.bg-lm-accent/15]="mine(msg)"
-                >
-                  <div class="mb-2 flex min-w-0 justify-between gap-4">
-                    <div class="min-w-0 text-left">
-                      <div class="text-sm font-semibold break-words">
-                        @if (mine(msg)) {
-                          You
-                        } @else {
-                          {{ msg.from }}
                         }
                       </div>
-                      <div class="mt-0.5 text-xs text-lm-muted break-words">To: {{ msg.to }}</div>
-                    </div>
-                    <time class="shrink-0 text-xs text-lm-muted">{{ msg.time }}</time>
+                    }
                   </div>
-
-                  @if (usesHtml(msg)) {
-                    <div
-                      class="message-html-wrap w-full rounded-lg border border-lm-border bg-white"
-                      [class.is-expanded]="isHtmlExpanded(msg.id)"
-                      [attr.data-msg-id]="msg.id"
-                    >
-                      <iframe
-                        class="message-html-frame"
-                        title="Message body"
-                        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                        [srcdoc]="msg.bodyHtml | safeSrcdoc"
-                        (load)="onHtmlFrameLoad($event, msg.id)"
-                      ></iframe>
-                    </div>
-                    @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
-                      <button
-                        type="button"
-                        class="mt-1 w-full cursor-pointer rounded-lg border-0 bg-transparent px-1 py-1 text-left text-[0.75rem] font-medium text-lm-accent hover:underline"
-                        (click)="expandHtml(msg.id)"
-                      >
-                        Show full message ↓
-                      </button>
-                    }
-                    @if (isHtmlExpanded(msg.id)) {
-                      <button
-                        type="button"
-                        class="mt-1 w-full cursor-pointer rounded-lg border-0 bg-transparent px-1 py-1 text-left text-[0.75rem] font-medium text-lm-muted hover:text-lm-text"
-                        (click)="collapseHtml(msg.id)"
-                      >
-                        Collapse ↑
-                      </button>
-                    }
-                  } @else {
-                    <div
-                      class="max-w-full whitespace-pre-wrap text-left text-[0.92rem] leading-relaxed break-words text-lm-text"
-                    >
-                      {{ plainText(msg) }}
-                    </div>
-                  }
-
-                  @if (msg.attachments.length) {
-                    <div class="mt-3 border-t border-lm-border pt-3" aria-label="Attachments">
-                      <ul class="m-0 flex list-none flex-wrap gap-2 p-0">
-                        @for (file of msg.attachments; track file.id) {
-                          <li>
-                            <button
-                              type="button"
-                              class="inline-flex max-w-60 cursor-pointer items-center gap-2 rounded-lg border border-lm-border bg-lm-bg px-2.5 py-1.5 text-left text-sm hover:border-lm-accent/45 hover:bg-lm-hover"
-                              (click)="shell.openAttachment(file.id)"
-                            >
-                              <span aria-hidden="true">{{ iconFor(file.kind) }}</span>
-                              <span class="truncate text-[0.78rem] font-semibold">{{ file.name }}</span>
-                            </button>
-                          </li>
-                        }
-                      </ul>
-                    </div>
-                  }
-                </article>
+                  <time
+                    class="mt-0.5 px-1 text-[0.65rem] text-lm-muted/70 opacity-0 transition group-hover:opacity-100"
+                    >{{ msg.time }}@if (!mine(msg)) {
+                      <span> · {{ displayName(msg) }}</span>
+                    }</time
+                  >
+                </div>
               </div>
+            } @empty {
+              @if (!shell.detailLoading()) {
+                <p class="py-2 text-sm text-lm-muted">No messages loaded for this thread.</p>
+              }
             }
-          } @empty {
-            @if (!shell.detailLoading()) {
-              <p class="py-2 text-sm text-lm-muted">No messages loaded for this thread.</p>
-            }
-          }
+          </div>
         </div>
 
-        @if (shell.replyOpen()) {
-          <footer
-            class="flex max-h-[min(48vh,380px)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-lm-border bg-lm-panel"
-            aria-label="Reply"
+        @if (shell.theme().replyDock === 'bottom') {
+          <div
+            class="flex max-h-[min(52vh,440px)] min-h-0 shrink-0 flex-col overflow-hidden"
           >
-            <div
-              class="flex shrink-0 items-center justify-between gap-3 border-b border-lm-border/70 bg-lm-bg/50 px-4 py-2"
-            >
-              <div class="flex min-w-0 items-center gap-2">
-                <span
-                  class="h-1.5 w-1.5 shrink-0 rounded-full bg-lm-accent"
-                  aria-hidden="true"
-                ></span>
-                <span class="min-w-0 truncate text-[0.82rem] font-semibold text-lm-text"
-                  >Reply to {{ thread.from }}</span
-                >
-              </div>
+            <lm-ai-insight-panel />
+            <lm-reply-panel [replyTo]="thread.from" />
+            @if (
+              !shell.replyOpen() &&
+              !shell.aiInsightOpen() &&
+              shell.isConnected()
+            ) {
               <button
                 type="button"
-                class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-                (click)="shell.closeReply()"
-                aria-label="Close reply"
-                title="Close (Esc)"
+                class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
+                (click)="shell.openReply()"
               >
-                ×
+                Reply to this thread ·
+                <kbd
+                  class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
+                  >r</kbd
+                >
               </button>
-            </div>
-            <textarea
-              class="min-h-24 max-h-44 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-[0.92rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted/65"
-              rows="5"
-              [value]="shell.replyBody()"
-              (input)="onReplyInput($event)"
-              placeholder="Write your reply…"
-            ></textarea>
-            @if (shell.replyAttachments().length) {
-              <ul
-                class="m-0 flex list-none flex-wrap gap-1.5 border-t border-lm-border/60 px-4 py-2"
-              >
-                @for (file of shell.replyAttachments(); track file.id) {
-                  <li
-                    class="inline-flex max-w-52 items-center gap-1.5 rounded-lg border border-lm-border bg-lm-bg px-2 py-1 text-[0.72rem]"
-                  >
-                    <span class="truncate font-medium">{{ file.name }}</span>
-                    <span class="text-lm-muted">{{ file.sizeLabel }}</span>
-                    <button
-                      type="button"
-                      class="cursor-pointer border-0 bg-transparent px-1 text-lm-muted hover:text-lm-text"
-                      (click)="shell.removeReplyAttachment(file.id)"
-                      [attr.aria-label]="'Remove ' + file.name"
-                    >
-                      ×
-                    </button>
-                  </li>
-                }
-              </ul>
             }
-            <div
-              class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-lm-border bg-lm-bg/40 px-4 py-2.5"
-            >
-              <div class="flex items-center gap-2">
-                <label
-                  class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.78rem] text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-                >
-                  Attach
-                  <input
-                    type="file"
-                    class="sr-only"
-                    multiple
-                    (change)="onReplyFiles($event)"
-                  />
-                </label>
-                <span class="text-[0.7rem] text-lm-muted">⌘↵ send</span>
-              </div>
+          </div>
+        }
+        </div>
+
+        @if (shell.theme().replyDock === 'right') {
+          <aside
+            class="flex w-[min(400px,42%)] min-w-[280px] shrink-0 flex-col overflow-hidden border-l border-lm-border bg-lm-panel"
+            aria-label="Side panels"
+          >
+            <lm-ai-insight-panel class="min-h-0 flex-1" />
+            <lm-reply-panel class="min-h-0 flex-1" [replyTo]="thread.from" />
+            @if (
+              !shell.replyOpen() &&
+              !shell.aiInsightOpen() &&
+              shell.isConnected()
+            ) {
               <button
                 type="button"
-                class="cursor-pointer rounded-lg border-0 bg-lm-accent px-3.5 py-1.5 text-[0.82rem] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                (click)="shell.sendReply()"
-                [disabled]="shell.sending() || !shell.isConnected()"
+                class="m-3 cursor-pointer rounded-lg border border-lm-border bg-lm-bg px-3 py-3 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
+                (click)="shell.openReply()"
               >
-                {{ shell.sending() ? 'Sending…' : 'Send' }}
+                Reply · <kbd class="font-mono text-xs">r</kbd>
               </button>
-            </div>
-          </footer>
-        } @else if (shell.isConnected()) {
-          <button
-            type="button"
-            class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
-            (click)="shell.openReply()"
-          >
-            Reply to this thread ·
-            <kbd class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
-              >r</kbd
-            >
-          </button>
+            }
+          </aside>
         }
+        </div>
       } @else {
         <div class="m-auto text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</div>
       }
@@ -380,33 +387,151 @@ import { UiShellService } from '../core/ui-shell.service';
       display: contents;
     }
 
+    .chat-bubble-theirs {
+      border-radius: 4px 18px 18px 18px;
+      background: color-mix(in srgb, var(--color-lm-panel) 92%, var(--color-lm-hover));
+      border: 1px solid color-mix(in srgb, var(--color-lm-border) 80%, transparent);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+      text-align: left;
+    }
+
+    .chat-bubble-mine {
+      border-radius: 18px 4px 18px 18px;
+      background: color-mix(in srgb, var(--color-lm-accent) 22%, var(--color-lm-panel));
+      border: 1px solid color-mix(in srgb, var(--color-lm-accent) 35%, transparent);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
+      text-align: left;
+    }
+
+    .chat-plain {
+      text-align: left;
+    }
+
+    /* Width by content type — marketing HTML was stuck at ~32rem (half pane) */
+    .chat-col-plain {
+      max-width: min(92%, 32rem);
+    }
+    .chat-col-rich {
+      width: 100%;
+      max-width: min(96%, 44rem);
+    }
+    .chat-col-iframe {
+      width: 100%;
+      max-width: min(100%, 56rem);
+    }
+
+    .chat-bubble-doc {
+      border-radius: 14px;
+      padding: 0.5rem;
+      background: color-mix(in srgb, var(--color-lm-panel) 96%, var(--color-lm-hover));
+    }
+
+    /* In-bubble rich HTML: code, tables, images (themed for dark chat) */
+    .chat-rich {
+      text-align: left;
+      overflow-x: auto;
+      max-width: 100%;
+      word-break: break-word;
+    }
+    .chat-rich :where(p, ul, ol, pre, table, blockquote) {
+      margin: 0 0 0.55em;
+    }
+    .chat-rich :where(p, ul, ol, pre, table, blockquote):last-child {
+      margin-bottom: 0;
+    }
+    .chat-rich :where(ul, ol) {
+      padding-left: 1.25rem;
+    }
+    .chat-rich a {
+      color: var(--color-lm-accent);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .chat-rich code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.84em;
+      background: rgba(0, 0, 0, 0.28);
+      padding: 0.12em 0.4em;
+      border-radius: 4px;
+    }
+    .chat-rich pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      background: rgba(0, 0, 0, 0.38);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 0.75rem 0.9rem;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    .chat-rich pre code {
+      background: transparent;
+      padding: 0;
+      font-size: inherit;
+      border-radius: 0;
+    }
+    .chat-rich table {
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      width: max-content;
+      max-width: 100%;
+    }
+    .chat-rich th,
+    .chat-rich td {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 0.35rem 0.55rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    .chat-rich th {
+      background: rgba(0, 0, 0, 0.22);
+      font-weight: 600;
+    }
+    .chat-rich img {
+      max-width: min(100%, 28rem);
+      height: auto;
+      border-radius: 8px;
+      display: block;
+      margin: 0.35rem 0;
+    }
+    .chat-rich blockquote {
+      border-left: 3px solid rgba(255, 255, 255, 0.18);
+      padding-left: 0.75rem;
+      color: var(--color-lm-muted);
+    }
+
     .message-html-wrap {
+      /* Soft paper for full HTML emails — use most of the reading width */
       background: #fff;
-      min-height: 4rem;
-      max-height: min(42vh, 26rem);
-      overflow-x: hidden;
+      min-height: 8rem;
+      max-height: min(72vh, 44rem);
+      overflow-x: auto;
       overflow-y: auto;
       overscroll-behavior: contain;
       -webkit-overflow-scrolling: touch;
+      border: 0;
+      border-radius: 10px;
+      width: 100%;
     }
 
     .message-html-wrap.is-expanded {
       max-height: none;
+      overflow-x: auto;
       overflow-y: visible;
     }
 
     .message-html-frame {
       display: block;
       width: 100%;
-      min-height: 4rem;
-      height: 12rem;
+      min-width: 0;
+      min-height: 12rem;
+      height: 16rem;
       border: 0;
       background: #fff;
       vertical-align: top;
-    }
-
-    .msg-incoming .message-html-frame {
-      min-height: 5rem;
+      color-scheme: light;
+      border-radius: 10px;
     }
   `,
 })
@@ -419,6 +544,24 @@ export class ReadingPane {
   private lastReadingThreadId: string | null = null;
   private readonly htmlExpandedIds = signal<ReadonlySet<string>>(new Set());
   private readonly htmlTallIds = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Per-thread display: plain chat (default) vs full HTML email.
+   * Plain keeps clean bubbles; Full email restores rich/iframe layouts.
+   */
+  private readonly threadViewModes = signal<ReadonlyMap<string, 'plain' | 'html'>>(
+    new Map(),
+  );
+
+  /** Banner only in “ask” mode when this thread still blocks remote images. */
+  protected readonly showRemoteImagesBanner = computed(() => {
+    if (!this.shell.canUnlockRemoteImagesForThread()) return false;
+    if (!this.shell.blockRemoteImagesNow()) return false;
+    // Only relevant when viewing full HTML
+    const thread = this.shell.selectedThread();
+    if (!thread) return false;
+    if (this.threadViewMode(thread.id) === 'plain') return false;
+    return thread.messages.some((m) => htmlHasRemoteImages(m.bodyHtml));
+  });
 
   constructor() {
     effect(() => {
@@ -436,10 +579,19 @@ export class ReadingPane {
         this.htmlTallIds.set(new Set());
       }
 
+      // Re-render srcdoc when remote-image unlock toggles
+      void this.shell.blockRemoteImagesNow();
+
       void thread.messages.length;
       void thread.messages.at(-1)?.id;
       void this.shell.detailLoading();
       void this.shell.replyOpen();
+      void this.shell.aiInsightOpen();
+
+      // Close panels when switching threads
+      if (isNewThread) {
+        this.shell.closeAiInsight();
+      }
 
       const force = isNewThread || this.stickReadingToBottom;
 
@@ -452,6 +604,27 @@ export class ReadingPane {
         { injector: this.injector },
       );
     });
+
+    // After closing full image / attachment viewer → top of reading pane
+    effect(() => {
+      const nonce = this.shell.scrollReadingToTopNonce();
+      if (!nonce) return;
+      afterNextRender(
+        () => {
+          this.scrollReadingToTop();
+          requestAnimationFrame(() => this.scrollReadingToTop());
+        },
+        { injector: this.injector },
+      );
+    });
+  }
+
+  /** Jump to top of the thread (disables chat-style stick-to-bottom). */
+  private scrollReadingToTop(): void {
+    this.stickReadingToBottom = false;
+    const el = this.readingScroll()?.nativeElement;
+    if (!el) return;
+    el.scrollTop = 0;
   }
 
   protected usesHtml(msg: ShellMessage): boolean {
@@ -462,8 +635,41 @@ export class ReadingPane {
     return isMine(msg, this.shell.accountEmail());
   }
 
-  protected plainText(msg: ShellMessage): string {
-    return messagePlainText(msg);
+  protected plainText(msg: ShellMessage, full = false): string {
+    return messagePlainText(msg, { full });
+  }
+
+  /** Default plain; Full email uses auto rich/iframe detection. */
+  protected threadViewMode(threadId: string): 'plain' | 'html' {
+    return this.threadViewModes().get(threadId) ?? 'plain';
+  }
+
+  protected setThreadViewMode(threadId: string, mode: 'plain' | 'html'): void {
+    const next = new Map(this.threadViewModes());
+    next.set(threadId, mode);
+    this.threadViewModes.set(next);
+    // Reset expand state when switching modes
+    this.htmlExpandedIds.set(new Set());
+    this.htmlTallIds.set(new Set());
+  }
+
+  protected bodyMode(msg: ShellMessage): ChatBodyMode {
+    const threadId = this.shell.selectedId();
+    if (!threadId || this.threadViewMode(threadId) === 'plain') {
+      return 'plain';
+    }
+    return chatBodyMode(msg);
+  }
+
+  protected displayName(msg: ShellMessage): string {
+    return messageDisplayName(msg, this.shell.accountEmail());
+  }
+
+  protected bubbleTitle(msg: ShellMessage): string {
+    const who = this.mine(msg)
+      ? 'You'
+      : messageDisplayName(msg, this.shell.accountEmail());
+    return `${who} · ${msg.time}`;
   }
 
   protected iconFor(kind: string): string {
@@ -503,6 +709,14 @@ export class ReadingPane {
     const next = new Set(this.htmlExpandedIds());
     next.delete(msgId);
     this.htmlExpandedIds.set(next);
+    // After collapsing “Show full message”, return to the top of the thread
+    afterNextRender(
+      () => {
+        this.scrollReadingToTop();
+        requestAnimationFrame(() => this.scrollReadingToTop());
+      },
+      { injector: this.injector },
+    );
   }
 
   onHtmlFrameLoad(event: Event, msgId: string): void {
@@ -523,7 +737,8 @@ export class ReadingPane {
         const measured = Math.max(h + 12, 64);
         iframe.style.height = `${measured}px`;
 
-        const capPx = Math.min(window.innerHeight * 0.42, 26 * 16);
+        // Marketing HTML: allow most of the viewport before “Show more”
+        const capPx = Math.min(window.innerHeight * 0.72, 44 * 16);
         this.setHtmlTall(msgId, measured > capPx + 8);
       } catch {
         iframe.style.height = '12rem';
@@ -568,13 +783,4 @@ export class ReadingPane {
     requestAnimationFrame(() => this.scrollReadingToLatest(false));
   }
 
-  onReplyInput(event: Event): void {
-    this.shell.setReplyBody((event.target as HTMLTextAreaElement).value);
-  }
-
-  onReplyFiles(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    void this.shell.addReplyFiles(input.files);
-    input.value = '';
-  }
 }

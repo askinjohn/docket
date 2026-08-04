@@ -3,6 +3,7 @@ import { google } from 'googleapis';
 import { appConfig, googleConfigured } from '../config.js';
 import { getDb, type AccountRow } from '../db/index.js';
 import { getTokenStore } from '../secrets/token-store.js';
+import { toGmailError } from './auth-errors.js';
 
 export function createOAuthClient() {
   if (!googleConfigured()) {
@@ -105,6 +106,10 @@ export async function hydrateAccountTokens(
 
 export async function getAuthedClient(account: AccountRow) {
   const hydrated = await hydrateAccountTokens(account);
+  if (!hydrated.refresh_token && !hydrated.access_token) {
+    throw toGmailError(new Error('invalid_grant'));
+  }
+
   const client = createOAuthClient();
   client.setCredentials({
     access_token: hydrated.access_token ?? undefined,
@@ -119,6 +124,13 @@ export async function getAuthedClient(account: AccountRow) {
       token_expiry: tokens.expiry_date ?? null,
     });
   });
+
+  // Force refresh now so callers get a clear auth_expired instead of mid-request 401s
+  try {
+    await client.getAccessToken();
+  } catch (e) {
+    throw toGmailError(e);
+  }
 
   return client;
 }

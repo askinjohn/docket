@@ -1,6 +1,7 @@
 import {
   afterNextRender,
   Component,
+  computed,
   effect,
   ElementRef,
   inject,
@@ -9,6 +10,12 @@ import {
 } from '@angular/core';
 
 import { UiShellService } from '../core/ui-shell.service';
+
+/** Min pointer travel before a press becomes drag-select (px). */
+const DRAG_THRESHOLD_PX = 6;
+/** Edge zone for auto-scroll while dragging (px). */
+const DRAG_SCROLL_EDGE_PX = 40;
+const DRAG_SCROLL_STEP_PX = 18;
 
 @Component({
   selector: 'lm-thread-list',
@@ -54,6 +61,16 @@ import { UiShellService } from '../core/ui-shell.service';
               Clear
             </button>
           }
+          @if (shell.searchActive() && shell.searchQuery().trim()) {
+            <button
+              type="button"
+              class="shrink-0 cursor-pointer rounded-lg border border-lm-accent/40 bg-lm-accent/10 px-2 py-1.5 text-[0.75rem] font-medium text-lm-text hover:bg-lm-accent/20"
+              (click)="shell.addCustomViewFromSearch()"
+              title="Save this Gmail query as a sidebar view"
+            >
+              Save view
+            </button>
+          }
         </div>
         @if (shell.searchActive() && shell.searchQuery()) {
           <div class="text-[0.68rem] text-lm-muted">
@@ -71,19 +88,30 @@ import { UiShellService } from '../core/ui-shell.service';
           class="mx-2.5 mt-2 flex items-center justify-between gap-2 rounded-lg border border-lm-border bg-lm-accent/10 px-2.5 py-1.5 text-[0.78rem] text-lm-muted"
           role="status"
         >
-          <span class="min-w-0 flex-1 truncate">{{
-            shell.statusMessage() || (shell.undoAvailable() ? 'Archived' : '')
-          }}</span>
-          @if (shell.undoAvailable()) {
-            <button
-              type="button"
-              class="shrink-0 cursor-pointer rounded-md border border-lm-accent/40 bg-lm-accent/20 px-2 py-0.5 text-[0.72rem] font-semibold text-lm-text hover:bg-lm-accent/30"
-              (click)="shell.undoArchive()"
-              title="Undo archive (z)"
-            >
-              Undo
-            </button>
-          }
+          <span class="min-w-0 flex-1 truncate">{{ statusBannerText() }}</span>
+          <div class="flex shrink-0 items-center gap-1">
+            @if (shell.undoAvailable()) {
+              <button
+                type="button"
+                class="cursor-pointer rounded-md border border-lm-accent/40 bg-lm-accent/20 px-2 py-0.5 text-[0.72rem] font-semibold text-lm-text hover:bg-lm-accent/30"
+                (click)="shell.undoArchive()"
+                title="Undo archive (z) — multi-step stack"
+              >
+                {{ undoButtonLabel() }}
+              </button>
+            }
+            @if (shell.statusMessage()) {
+              <button
+                type="button"
+                class="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-base leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+                (click)="shell.clearStatusMessage()"
+                title="Dismiss"
+                aria-label="Dismiss status"
+              >
+                ×
+              </button>
+            }
+          </div>
         </div>
       }
 
@@ -127,11 +155,15 @@ import { UiShellService } from '../core/ui-shell.service';
       }
 
       <ul
-        class="m-0 min-h-0 flex-1 list-none overflow-auto p-1.5"
+        #threadListEl
+        class="m-0 min-h-0 flex-1 list-none overflow-auto p-1.5 select-none"
         role="listbox"
         aria-label="Threads"
         aria-multiselectable="true"
         (scroll)="onThreadListScroll($event)"
+        (pointermove)="onListPointerMove($event)"
+        (pointerup)="onListPointerUp($event)"
+        (pointercancel)="onListPointerUp($event)"
       >
         @for (thread of shell.threads(); track thread.id) {
           <li>
@@ -139,11 +171,13 @@ import { UiShellService } from '../core/ui-shell.service';
               type="button"
               class="thread-row mb-0.5 flex w-full cursor-pointer items-start gap-2 rounded-lg border border-transparent bg-transparent px-2 py-2.5 text-left text-inherit hover:bg-lm-hover data-[selected=true]:border-lm-accent/35 data-[selected=true]:bg-lm-accent/15 data-[checked=true]:border-lm-accent/50 data-[checked=true]:bg-lm-accent/20"
               role="option"
+              [attr.data-thread-id]="thread.id"
               [attr.data-selected]="shell.selectedId() === thread.id"
               [attr.data-checked]="shell.isChecked(thread.id)"
               [attr.aria-selected]="
                 shell.selectedId() === thread.id || shell.isChecked(thread.id)
               "
+              (pointerdown)="onRowPointerDown(thread.id, $event)"
               (click)="onThreadClick(thread.id, $event)"
             >
               <span
@@ -157,15 +191,6 @@ import { UiShellService } from '../core/ui-shell.service';
                   ></span>
                 }
               </span>
-              <span
-                class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[0.65rem]"
-                [class.border-lm-accent]="shell.isChecked(thread.id)"
-                [class.bg-lm-accent]="shell.isChecked(thread.id)"
-                [class.text-white]="shell.isChecked(thread.id)"
-                [class.border-lm-border]="!shell.isChecked(thread.id)"
-                aria-hidden="true"
-                >{{ shell.isChecked(thread.id) ? '✓' : '' }}</span
-              >
               <span class="min-w-0 flex-1">
                 <div class="mb-0.5 flex justify-between gap-2">
                   <span
@@ -259,7 +284,34 @@ export class ThreadList {
   protected readonly shell = inject(UiShellService);
   private readonly injector = inject(Injector);
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+  private readonly threadListEl = viewChild<ElementRef<HTMLUListElement>>('threadListEl');
   private threadListNearTopArmed = true;
+
+  /** Active press that may become drag-select. */
+  private dragState: {
+    startId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    didDrag: boolean;
+    lastId: string;
+  } | null = null;
+
+  /** Suppress the synthetic click after a successful drag-select. */
+  private suppressClick = false;
+
+  protected readonly statusBannerText = computed(() => {
+    const msg = this.shell.statusMessage();
+    if (msg) return msg;
+    if (!this.shell.undoAvailable()) return '';
+    const n = this.shell.undoCount();
+    return n > 1 ? `Archived · ${n} undos` : 'Archived';
+  });
+
+  protected readonly undoButtonLabel = computed(() => {
+    const n = this.shell.undoCount();
+    return n > 1 ? `Undo (${n})` : 'Undo';
+  });
 
   constructor() {
     effect(() => {
@@ -281,7 +333,78 @@ export class ThreadList {
     this.shell.setSearchQuery((event.target as HTMLInputElement).value);
   }
 
+  onRowPointerDown(id: string, event: PointerEvent): void {
+    // Left button only; modifiers use the existing click path.
+    if (event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+
+    this.dragState = {
+      startId: id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      didDrag: false,
+      lastId: id,
+    };
+
+    const list = this.threadListEl()?.nativeElement;
+    list?.setPointerCapture?.(event.pointerId);
+  }
+
+  onListPointerMove(event: PointerEvent): void {
+    const state = this.dragState;
+    if (!state || event.pointerId !== state.pointerId) return;
+    // Only while primary button held
+    if ((event.buttons & 1) === 0) return;
+
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    const moved = Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
+
+    const underId = this.threadIdFromPoint(event.clientX, event.clientY) ?? state.lastId;
+
+    if (!state.didDrag) {
+      if (!moved && underId === state.startId) return;
+      // Enter drag-select mode: range from origin through current row
+      state.didDrag = true;
+      this.shell.setCheckedRange(state.startId, underId);
+      state.lastId = underId;
+    } else if (underId !== state.lastId) {
+      this.shell.setCheckedRange(state.startId, underId);
+      state.lastId = underId;
+    }
+
+    this.maybeAutoScroll(event.clientY);
+  }
+
+  onListPointerUp(event: PointerEvent): void {
+    const state = this.dragState;
+    if (!state || event.pointerId !== state.pointerId) return;
+
+    if (state.didDrag) {
+      this.suppressClick = true;
+      // Keep multi-select; focus last row without clearing checks
+      if (state.lastId) {
+        void this.shell.selectThread(state.lastId);
+      }
+    }
+
+    const list = this.threadListEl()?.nativeElement;
+    try {
+      list?.releasePointerCapture?.(event.pointerId);
+    } catch {
+      /* already released */
+    }
+    this.dragState = null;
+  }
+
   onThreadClick(id: string, event: MouseEvent): void {
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     event.preventDefault();
     void this.shell.onThreadListClick(id, {
       metaKey: event.metaKey,
@@ -304,6 +427,24 @@ export class ThreadList {
       }
     } else if (el.scrollTop > 80) {
       this.threadListNearTopArmed = false;
+    }
+  }
+
+  private threadIdFromPoint(clientX: number, clientY: number): string | null {
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return null;
+    const row = el.closest('[data-thread-id]') as HTMLElement | null;
+    return row?.dataset['threadId'] ?? null;
+  }
+
+  private maybeAutoScroll(clientY: number): void {
+    const list = this.threadListEl()?.nativeElement;
+    if (!list) return;
+    const rect = list.getBoundingClientRect();
+    if (clientY < rect.top + DRAG_SCROLL_EDGE_PX) {
+      list.scrollTop -= DRAG_SCROLL_STEP_PX;
+    } else if (clientY > rect.bottom - DRAG_SCROLL_EDGE_PX) {
+      list.scrollTop += DRAG_SCROLL_STEP_PX;
     }
   }
 }

@@ -1,8 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { draftReply, resolveAiMode, summarizeThread } from '../ai/provider.js';
 import { appConfig, googleConfigured } from '../config.js';
+import {
+  GmailAuthExpiredError,
+  isGmailAuthExpired,
+} from '../gmail/auth-errors.js';
 import {
   deleteAccount,
   getActiveAccount,
@@ -12,6 +16,7 @@ import {
 } from '../db/accounts.js';
 import { publish, subscribe } from '../events/bus.js';
 import { downloadAttachment } from '../gmail/attachments.js';
+import { contentDispositionHeader } from '../gmail/content-disposition.js';
 import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
 import {
   hydrateThreadFromGmail,
@@ -27,12 +32,47 @@ import {
 } from '../gmail/sync.js';
 import {
   getThreadDetail,
+  listLabels,
   listThreads,
   suggestContacts,
+  type ThreadListView,
 } from '../mail/queries.js';
+import {
+  createMailView,
+  deleteMailView,
+  listMailViews,
+} from '../mail/views.js';
 import { buildDailySummary } from '../summary/daily.js';
 
 export const api = new Hono();
+
+/** Map Gmail OAuth expiry to 401 so the UI can open sign-in. */
+function jsonGmailError(
+  c: Context,
+  e: unknown,
+  fallback = 'request_failed',
+) {
+  if (e instanceof GmailAuthExpiredError || isGmailAuthExpired(e)) {
+    return c.json(
+      {
+        error: 'Gmail session expired. Sign in again.',
+        code: 'auth_expired',
+      },
+      401,
+    );
+  }
+  const message = e instanceof Error ? e.message : fallback;
+  if (isGmailAuthExpired(message)) {
+    return c.json(
+      {
+        error: 'Gmail session expired. Sign in again.',
+        code: 'auth_expired',
+      },
+      401,
+    );
+  }
+  return c.json({ error: message }, 400);
+}
 
 api.get('/health', (c) => {
   const account = getActiveAccount();
@@ -227,19 +267,51 @@ api.post('/sync', async (c) => {
       newMail: result.newMail ?? [],
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'sync_failed';
-    return c.json({ error: message }, 400);
+    return jsonGmailError(c, e, 'sync_failed');
   }
 });
 
 api.get('/threads', (c) => {
   const q = c.req.query('q') ?? undefined;
-  const view = (c.req.query('view') as 'inbox' | 'starred' | 'all') || 'inbox';
+  const view = (c.req.query('view') as ThreadListView) || 'inbox';
+  const label = c.req.query('label') ?? undefined;
   return c.json({
-    ...listThreads({ q, view }),
+    ...listThreads({ q, view, label }),
     searchHasMore: searchHasMorePages(),
     inboxHasMore: inboxHasMorePages(),
   });
+});
+
+/** Distinct Gmail labels present in the local cache. */
+api.get('/labels', (c) => {
+  return c.json({ labels: listLabels() });
+});
+
+/** Named Gmail-query views (custom sidebar entries). */
+api.get('/views', (c) => {
+  return c.json({ views: listMailViews() });
+});
+
+api.post('/views', async (c) => {
+  const body = await c.req
+    .json()
+    .catch(() => ({} as { name?: string; query?: string }));
+  try {
+    const view = createMailView(body.name ?? '', body.query ?? '');
+    return c.json({ ok: true, view });
+  } catch (e) {
+    return c.json(
+      { error: e instanceof Error ? e.message : 'view_create_failed' },
+      400,
+    );
+  }
+});
+
+api.delete('/views/:id', (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isFinite(id)) return c.json({ error: 'invalid id' }, 400);
+  const ok = deleteMailView(id);
+  return c.json({ ok });
 });
 
 /**
@@ -263,10 +335,7 @@ api.post('/search', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'search_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'search_failed');
   }
 });
 
@@ -282,12 +351,15 @@ api.get('/contacts/suggest', (c) => {
 api.get('/threads/:id', async (c) => {
   // IDs are composite "accountId:gmailThreadId" — client encodes them
   const id = decodeURIComponent(c.req.param('id'));
-  let detail = getThreadDetail(id);
-  // Thread row without messages (or missing) — pull full thread from Gmail once
-  if (!detail || detail.messages.length === 0) {
-    const ok = await hydrateThreadFromGmail(id);
-    if (ok) detail = getThreadDetail(id);
+  // Always re-pull the full Gmail thread on open so conversation history is complete.
+  // Local cache can lag after partial sync, send, or multi-account switches — only
+  // hydrating when empty left reply threads looking like a single “You” bubble.
+  try {
+    await hydrateThreadFromGmail(id);
+  } catch (e) {
+    console.warn('[threads] hydrate failed', id, e);
   }
+  const detail = getThreadDetail(id);
   if (!detail) return c.json({ error: 'not_found' }, 404);
   return c.json(detail);
 });
@@ -302,10 +374,7 @@ api.post('/threads/:id/archive', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'archive_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'archive_failed');
   }
 });
 
@@ -320,10 +389,7 @@ api.post('/threads/:id/unarchive', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'unarchive_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'unarchive_failed');
   }
 });
 
@@ -337,10 +403,7 @@ api.post('/threads/:id/read', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'read_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'read_failed');
   }
 });
 
@@ -354,10 +417,7 @@ api.post('/threads/:id/unread', async (c) => {
     });
     return c.json({ ok: true });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'unread_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'unread_failed');
   }
 });
 
@@ -375,10 +435,7 @@ api.post('/threads/:id/star', async (c) => {
     });
     return c.json({ ok: true, starred });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'star_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'star_failed');
   }
 });
 
@@ -401,10 +458,7 @@ api.post('/threads/:id/reply', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'send_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'send_failed');
   }
 });
 
@@ -432,27 +486,37 @@ api.post('/messages/send', async (c) => {
     });
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'send_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'send_failed');
   }
 });
 
 api.get('/attachments/:id', async (c) => {
   try {
-    const file = await downloadAttachment(c.req.param('id'));
-    c.header('Content-Type', file.mimeType);
-    c.header(
-      'Content-Disposition',
-      `attachment; filename="${file.filename.replace(/"/g, '')}"`,
+    const file = await downloadAttachment(decodeURIComponent(c.req.param('id')));
+    const forceDownload = c.req.query('download') === '1';
+    const mime = file.mimeType || 'application/octet-stream';
+    const canInline =
+      mime.startsWith('image/') ||
+      mime === 'application/pdf' ||
+      mime.startsWith('text/') ||
+      mime === 'application/json' ||
+      mime === 'application/xml';
+    // Inline for in-app preview; ?download=1 forces save.
+    // filename must be ASCII-safe (macOS screenshots use U+202F etc.)
+    const disposition = contentDispositionHeader(
+      file.filename,
+      !forceDownload && canInline ? 'inline' : 'attachment',
     );
+    c.header('Content-Type', mime);
+    c.header('Content-Disposition', disposition);
+    c.header('Cache-Control', 'private, max-age=3600');
+    // Allow sandboxed iframe (srcdoc) + viewer iframe to load from core
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Cross-Origin-Resource-Policy', 'cross-origin');
+    c.header('X-Content-Type-Options', 'nosniff');
     return c.body(new Uint8Array(file.data));
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'download_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'download_failed');
   }
 });
 
@@ -461,10 +525,7 @@ api.post('/summary/daily', (c) => {
     const result = buildDailySummary();
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'summary_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'summary_failed');
   }
 });
 
@@ -475,10 +536,7 @@ api.post('/ai/summarize', async (c) => {
     const result = await summarizeThread(body.threadId);
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'ai_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'ai_failed');
   }
 });
 
@@ -489,10 +547,7 @@ api.post('/ai/draft', async (c) => {
     const result = await draftReply(body.threadId);
     return c.json({ ok: true, ...result });
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'ai_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'ai_failed');
   }
 });
 
@@ -542,10 +597,7 @@ api.post('/mcp/call', async (c) => {
     }
     return c.json({ error: 'unknown_tool' }, 400);
   } catch (e) {
-    return c.json(
-      { error: e instanceof Error ? e.message : 'mcp_failed' },
-      400,
-    );
+    return jsonGmailError(c, e, 'mcp_failed');
   }
 });
 
@@ -598,6 +650,8 @@ function authResultPage(opts: {
   body: string;
 }): string {
   const accent = opts.ok ? '#3dd6c6' : '#f07178';
+  // Browsers only allow window.close() for script-opened popups. OAuth opens in a
+  // normal system-browser tab (often with noopener), so we fall back to a shortcut hint.
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -610,13 +664,77 @@ function authResultPage(opts: {
   p{margin:.5rem 0;line-height:1.5;color:#8b95a8}
   p strong{color:#e8ecf4}
   .hint{font-size:.85rem;margin-top:1.25rem}
-  button{margin-top:1rem;padding:.5rem 1rem;border-radius:8px;border:0;background:#7c6af7;color:#fff;font:inherit;cursor:pointer}
+  .fallback{display:none;margin-top:1rem;padding:.75rem 1rem;border-radius:8px;border:1px solid #2a3344;background:#0b0d12;font-size:.9rem;color:#e8ecf4}
+  .fallback kbd{display:inline-block;padding:.15rem .45rem;border-radius:4px;border:1px solid #3a4558;background:#1a2030;font:600 .85rem ui-monospace,Menlo,monospace;color:#fff}
+  .actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem;align-items:center}
+  button{padding:.55rem 1rem;border-radius:8px;border:0;background:#7c6af7;color:#fff;font:inherit;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button.secondary{background:transparent;border:1px solid #2a3344;color:#e8ecf4}
 </style></head>
 <body><div class="card">
   <h1>${opts.title}</h1>
   <p>${opts.body}</p>
-  <p class="hint">This window can be closed. Local Mail stays in the Dock app.</p>
-  <button type="button" onclick="window.close()">Close tab</button>
+  <p class="hint">Local Mail stays in the Dock app — you only need to leave this browser tab.</p>
+  <div class="actions">
+    <button type="button" id="closeBtn">Close tab</button>
+    <button type="button" class="secondary" id="doneBtn" hidden>Done — return to Local Mail</button>
+  </div>
+  <div class="fallback" id="fallback" role="status">
+    Browsers block scripts from closing this tab. Press <kbd id="shortcut">⌘W</kbd> (or click the tab’s ×).
+  </div>
 </div>
+<script>
+(function () {
+  var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
+    (navigator.userAgentData && navigator.userAgentData.platform === 'macOS');
+  var shortcut = isMac ? '⌘W' : 'Ctrl+W';
+  var shortcutEl = document.getElementById('shortcut');
+  if (shortcutEl) shortcutEl.textContent = shortcut;
+
+  function showFallback() {
+    var fb = document.getElementById('fallback');
+    var btn = document.getElementById('closeBtn');
+    var done = document.getElementById('doneBtn');
+    if (fb) fb.style.display = 'block';
+    if (btn) {
+      btn.textContent = 'Press ' + shortcut;
+      btn.title = 'Browsers only allow Close for popups they opened themselves';
+    }
+    if (done) done.hidden = false;
+  }
+
+  function tryClose() {
+    try {
+      if (window.opener && !window.opener.closed) {
+        try { window.opener.focus(); } catch (e) {}
+      }
+    } catch (e) {}
+    // Standard close (works for true popups only)
+    window.close();
+    // Last-ditch: replace with blank then close (still blocked in most browsers)
+    try {
+      window.open('', '_self');
+      window.close();
+    } catch (e) {}
+    setTimeout(showFallback, 150);
+  }
+
+  var closeBtn = document.getElementById('closeBtn');
+  var doneBtn = document.getElementById('doneBtn');
+  if (closeBtn) closeBtn.addEventListener('click', tryClose);
+  if (doneBtn) doneBtn.addEventListener('click', function () {
+    // Soft dismiss: blank the page so user knows auth is finished
+    document.body.innerHTML =
+      '<div class="card" style="text-align:center">' +
+      '<h1 style="color:${accent}">Signed in</h1>' +
+      '<p style="color:#8b95a8">Close this tab with <kbd style="padding:.15rem .45rem;border-radius:4px;border:1px solid #3a4558;background:#1a2030;font:600 .85rem ui-monospace,Menlo,monospace;color:#fff">' +
+      shortcut +
+      '</kbd> and return to Local Mail.</p></div>';
+  });
+
+  // Auto-attempt once on success (no-op when browser blocks it)
+  ${opts.ok ? 'setTimeout(tryClose, 400);' : ''}
+})();
+</script>
 </body></html>`;
 }

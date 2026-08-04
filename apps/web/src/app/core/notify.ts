@@ -1,9 +1,10 @@
 /**
  * Cross-platform notifications:
- * - Tauri Dock app → native macOS Notification Center
- * - Browser / fallback → Web Notification API
+ * - Tauri Dock app → native plugin (`plugin:notification|notify`)
+ * - Fallback → Web Notification API
  *
- * Never silently drop: if Tauri path fails, try Web API.
+ * Prefer the native invoke path: the plugin’s JS `sendNotification()` only wraps
+ * `new Notification()`, which is unreliable if the polyfill hasn’t loaded yet.
  */
 
 export interface MailNotifyPayload {
@@ -11,6 +12,14 @@ export interface MailNotifyPayload {
   body: string;
   /** Local composite thread id — open on click when supported. */
   threadId?: string;
+}
+
+export type NotifyChannel = 'tauri-native' | 'tauri-api' | 'web' | 'none';
+
+export interface NotifyResult {
+  ok: boolean;
+  channel: NotifyChannel;
+  detail: string;
 }
 
 type OpenThreadHandler = (threadId: string) => void;
@@ -43,8 +52,9 @@ async function ensureTauriPermission(): Promise<boolean> {
     }
     return granted;
   } catch (e) {
-    console.warn('[notify] Tauri notification plugin unavailable', e);
-    return false;
+    console.warn('[notify] Tauri permission check failed', e);
+    // Desktop plugin always grants on the Rust side — try send anyway
+    return isTauri();
   }
 }
 
@@ -92,7 +102,7 @@ function showWebNotification(payload: MailNotifyPayload): boolean {
     return false;
   }
   if (Notification.permission !== 'granted') {
-    console.warn('[notify] Web Notification permission not granted');
+    console.warn('[notify] Web Notification permission not granted:', Notification.permission);
     return false;
   }
 
@@ -117,11 +127,87 @@ function showWebNotification(payload: MailNotifyPayload): boolean {
   }
 }
 
+export type NotifyPermissionState =
+  | 'granted'
+  | 'denied'
+  | 'default'
+  | 'unsupported'
+  | 'tauri-pending';
+
+/** Snapshot of notification permission (best-effort for Settings UI). */
+export async function getNotifyPermissionState(): Promise<{
+  state: NotifyPermissionState;
+  runtime: 'tauri' | 'browser';
+  label: string;
+}> {
+  const runtime: 'tauri' | 'browser' = isTauri() ? 'tauri' : 'browser';
+  if (isTauri()) {
+    try {
+      const { isPermissionGranted } = await import(
+        '@tauri-apps/plugin-notification'
+      );
+      const granted = await isPermissionGranted();
+      if (granted) {
+        return {
+          state: 'granted',
+          runtime,
+          label: 'Dock app · notifications allowed (also check System Settings → Notifications → Local Mail)',
+        };
+      }
+      return {
+        state: 'default',
+        runtime,
+        label: 'Dock app · click Test to request permission',
+      };
+    } catch {
+      return {
+        state: 'unsupported',
+        runtime,
+        label: 'Dock app · notification plugin unavailable — rebuild desktop app',
+      };
+    }
+  }
+  if (typeof Notification === 'undefined') {
+    return {
+      state: 'unsupported',
+      runtime,
+      label: 'Browser · Notification API not available',
+    };
+  }
+  const p = Notification.permission;
+  if (p === 'granted') {
+    return {
+      state: 'granted',
+      runtime,
+      label: 'Browser · allowed (alerts appear under Chrome/Safari, not as “Local Mail”)',
+    };
+  }
+  if (p === 'denied') {
+    return {
+      state: 'denied',
+      runtime,
+      label: 'Browser · blocked — enable in site settings for this origin',
+    };
+  }
+  return {
+    state: 'default',
+    runtime,
+    label: 'Browser · not asked yet — click Test notification',
+  };
+}
+
 /** Request permission early (browser or Tauri). */
 export async function requestNotifyPermission(): Promise<void> {
   if (isTauri()) {
     const ok = await ensureTauriPermission();
     await hookTauriActionOnce();
+    // Also poke native permission command
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('plugin:notification|request_permission');
+    } catch {
+      /* desktop always grants */
+    }
     if (!ok && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       await Notification.requestPermission();
     }
@@ -133,37 +219,81 @@ export async function requestNotifyPermission(): Promise<void> {
 }
 
 /**
- * Show a system notification. Prefer native in Tauri; always fall back to Web API.
+ * Show a system notification. Prefer native Tauri invoke; fall back to plugin API then Web.
  */
-export async function showNotification(payload: MailNotifyPayload): Promise<void> {
+export async function showNotification(
+  payload: MailNotifyPayload,
+): Promise<NotifyResult> {
   const { title, body, threadId } = payload;
   console.info('[notify] show requested', title, body?.slice?.(0, 80));
 
+  const cleanOptions: Record<string, unknown> = {
+    title,
+    body: body || ' ',
+  };
+  if (threadId) {
+    cleanOptions['extra'] = { threadId };
+  }
+
   if (isTauri()) {
+    await hookTauriActionOnce();
+    await ensureTauriPermission();
+
+    // 1) Direct native command — most reliable on macOS Dock builds
     try {
-      const granted = await ensureTauriPermission();
-      await hookTauriActionOnce();
-      if (granted) {
-        const { sendNotification } = await import(
-          '@tauri-apps/plugin-notification'
-        );
-        sendNotification({
-          title,
-          body,
-          extra: threadId ? { threadId } : undefined,
-        });
-        console.info('[notify] Tauri notification sent', title);
-        return;
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        await invoke('plugin:notification|request_permission');
+      } catch {
+        /* ignore */
       }
-      console.warn(
-        '[notify] Tauri permission denied — trying Web Notification fallback',
-      );
+      await invoke('plugin:notification|notify', { options: cleanOptions });
+      console.info('[notify] tauri-native ok', title);
+      return {
+        ok: true,
+        channel: 'tauri-native',
+        detail:
+          'Sent via native plugin. If nothing appears: System Settings → Notifications → Local Mail (banners on), and disable Focus/DND.',
+      };
     } catch (e) {
-      console.warn('[notify] Tauri path failed, trying Web API', e);
+      console.warn('[notify] tauri-native failed', e);
+    }
+
+    // 2) Plugin helper (uses Notification polyfill → same command)
+    try {
+      const { sendNotification } = await import(
+        '@tauri-apps/plugin-notification'
+      );
+      sendNotification({
+        title,
+        body: body || ' ',
+        extra: threadId ? { threadId } : undefined,
+      });
+      console.info('[notify] tauri-api ok', title);
+      return {
+        ok: true,
+        channel: 'tauri-api',
+        detail: 'Sent via Tauri Notification API.',
+      };
+    } catch (e) {
+      console.warn('[notify] tauri-api failed', e);
     }
   }
 
-  showWebNotification(payload);
+  if (showWebNotification(payload)) {
+    return {
+      ok: true,
+      channel: 'web',
+      detail: 'Sent via browser Notification API.',
+    };
+  }
+
+  return {
+    ok: false,
+    channel: 'none',
+    detail:
+      'All channels failed. Use the desktop app (not only the browser), allow notifications in System Settings, and turn off Focus mode.',
+  };
 }
 
 /** Set Dock badge unread count when running under Tauri (no-op in browser). */

@@ -70,4 +70,11 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
+
+CREATE TABLE IF NOT EXISTS mail_views (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 `;

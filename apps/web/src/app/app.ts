@@ -1,6 +1,7 @@
 import { Component, inject, OnInit } from '@angular/core';
 
 import { UiShellService } from './core/ui-shell.service';
+import { AttachmentViewer } from './shell/attachment-viewer';
 import { CommandPalette } from './shell/command-palette';
 import { ComposeWindow } from './shell/compose-window';
 import { ReadingPane } from './shell/reading-pane';
@@ -24,6 +25,7 @@ import { ThreadList } from './shell/thread-list';
     SettingsDialog,
     ShortcutsHelp,
     ComposeWindow,
+    AttachmentViewer,
   ],
   template: `
     <div
@@ -38,6 +40,7 @@ import { ThreadList } from './shell/thread-list';
     <lm-settings-dialog />
     <lm-shortcuts-help />
     <lm-compose-window />
+    <lm-attachment-viewer />
   `,
   styles: `
     :host {
@@ -54,7 +57,7 @@ import { ThreadList } from './shell/thread-list';
   },
 })
 export class App implements OnInit {
-  private readonly shell = inject(UiShellService);
+  protected readonly shell = inject(UiShellService);
 
   ngOnInit(): void {
     void this.shell.bootstrap();

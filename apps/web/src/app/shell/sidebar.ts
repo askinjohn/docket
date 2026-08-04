@@ -1,6 +1,27 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 
 import { UiShellService } from '../core/ui-shell.service';
+
+const LABELS_COLLAPSED_KEY = 'local-mail.sidebar.labelsCollapsed';
+const VIEWS_COLLAPSED_KEY = 'local-mail.sidebar.viewsCollapsed';
+
+function loadCollapsed(key: string, fallback = false): boolean {
+  try {
+    const v = localStorage.getItem(key);
+    if (v === null) return fallback;
+    return v === '1' || v === 'true';
+  } catch {
+    return fallback;
+  }
+}
+
+function saveCollapsed(key: string, collapsed: boolean): void {
+  try {
+    localStorage.setItem(key, collapsed ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
 
 @Component({
   selector: 'lm-sidebar',
@@ -17,7 +38,18 @@ import { UiShellService } from '../core/ui-shell.service';
         <span class="text-sm font-semibold tracking-tight text-lm-text">Local Mail</span>
       </div>
 
-      @if (shell.isConnected()) {
+      @if (shell.coreStatus() === 'auth-expired') {
+        <button
+          type="button"
+          class="mb-2 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+          (click)="shell.connectGmail()"
+        >
+          Sign in again
+        </button>
+        <p class="mb-5 px-1 text-[0.7rem] leading-relaxed text-lm-muted">
+          Gmail session expired. Sign in to load new mail.
+        </p>
+      } @else if (shell.isConnected()) {
         <button
           type="button"
           class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
@@ -40,7 +72,7 @@ import { UiShellService } from '../core/ui-shell.service';
         </button>
       }
 
-      <nav class="flex flex-col gap-0.5 px-0.5">
+      <nav class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-0.5">
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
@@ -66,6 +98,17 @@ import { UiShellService } from '../core/ui-shell.service';
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+          [class.bg-lm-hover]="shell.mailView() === 'sent'"
+          [class.text-lm-text]="shell.mailView() === 'sent'"
+          [class.font-medium]="shell.mailView() === 'sent'"
+          [class.text-lm-muted]="shell.mailView() !== 'sent'"
+          (click)="shell.setMailView('sent')"
+        >
+          Sent
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
           [class.bg-lm-hover]="shell.mailView() === 'all'"
           [class.text-lm-text]="shell.mailView() === 'all'"
           [class.font-medium]="shell.mailView() === 'all'"
@@ -74,10 +117,122 @@ import { UiShellService } from '../core/ui-shell.service';
         >
           All
         </button>
+
+        @if (shell.customViews().length) {
+          <button
+            type="button"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            (click)="toggleViews()"
+            [attr.aria-expanded]="!viewsCollapsed()"
+          >
+            <svg
+              class="size-3 shrink-0 opacity-80 transition-transform duration-150"
+              [class.-rotate-90]="viewsCollapsed()"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            Views
+            <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
+              shell.customViews().length
+            }}</span>
+          </button>
+          @if (!viewsCollapsed()) {
+            @for (v of shell.customViews(); track v.id) {
+              <div class="group flex items-center gap-0.5">
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 truncate rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+                  [class.bg-lm-hover]="
+                    shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                  "
+                  [class.font-medium]="
+                    shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id
+                  "
+                  [class.text-lm-muted]="
+                    !(shell.mailView() === 'custom' && shell.activeCustomViewId() === v.id)
+                  "
+                  [title]="v.query"
+                  (click)="shell.openCustomView(v)"
+                >
+                  {{ v.name }}
+                </button>
+                <button
+                  type="button"
+                  class="hidden shrink-0 rounded px-1.5 text-xs text-lm-muted group-hover:inline hover:bg-lm-hover hover:text-lm-danger"
+                  title="Delete view"
+                  (click)="shell.removeCustomView(v.id); $event.stopPropagation()"
+                >
+                  ×
+                </button>
+              </div>
+            }
+          }
+        }
+
+        @if (navLabels().length) {
+          <button
+            type="button"
+            class="mt-3 mb-0.5 flex w-full items-center gap-1.5 rounded-md px-2.5 py-1 text-left text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase hover:bg-lm-hover hover:text-lm-text"
+            (click)="toggleLabels()"
+            [attr.aria-expanded]="!labelsCollapsed()"
+          >
+            <svg
+              class="size-3 shrink-0 opacity-80 transition-transform duration-150"
+              [class.-rotate-90]="labelsCollapsed()"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M3 4.5 6 7.5 9 4.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            Labels
+            <span class="ml-auto font-normal normal-case tabular-nums opacity-70">{{
+              navLabels().length
+            }}</span>
+          </button>
+          @if (!labelsCollapsed()) {
+            @for (lab of navLabels(); track lab.id) {
+              <button
+                type="button"
+                class="flex w-full items-center justify-between gap-1 rounded-md px-2.5 py-1.5 text-left text-[0.8125rem] transition"
+                [class.bg-lm-hover]="
+                  shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+                "
+                [class.font-medium]="
+                  shell.mailView() === 'label' && shell.activeLabelId() === lab.id
+                "
+                [class.text-lm-muted]="
+                  !(shell.mailView() === 'label' && shell.activeLabelId() === lab.id)
+                "
+                (click)="shell.openLabel(lab.id)"
+              >
+                <span class="min-w-0 truncate">{{ lab.name }}</span>
+                <span class="shrink-0 text-[0.65rem] tabular-nums opacity-70">{{
+                  lab.count
+                }}</span>
+              </button>
+            }
+          }
+        }
       </nav>
 
       <div class="mt-auto space-y-1 border-t border-lm-border/60 pt-3">
-        @if (shell.isConnected()) {
+        @if (shell.isConnected() || shell.coreStatus() === 'auth-expired') {
           <div class="relative">
             <button
               type="button"
@@ -98,19 +253,59 @@ import { UiShellService } from '../core/ui-shell.service';
 
             @if (shell.accountMenuOpen()) {
               <div
-                class="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
+                class="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[min(50vh,320px)] overflow-y-auto rounded-lg border border-lm-border bg-lm-panel py-1 shadow-xl"
               >
-                @if (shell.accounts().length > 1) {
+                <div
+                  class="px-3 pt-2 pb-1 text-[0.65rem] font-semibold tracking-wide text-lm-muted uppercase"
+                >
+                  Accounts
+                </div>
+                @if (shell.accounts().length) {
                   @for (acc of shell.accounts(); track acc.id) {
                     <button
                       type="button"
-                      class="block w-full truncate px-3 py-2 text-left text-xs hover:bg-lm-hover"
-                      [class.text-lm-accent]="shell.activeAccountId() === acc.id"
+                      class="flex w-full items-center gap-2 truncate px-3 py-2 text-left text-xs hover:bg-lm-hover"
+                      [class.text-lm-accent]="shell.isActiveAccount(acc)"
+                      [class.font-semibold]="shell.isActiveAccount(acc)"
+                      [class.bg-lm-accent/10]="shell.isActiveAccount(acc)"
                       (click)="shell.switchAccount(acc.id); shell.closeAccountMenu()"
+                      [title]="
+                        shell.isActiveAccount(acc)
+                          ? 'Current account'
+                          : 'Switch to ' + acc.email
+                      "
                     >
-                      {{ acc.email }}
+                      <span class="min-w-0 flex-1 truncate">{{ acc.email }}</span>
+                      @if (shell.isActiveAccount(acc)) {
+                        <span class="shrink-0 text-[0.65rem] text-lm-accent">✓</span>
+                      }
                     </button>
                   }
+                } @else if (shell.accountEmail()) {
+                  <div
+                    class="flex items-center gap-2 truncate px-3 py-2 text-xs font-semibold text-lm-accent"
+                  >
+                    <span class="min-w-0 flex-1 truncate">{{ shell.accountEmail() }}</span>
+                    <span class="shrink-0 text-[0.65rem]">✓</span>
+                  </div>
+                }
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-lm-accent hover:bg-lm-hover"
+                  (click)="shell.addAccount(); shell.closeAccountMenu()"
+                  title="Connect another Gmail account"
+                >
+                  + Add account
+                </button>
+                <div class="my-1 border-t border-lm-border"></div>
+                @if (shell.coreStatus() === 'auth-expired') {
+                  <button
+                    type="button"
+                    class="block w-full px-3 py-2 text-left text-xs font-semibold text-lm-accent hover:bg-lm-hover"
+                    (click)="shell.connectGmail(); shell.closeAccountMenu()"
+                  >
+                    Sign in again
+                  </button>
                   <div class="my-1 border-t border-lm-border"></div>
                 }
                 <button
@@ -126,13 +321,6 @@ import { UiShellService } from '../core/ui-shell.service';
                   (click)="shell.runDailySummary(); shell.closeAccountMenu()"
                 >
                   Daily summary
-                </button>
-                <button
-                  type="button"
-                  class="block w-full px-3 py-2 text-left text-xs hover:bg-lm-hover"
-                  (click)="shell.addAccount(); shell.closeAccountMenu()"
-                >
-                  Add account
                 </button>
                 <button
                   type="button"
@@ -188,8 +376,38 @@ import { UiShellService } from '../core/ui-shell.service';
 export class Sidebar {
   protected readonly shell = inject(UiShellService);
 
+  /** Collapsed by default when there are many labels (saves sidebar space). */
+  protected readonly labelsCollapsed = signal(
+    loadCollapsed(LABELS_COLLAPSED_KEY, true),
+  );
+  protected readonly viewsCollapsed = signal(
+    loadCollapsed(VIEWS_COLLAPSED_KEY, false),
+  );
+
   protected readonly accountInitial = computed(() => {
     const email = this.shell.accountEmail() || '?';
     return email.charAt(0).toUpperCase();
   });
+
+  /** Hide system labels that already have primary nav entries. */
+  protected readonly navLabels = computed(() => {
+    const skip = new Set(['INBOX', 'STARRED', 'SENT', 'DRAFT', 'TRASH', 'SPAM']);
+    return this.shell.labels().filter((l) => !skip.has(l.id)).slice(0, 24);
+  });
+
+  toggleLabels(): void {
+    this.labelsCollapsed.update((v) => {
+      const next = !v;
+      saveCollapsed(LABELS_COLLAPSED_KEY, next);
+      return next;
+    });
+  }
+
+  toggleViews(): void {
+    this.viewsCollapsed.update((v) => {
+      const next = !v;
+      saveCollapsed(VIEWS_COLLAPSED_KEY, next);
+      return next;
+    });
+  }
 }

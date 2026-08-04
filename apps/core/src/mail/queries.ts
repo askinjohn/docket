@@ -1,3 +1,4 @@
+import { appConfig } from '../config.js';
 import { getActiveAccount } from '../db/accounts.js';
 import {
   getDb,
@@ -48,15 +49,25 @@ function formatTime(ms: number | null): string {
   });
 }
 
+export type ThreadListView =
+  | 'inbox'
+  | 'starred'
+  | 'all'
+  | 'sent'
+  | 'label';
+
 export function listThreads(options?: {
   q?: string;
-  view?: 'inbox' | 'starred' | 'all';
+  view?: ThreadListView;
+  /** Gmail label id when view === 'label' (e.g. CATEGORY_UPDATES, Label_12). */
+  label?: string;
 }) {
   const account = getActiveAccount();
   if (!account) return { account: null, threads: [] as unknown[] };
 
   const view = options?.view ?? 'inbox';
   const q = (options?.q ?? '').trim().toLowerCase();
+  const label = (options?.label ?? '').trim();
 
   let rows: ThreadRow[];
   if (view === 'starred') {
@@ -73,6 +84,25 @@ export function listThreads(options?: {
          ORDER BY last_message_at DESC LIMIT 250`,
       )
       .all(account.id) as ThreadRow[];
+  } else if (view === 'sent') {
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads
+         WHERE account_id = ?
+           AND label_ids LIKE '%SENT%'
+         ORDER BY last_message_at DESC LIMIT 250`,
+      )
+      .all(account.id) as ThreadRow[];
+  } else if (view === 'label' && label) {
+    // label_ids stored as JSON array text — substring match is good enough for Gmail ids
+    rows = getDb()
+      .prepare(
+        `SELECT * FROM threads
+         WHERE account_id = ?
+           AND label_ids LIKE ?
+         ORDER BY last_message_at DESC LIMIT 250`,
+      )
+      .all(account.id, `%${label}%`) as ThreadRow[];
   } else {
     rows = getDb()
       .prepare(
@@ -116,6 +146,68 @@ export function listThreads(options?: {
   };
 }
 
+/** Labels seen in the local cache for the active account (plus common system ones). */
+export function listLabels(): {
+  id: string;
+  name: string;
+  system: boolean;
+  count: number;
+}[] {
+  const account = getActiveAccount();
+  if (!account) return [];
+
+  const counts = new Map<string, number>();
+  const rows = getDb()
+    .prepare(`SELECT label_ids FROM threads WHERE account_id = ?`)
+    .all(account.id) as { label_ids: string }[];
+
+  for (const row of rows) {
+    let ids: string[] = [];
+    try {
+      ids = JSON.parse(row.label_ids || '[]') as string[];
+    } catch {
+      ids = [];
+    }
+    for (const id of ids) {
+      if (!id || id === 'UNREAD') continue;
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+
+  const systemNames: Record<string, string> = {
+    INBOX: 'Inbox',
+    STARRED: 'Starred',
+    SENT: 'Sent',
+    DRAFT: 'Drafts',
+    TRASH: 'Trash',
+    SPAM: 'Spam',
+    IMPORTANT: 'Important',
+    CATEGORY_PERSONAL: 'Personal',
+    CATEGORY_SOCIAL: 'Social',
+    CATEGORY_PROMOTIONS: 'Promotions',
+    CATEGORY_UPDATES: 'Updates',
+    CATEGORY_FORUMS: 'Forums',
+  };
+
+  const out: { id: string; name: string; system: boolean; count: number }[] =
+    [];
+  for (const [id, count] of counts) {
+    const system = Boolean(systemNames[id]) || id.startsWith('CATEGORY_');
+    out.push({
+      id,
+      name: systemNames[id] ?? (id.startsWith('Label_') ? id : id),
+      system,
+      count,
+    });
+  }
+
+  out.sort((a, b) => {
+    if (a.system !== b.system) return a.system ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return out;
+}
+
 export function getThreadDetail(threadId: string) {
   const account = getActiveAccount();
   if (!account) return null;
@@ -132,8 +224,11 @@ export function getThreadDetail(threadId: string) {
     .all(threadId) as MessageRow[];
 
   const attStmt = getDb().prepare(
-    `SELECT * FROM attachments WHERE message_id = ? AND is_inline = 0`,
+    `SELECT * FROM attachments WHERE message_id = ?`,
   );
+
+  // Absolute core URL so cid: rewrites work inside sandboxed iframe srcdoc
+  const attachBase = `http://${appConfig.host}:${appConfig.port}/attachments`;
 
   return {
     id: thread.id,
@@ -142,15 +237,22 @@ export function getThreadDetail(threadId: string) {
     time: formatTime(thread.last_message_at),
     unread: Boolean(thread.unread),
     messages: messages.map((m) => {
-      const atts = attStmt.all(m.id) as AttachmentRow[];
+      const allAtts = attStmt.all(m.id) as AttachmentRow[];
+      const { html: bodyHtml } = rewriteCidImages(
+        m.body_html || '',
+        allAtts,
+        attachBase,
+      );
+      // Always return attachments as chips (even if inlined) so the user can
+      // still open the viewer if the iframe image fails to load.
       return {
         id: m.id,
         from: m.from_header,
         to: m.to_header,
         time: formatTime(m.internal_date ?? m.date_ms),
         body: m.body_text || m.snippet || stripHtml(m.body_html),
-        bodyHtml: m.body_html,
-        attachments: atts.map((a) => ({
+        bodyHtml,
+        attachments: allAtts.map((a) => ({
           id: a.id,
           name: a.filename || 'attachment',
           sizeLabel: formatSize(a.size_bytes),
@@ -160,6 +262,123 @@ export function getThreadDetail(threadId: string) {
       };
     }),
   };
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Map cid:foo → local attachment URL so inline images render in the UI.
+ *
+ * Falls back when content_id was never stored (older syncs):
+ * 1) match Content-ID
+ * 2) match img alt to filename
+ * 3) map remaining cids → remaining image attachments in order
+ */
+export function rewriteCidImages(
+  html: string,
+  atts: AttachmentRow[],
+  attachBase: string,
+): { html: string; usedIds: Set<string> } {
+  const usedIds = new Set<string>();
+  if (!html || !atts.length) return { html, usedIds };
+
+  let out = html;
+  const cidRefs = [
+    ...html.matchAll(/\bcid:([^"'\s>]+)/gi),
+  ].map((m) => m[1]!.replace(/^<|>$/g, '').trim());
+  const uniqueCids = [...new Set(cidRefs.filter(Boolean))];
+  if (!uniqueCids.length) return { html, usedIds };
+
+  const byCid = new Map<string, AttachmentRow>();
+  for (const a of atts) {
+    if (!a.content_id) continue;
+    const key = a.content_id.replace(/^<|>$/g, '').trim().toLowerCase();
+    if (key) byCid.set(key, a);
+  }
+
+  const images = () =>
+    atts.filter(
+      (a) =>
+        (a.mime_type || '').startsWith('image/') && !usedIds.has(a.id),
+    );
+
+  for (const cid of uniqueCids) {
+    let att = byCid.get(cid.toLowerCase());
+
+    // alt="CleanShot ….png" near this cid
+    if (!att) {
+      const imgTag =
+        html.match(
+          new RegExp(
+            `<img[^>]*\\bsrc=["']cid:${escapeRegExp(cid)}["'][^>]*>`,
+            'i',
+          ),
+        )?.[0] ??
+        html.match(
+          new RegExp(
+            `<img[^>]*\\bsrc=["']cid:${escapeRegExp(cid)}["'][^>]*>`,
+            'i',
+          ),
+        )?.[0];
+      // also try alt before src order
+      const loose =
+        imgTag ||
+        [
+          ...html.matchAll(/<img\b[^>]*>/gi),
+        ].find((m) =>
+          new RegExp(`cid:${escapeRegExp(cid)}`, 'i').test(m[0]),
+        )?.[0];
+      if (loose) {
+        const alt = loose.match(/\balt=["']([^"']+)["']/i)?.[1]?.trim();
+        if (alt) {
+          att =
+            atts.find(
+              (a) =>
+                a.filename === alt ||
+                (a.filename &&
+                  (alt.includes(a.filename) || a.filename.includes(alt))),
+            ) ?? undefined;
+        }
+      }
+    }
+
+    // single leftover image
+    if (!att) {
+      const imgs = images();
+      if (imgs.length === 1) att = imgs[0];
+    }
+
+    if (!att) continue;
+
+    const url = `${attachBase}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(`cid:${escapeRegExp(cid)}`, 'gi'),
+      url,
+    );
+    usedIds.add(att.id);
+  }
+
+  // Order fallback for any cids still present
+  const still = [...out.matchAll(/\bcid:([^"'\s>]+)/gi)].map((m) =>
+    m[1]!.replace(/^<|>$/g, '').trim(),
+  );
+  const stillUnique = [...new Set(still.filter(Boolean))];
+  const leftoverImages = images();
+  for (let i = 0; i < stillUnique.length; i++) {
+    const att = leftoverImages[i];
+    const cid = stillUnique[i]!;
+    if (!att) break;
+    const url = `${attachBase}/${encodeURIComponent(att.id)}`;
+    out = out.replace(
+      new RegExp(`cid:${escapeRegExp(cid)}`, 'gi'),
+      url,
+    );
+    usedIds.add(att.id);
+  }
+
+  return { html: out, usedIds };
 }
 
 function stripHtml(html: string): string {

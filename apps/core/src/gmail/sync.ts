@@ -48,15 +48,49 @@ function collectParts(
 ): void {
   if (!part) return;
   const mime = part.mimeType ?? '';
-  if (part.filename && part.body?.attachmentId) {
+  const headers = headerMap(part.headers);
+  // Gmail may use Content-ID or X-Attachment-Id
+  const rawCid =
+    headers.get('content-id') ??
+    headers.get('content-id'.toLowerCase()) ??
+    headers.get('x-attachment-id') ??
+    null;
+  const contentId = rawCid
+    ? rawCid.replace(/^<|>$/g, '').trim() || null
+    : null;
+  const disposition = (headers.get('content-disposition') ?? '').toLowerCase();
+  let filename =
+    part.filename ||
+    disposition.match(/filename\*=(?:UTF-8''|utf-8'')([^;]+)/i)?.[1]?.trim() ||
+    disposition.match(/filename="([^"]+)"/i)?.[1]?.trim() ||
+    disposition.match(/filename=([^;\s]+)/i)?.[1]?.trim() ||
+    '';
+  try {
+    if (filename.includes('%')) filename = decodeURIComponent(filename);
+  } catch {
+    /* keep raw */
+  }
+
+  // Inline images often have Content-ID + attachmentId (and sometimes no filename)
+  if (part.body?.attachmentId && (filename || contentId || mime.startsWith('image/'))) {
+    const isInline =
+      disposition.includes('inline') ||
+      Boolean(
+        contentId &&
+          (mime.startsWith('image/') || !disposition.includes('attachment')),
+      ) ||
+      // Gmail inline screenshots: image/* part with attachmentId inside multipart/related
+      (mime.startsWith('image/') && !disposition.includes('attachment'));
     acc.attachments.push({
       id: `${messageId}:${part.body.attachmentId}`,
-      filename: part.filename,
+      filename:
+        filename ||
+        (contentId ? `inline-${contentId.slice(0, 12)}` : 'attachment'),
       mime_type: mime || 'application/octet-stream',
       size_bytes: part.body.size ?? 0,
       gmail_attachment_id: part.body.attachmentId,
-      content_id: null,
-      is_inline: 0,
+      content_id: contentId,
+      is_inline: isInline ? 1 : 0,
     });
   }
   if (mime === 'text/plain' && part.body?.data) {
