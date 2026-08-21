@@ -8,7 +8,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "mcp": "tsx src/mcp-stdio.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/workflow/cron.test.ts src/workflow/match.test.ts src/workflow/suggest.test.ts src/workflow/harness.test.ts src/mail/addresses.test.ts"
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"

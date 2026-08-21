@@ -1,156 +1,161 @@
-# Local Mail 📬
+# Local Mail
 
-> **A local-first, privacy-focused Gmail client for your laptop.**  
-> Built with **Angular 22**, **Tauri 2**, and a **Node.js Local Core** (`127.0.0.1`). Inspired by Superhuman UX—blazing fast, keyboard-driven, and completely free to run. Not a multi-tenant SaaS.
+A **local-first Gmail client** that runs on your laptop: Angular 22 UI, a Node core on `127.0.0.1`, and an optional Tauri 2 Dock app. Superhuman-inspired keyboard triage. Not a SaaS — mail, tokens, and models stay on your machine.
 
-[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.22.3-brightgreen.svg)](https://nodejs.org/)
-[![Angular](https://img.shields.io/badge/Angular-22%20(Signals)-dd0031.svg)](https://angular.dev/)
-[![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## What it is
 
----
+- **Gmail only (v1)** via the Gmail API (OAuth). Archive, labels, star, send, reply, reply-all.
+- **Local cache** in SQLite under `~/.local-mail/` (override with `LOCAL_MAIL_DATA_DIR`).
+- **Keyboard-first inbox** — `j`/`k`, `e` archive and stay on the next thread, `z` undo, `c` compose, `r` / `a` reply, `⌘K` command palette, `?` shortcuts.
+- **Layouts** — Settings → Appearance: **List first** (inbox, then click to read) or **Split** (list stays on the side).
+- **Workflows** — describe an automation in English, pick a local (or BYO) model, approve, run in the background. Filing workflows label/archive; question workflows write an answer in a right-hand pane. Stop a run at any time.
+- **Local AI** — Ollama by default (`~/.local-mail/ai-config.json`). Optional OpenAI-compatible backends. Secrets never go in the Angular bundle.
+- **Desktop** — Tauri 2 window, Notification Center, Dock badge. Browser + core is a valid dev path.
 
-## 🔒 Security & Privacy Guarantees
-
-1. **100% Local Core Binding (`127.0.0.1`)** — The core service binds strictly to localhost. It never advertises on LAN or external networks.
-2. **Secrets Stay Local** — Gmail OAuth refresh tokens, access tokens, and LLM keys live strictly in the local backend or macOS Keychain. Frontend `localStorage` contains zero credentials.
-3. **No Middleman Servers** — All API calls go directly between your laptop and official Google APIs (`gmail.googleapis.com`).
-4. **Sandboxed HTML Render** — External HTML emails are sanitized and isolated in sandboxed standard containers to prevent tracking scripts and malicious execution.
-
----
-
-## ✨ Features
-
-- ⚡ **Superhuman-Inspired Keyboard Navigation** — Move through your inbox with single-key shortcuts (`j`/`k`, `e` archive, `r` reply, `c` compose, `z` undo, `x` multi-select).
-- 💬 **Chat-style reading pane** — Conversation bubbles (yours right, theirs left). Default **Plain** view strips quotes/signatures; toggle **Full email** for original HTML. Rich in-bubble code, tables, and images when useful.
-- ✉️ **Docked Writing Window** — Floating compose with local contact suggestions, `Cc`, and dirty-state safeguards.
-- 🖱️ **Multi-select** — Click-drag range select, ⌘/Ctrl-click, Shift-range, bulk archive; open thread always included in archive.
-- ↩️ **Undo Archive & Auto Sync** — Multi-step undo stack, optimistic UI, quiet background sync.
-- 🔔 **Native macOS Notifications** — Tauri Notification Center + Dock badge, with browser fallback. **Settings → Notifications → Test** to verify.
-- 🎨 **Appearance** — Dark / light / system, accent colors, density, **font family** (sans / system / serif / mono) and **font size** in Settings.
-- 🔐 **Flexible Token Storage** — SQLite or native OS Keychain via `keytar`.
-- 👥 **Multi-account** — Switch Gmail accounts from the sidebar menu; OAuth test users required while the Cloud app is in Testing.
-- 🖼️ **Attachments & images** — Inline/cid images, attachment viewer, remote-image policy (always / ask per thread / never).
-- 🤖 **Local AI & Hybrid Assistance** — Optional Ollama or OpenAI for summaries and draft replies.
-
----
-
-## 🏗 Architecture
+## Architecture
 
 ```
-                                  ┌─────────────────────────────┐
-                                  │      Google Gmail API       │
-                                  └──────────────▲──────────────┘
-                                                 │ HTTPS
-                                  ┌──────────────▼──────────────┐
-                                  │   Local Core (Node/TS)      │
-                                  │   http://127.0.0.1:8787     │
-                                  │ (SQLite / Keychain / Sync)  │
-                                  └──────▲──────────────▲───────┘
-                                         │              │
-                    ┌────────────────────┴──┐        ┌──┴────────────────────┐
-                    │  Angular 22 Web UI    │        │  Tauri 2 macOS App    │
-                    │ http://127.0.0.1:4300 │        │ (Native Dock Window)  │
-                    └───────────────────────┘        └───────────────────────┘
+                    Google Gmail API
+                           │ HTTPS
+                           ▼
+              Local core  http://127.0.0.1:8787
+              Hono · SQLite · OAuth · sync · AI · workflows
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+     Angular 22 (:4300)          Tauri 2 Dock app
+     browser webview             native window + notify
 ```
 
----
+Hard rules: core binds **localhost only**; Gmail refresh tokens and LLM keys live in **core** (SQLite or OS keychain), never `localStorage`; untrusted HTML mail is sandboxed.
 
-## 🚀 Quick Start — One Command
+## Requirements
 
-### Prerequisites
+- Node matching [`.nvmrc`](./.nvmrc) (≥ 22.22.3)
+- npm ≥ 10
+- For desktop: Rust toolchain (Tauri 2)
+- For local AI: [Ollama](https://ollama.com/) (optional)
+- A Google Cloud OAuth client (free) — see [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md)
 
-- **Node.js** `≥ 22.22.3` (matching `.nvmrc`)
-- **npm** `≥ 10.0.0`
-
-### 1. Clone & Run
+## Quick start
 
 ```bash
 git clone https://github.com/askinjohn/local-mail.git
 cd local-mail
-
-# Enable Node 22
 nvm use
-
-# Single-command install & start (Core + Web UI)
-./up.sh
+./up.sh                 # core + browser UI on http://127.0.0.1:4300
+# or
+./up.sh --desktop       # core + Tauri Dock window
 ```
 
-`./up.sh` automatically installs npm dependencies across all workspaces, creates `apps/core/.env` if missing, starts the backend, and opens **http://127.0.0.1:4300**.
+`./up.sh` installs workspace deps if needed, writes `apps/core/.env` from the example, prompts for OAuth if missing, then starts the stack.
 
-### 2. Run Modes
+| Command | What it does |
+| --- | --- |
+| `./up.sh` | Core + Angular on `:4300` |
+| `./up.sh --desktop` | Core + Tauri Dock |
+| `./up.sh --reinstall` | Reinstall deps, then start |
+| `./setup.sh` | OAuth / env wizard |
+| `./start.sh` | Start without install checks |
 
-| Command | Description |
-| :--- | :--- |
-| `./up.sh` | Install (if needed) & launch **Core + Angular Browser UI** (`:4300`) |
-| `./up.sh --desktop` | Install (if needed) & launch **Core + Tauri macOS Dock App** |
-| `./up.sh --reinstall` | Force dependency reinstall, then start |
-| `./setup.sh` | Interactive CLI setup wizard for Google OAuth credentials |
-| `./start.sh` | Fast startup script (skips npm install checks) |
+Health: [http://127.0.0.1:8787/health](http://127.0.0.1:8787/health)
 
----
+### Google OAuth
 
-## 🔑 Google OAuth Setup
+1. Google Cloud → enable **Gmail API** → OAuth client (**Desktop** or Web).
+2. Authorized redirect URI **must** be `http://127.0.0.1:8787/auth/gmail/callback`.
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `apps/core/.env` (never commit `.env`).
+4. While the Cloud app is in Testing, add your Google account as a test user.
 
-To sync your inbox, you need a free Google Cloud Desktop OAuth Client ID:
+Step-by-step: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
 
-1. Open [Google Cloud Credentials Console](https://console.cloud.google.com/apis/credentials).
-2. Create an OAuth 2.0 Client ID with Application Type **Desktop App** (or Web App).
-3. Set Authorized Redirect URI to: `http://127.0.0.1:8787/auth/gmail/callback`
-4. Enter your `CLIENT_ID` and `CLIENT_SECRET` into `apps/core/.env` (or via `./up.sh` interactive prompt).
+Tokens: `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (macOS Keychain via keytar — recommended for daily use).
 
-For step-by-step instructions with screenshots, read [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
+## Using the client
 
----
+**Mail.** Connect Gmail from the sign-in gate. Inbox / Starred / All / Sent / labels / custom Gmail-query views. Search uses the local cache and Gmail when needed. Attachments open in a viewer; remote images follow Settings → Privacy.
 
-## 🎹 Keyboard Shortcuts
+**Reply.** Reply and Reply all from the reading pane (including per-message). `⌘C` copies; it does not compose. `⌘↵` sends.
 
-| Shortcut | Action |
-| :--- | :--- |
-| `j` / `k` | Next / previous thread |
-| `e` | Archive (selection or focused) |
-| `z` | Undo archive (stack) |
-| `x` | Toggle check on focused thread |
-| `⌘`/`Ctrl`-click · Shift-click · click-drag | Multi-select |
-| `r` | Reply |
+**Workflows.** Sidebar → Workflows (or `⌘K` → Workflows). Write English, pick backend + model, **Suggest**, review the explanation + JSON, **Approve & enable**. **Dry run** / **Run now** / **Stop**. Activity card shows live progress. Saved workflows are a compact list; open one to edit config.
+
+- Filing example: *Remove git-related mail (merges, comments, pipelines) from the inbox.*
+- Answer example: *List what I should prioritise today.* When a run produces a briefing, a right-hand **Answer** pane opens.
+
+Approved JSON is the contract: a filing workflow will not be turned into a briefing. Mail summaries sent to the model stay on-device when the backend is `local`. Nothing is permanently deleted — archive leaves the inbox. No send/delete from workflows.
+
+Workflows persist in `~/.local-mail/workflows.json`.
+
+**AI.** Settings / `~/.local-mail/ai-config.json` maps roles (`summarize`, `ask`, …) to backends. Mailbox Ask AI is an overlay, not a permanent column.
+
+## Keyboard
+
+| Keys | Action |
+| --- | --- |
+| `j` `k` or `↓` `↑` | Next / previous thread |
+| `e` | Archive (stays on the next thread) |
+| `z` | Undo archive |
+| `x` | Toggle check |
+| `s` | Star |
+| `u` | Mark unread |
 | `c` | Compose |
-| `⌘`/`Ctrl`+`Enter` | Send |
-| `?` | Shortcuts sheet |
-| `Esc` | Clear selection / close modal |
+| `r` / `a` | Reply / reply all |
+| `/` | Search |
+| `g i` `g s` `g a` | Inbox / Starred / All |
+| `⌘K` | Command palette |
+| `?` | Shortcuts |
+| `Esc` | Back / close |
 
-In a thread header: **Plain** (default chat) · **Full email** (original HTML).
+`⌘`/`Ctrl`-click, Shift-click, and click-drag multi-select. `⌘A` selects visible threads (not when a text field is focused).
 
----
-
-## 📁 Repository Structure
+## Repository
 
 ```
 local-mail/
-├── apps/
-│   ├── core/         # Backend (Node.js, Express, SQLite, Gmail Sync, Keytar)
-│   ├── web/          # Frontend (Angular 22, Signals, Signal Forms, Tailwind)
-│   └── desktop/      # Desktop Shell (Tauri 2 Rust Dock integration)
-├── docs/             # Architecture, decisions (DECISIONS.md), setup guides
-├── AGENTS.md         # Source of truth development & architecture rules
-├── PRODUCT.md        # Product vision and scope boundaries
-├── ROADMAP.md        # Feature roadmap (Phases 0–6)
-├── TODO.md           # Active task checklist
-├── setup.sh          # Interactive setup wizard
-├── start.sh          # Quick launch script
-└── up.sh             # Zero-config one-shot runner
+├── apps/core/       Node core — Hono, SQLite, Gmail, AI, workflows (127.0.0.1:8787)
+├── apps/web/        Angular 22 UI (signals, Tailwind)
+├── apps/desktop/    Tauri 2 Dock shell
+├── docs/            Decisions, Gmail setup, MCP, packaging
+├── AGENTS.md        Contributor / agent rules
+├── PRODUCT.md       Product scope
+├── ROADMAP.md       Phases
+└── up.sh            One-command run
 ```
 
----
+Data and secrets are **not** in the repo: `apps/core/.env`, `~/.local-mail/` (SQLite, tokens, `ai-config.json`, `workflows.json`).
 
-## 📄 Documentation
+## Docs
 
-- 📘 [Product Scope & Vision (PRODUCT.md)](./PRODUCT.md)
-- 🗺️ [Development Roadmap (ROADMAP.md)](./ROADMAP.md)
-- 🏛️ [Architecture Decisions Log (docs/DECISIONS.md)](./docs/DECISIONS.md)
-- 🛠️ [Contributor & Agent Rules (AGENTS.md)](./AGENTS.md)
+- [PRODUCT.md](./PRODUCT.md) — scope and non-goals
+- [ROADMAP.md](./ROADMAP.md) — phases
+- [AGENTS.md](./AGENTS.md) — how to change this repo
+- [docs/DECISIONS.md](./docs/DECISIONS.md) — architecture choices
+- [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md) — OAuth
+- [docs/MCP.md](./docs/MCP.md) — HTTP + stdio tools for agents
+- [docs/PACKAGING.md](./docs/PACKAGING.md) — shipping a Mac `.app`
 
----
+```bash
+# MCP stdio (core deps + local DB)
+npm run mcp
+```
 
-## 📜 License
+## Development
 
-Distributed under the [MIT License](LICENSE). Built for local privacy and speed.
+```bash
+nvm use
+npm run core:dev      # apps/core, tsx watch
+npm run web:start     # Angular :4300
+npm run desktop:dev   # Tauri (starts web if needed)
+npm run web:build
+npm --prefix apps/core test
+npm --prefix apps/core run typecheck
+```
+
+Core tests: Node test runner. Web tests: `npx ng test` (Vitest).
+
+## Security checklist
+
+- [x] Core binds `127.0.0.1` by default
+- [x] No Gmail refresh tokens or LLM keys in the frontend
+- [x] Mail HTML is not executed as the app
+- [ ] Review new npm packages on each dependency bump

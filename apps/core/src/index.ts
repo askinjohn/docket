@@ -3,6 +3,12 @@ import { serve } from '@hono/node-server';
 import { appConfig } from './config.js';
 import { closeDb } from './db/index.js';
 import { createApp } from './server.js';
+import { getAiStatus } from './ai/provider.js';
+import {
+  startBackgroundSync,
+  stopBackgroundSync,
+} from './sync/background.js';
+import { startWorkflows, stopWorkflows } from './workflow/scheduler.js';
 
 const app = createApp();
 
@@ -29,11 +35,20 @@ const server = serve(
       `[local-mail/core] ready at http://${info.address}:${info.port}`,
     );
     console.log(`[local-mail/core] health: http://${appConfig.host}:${appConfig.port}/health`);
+    startBackgroundSync();
+    startWorkflows();
+    void getAiStatus().then((s) => {
+      console.log(
+        `[local-mail/core] AI: ${s.mode}${s.model ? ` · ${s.model}` : ''} — ${s.hint}`,
+      );
+    });
   },
 );
 
 function shutdown() {
   console.log('[local-mail/core] shutting down');
+  stopBackgroundSync();
+  stopWorkflows();
   closeDb();
   server.close();
   process.exit(0);

@@ -4,12 +4,18 @@ import { parseInsightText } from './ai-insight';
 import { apiErrorInfo } from './api-error';
 import {
   MailApiService,
+  type AiConfigPublic,
+  type AiStatus,
   type ApiLabel,
   type ApiMailView,
   type ApiThread,
   type ApiThreadDetail,
   type ApiThreadView,
   type PublicAccount,
+  type Workflow,
+  type WorkflowCatalog,
+  type WorkflowJob,
+  type WorkflowRun,
 } from './mail-api.service';
 import {
   getNotifyPermissionState,
@@ -25,6 +31,7 @@ import {
   applyTheme,
   FONT_FAMILY_OPTIONS,
   FONT_SIZE_OPTIONS,
+  UI_LAYOUT_OPTIONS,
   loadThemePrefs,
   saveThemePrefs,
   type FontFamily,
@@ -34,6 +41,7 @@ import {
   type ThemeDensity,
   type ThemeMode,
   type ThemePrefs,
+  type UiLayout,
 } from './theme';
 
 export type {
@@ -66,6 +74,25 @@ export interface AttachmentPreviewState {
   textContent: string;
   textLoading: boolean;
   textError: string | null;
+}
+
+const RECENT_OPENS_KEY = 'local-mail.recent-opens';
+
+function loadRecentOpens(): { id: string; subject: string; from: string }[] {
+  try {
+    const raw = localStorage.getItem(RECENT_OPENS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (x): x is { id: string; subject: string; from: string } =>
+          Boolean(x && typeof x.id === 'string'),
+      )
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
 }
 
 function resolveAttachmentView(
@@ -118,6 +145,8 @@ export class UiShellService {
   readonly threads = signal<ShellThreadPreview[]>([]);
   /** Thread open in the reading pane (single focus). */
   readonly selectedId = signal<string | null>(null);
+  /** Keyboard highlight in the list (can exist without opening the thread). */
+  readonly listCursorId = signal<string | null>(null);
   /**
    * Multi-select set for bulk actions (⌘/Ctrl-click, Shift-range, click-drag).
    * Independent of selectedId until a bulk action runs.
@@ -135,6 +164,8 @@ export class UiShellService {
   }
   readonly commandPaletteOpen = signal(false);
   readonly replyOpen = signal(false);
+  readonly replyAll = signal(false);
+  readonly replyToMessageId = signal<string | null>(null);
   readonly composeOpen = signal(false);
   readonly replyBody = signal('');
   readonly composeTo = signal('');
@@ -175,6 +206,22 @@ export class UiShellService {
   readonly customViews = signal<ApiMailView[]>([]);
   readonly theme = signal<ThemePrefs>(loadThemePrefs());
   readonly settingsOpen = signal(false);
+  readonly workflowsOpen = signal(false);
+  readonly workflows = signal<Workflow[]>([]);
+  readonly workflowRuns = signal<WorkflowRun[]>([]);
+  readonly workflowCatalog = signal<WorkflowCatalog | null>(null);
+  readonly workflowPath = signal<string | null>(null);
+  readonly workflowBusy = signal(false);
+  readonly workflowDraft = signal<Workflow | null>(null);
+  readonly workflowJobs = signal<WorkflowJob[]>([]);
+  readonly workflowActivityOpen = signal(false);
+  readonly workflowReportOpen = signal(false);
+  readonly workflowReport = signal<{
+    title: string;
+    body: string;
+    jobId: string;
+  } | null>(null);
+  readonly shellSection = signal<'mail' | 'workflows'>('mail');
   /** Keyboard shortcuts cheatsheet (`?`). */
   readonly helpOpen = signal(false);
   /**
@@ -182,12 +229,40 @@ export class UiShellService {
    */
   readonly searchFocusNonce = signal(0);
   readonly accountMenuOpen = signal(false);
+  readonly lastNotify = signal<{
+    title: string;
+    body: string;
+    threadId?: string;
+    at: number;
+  } | null>(null);
   readonly aiBusy = signal(false);
+  /** Core AI backend: template | ollama | openai */
+  readonly aiMode = signal<string | null>(null);
+  readonly aiStatus = signal<AiStatus | null>(null);
+  readonly aiConfig = signal<AiConfigPublic | null>(null);
+  readonly aiConfigSaving = signal(false);
   readonly summaryBusy = signal(false);
   /** AI summary / insight panel (not the reply composer). */
   readonly aiInsightOpen = signal(false);
   readonly aiInsightText = signal('');
   readonly aiInsightMode = signal<string | null>(null);
+  readonly aiInsightError = signal<string | null>(null);
+  readonly aiChatMessages = signal<
+    { role: 'user' | 'assistant'; content: string }[]
+  >([]);
+  readonly aiChatDraft = signal('');
+  readonly aiChatBusy = signal(false);
+  /** Mailbox-wide Ask AI (Mail layout rail). */
+  readonly mailboxAskDraft = signal('');
+  readonly mailboxAskBusy = signal(false);
+  readonly mailboxAskError = signal<string | null>(null);
+  readonly mailboxAskMessages = signal<
+    { role: 'user' | 'assistant'; content: string }[]
+  >([]);
+  readonly mailboxAskOpen = signal(false);
+  readonly recentOpens = signal<
+    { id: string; subject: string; from: string }[]
+  >(loadRecentOpens());
   readonly coreStatus = signal<CoreStatus>('checking');
   readonly accountEmail = signal<string | null>(null);
   readonly accounts = signal<PublicAccount[]>([]);
@@ -282,6 +357,34 @@ export class UiShellService {
     return this.threads().find((t) => t.id === id) ?? null;
   });
 
+  /** Open thread, or list cursor, or first row — what ↑↓ / e act on. */
+  readonly focusedThreadId = computed(
+    () =>
+      this.selectedId() ??
+      this.listCursorId() ??
+      this.threads()[0]?.id ??
+      null,
+  );
+
+  readonly isSplitLayout = computed(() => this.theme().uiLayout === 'split');
+
+  /** List-first: list fills the main column until a thread is opened. */
+  readonly showThreadList = computed(
+    () =>
+      this.shellSection() === 'mail' &&
+      (this.isSplitLayout() || !this.selectedId()),
+  );
+
+  readonly showReadingPane = computed(
+    () =>
+      this.shellSection() === 'mail' &&
+      (this.isSplitLayout() || Boolean(this.selectedId())),
+  );
+
+  readonly showWorkflowsPage = computed(
+    () => this.shellSection() === 'workflows',
+  );
+
   readonly checkedCount = computed(() => this.checkedIds().size);
 
   readonly isConnected = computed(
@@ -294,9 +397,8 @@ export class UiShellService {
    * Filtered out of list refreshes so SSE / ensureListFilled cannot resurrect them.
    */
   private readonly pendingArchiveIds = new Set<string>();
-  /** Avoid spamming Google OAuth windows on concurrent failures. */
+  /** Avoid overlapping OAuth wait loops. */
   private authRedirectInFlight = false;
-  private lastAuthRedirectAt = 0;
 
   readonly emptyInboxHint = computed(() => {
     switch (this.coreStatus()) {
@@ -326,25 +428,10 @@ export class UiShellService {
   handleAuthExpired(source = 'api'): void {
     this.coreStatus.set('auth-expired');
     this.stopBackgroundSync();
+    this.clearMailbox();
     this.statusMessage.set(
-      'Gmail session expired — opening Google sign-in…',
+      'Gmail session expired. Sign in again to continue.',
     );
-
-    const now = Date.now();
-    // Debounce: one OAuth window per 15s even if many requests fail
-    if (this.authRedirectInFlight || now - this.lastAuthRedirectAt < 15_000) {
-      this.statusMessage.set(
-        'Gmail session expired. Click “Sign in again” if the browser did not open.',
-      );
-      return;
-    }
-    this.authRedirectInFlight = true;
-    this.lastAuthRedirectAt = now;
-    void this.connectGmail()
-      .catch(() => undefined)
-      .finally(() => {
-        this.authRedirectInFlight = false;
-      });
     void source;
   }
 
@@ -364,6 +451,9 @@ export class UiShellService {
     this.clearMailbox();
     try {
       const health = await this.api.health();
+      if (health.aiMode) this.aiMode.set(health.aiMode);
+      if (health.ai) this.aiStatus.set(health.ai);
+      void this.refreshAiStatus();
       if (!health.googleConfigured) {
         this.coreStatus.set('misconfigured');
         this.statusMessage.set(
@@ -376,15 +466,29 @@ export class UiShellService {
         account: health.account,
         activeId: health.account?.id ?? null,
       });
-      if (health.account?.email) {
+      const expired =
+        health.authExpired === true ||
+        health.account?.authStatus === 'expired';
+      if (expired && health.account?.email) {
+        this.accountEmail.set(health.account.email);
+        this.activeAccountId.set(health.account.id ?? null);
+        this.handleAuthExpired('bootstrap');
+      } else if (health.account?.email && health.connected !== false) {
+        this.coreStatus.set('checking');
+        try {
+          await this.api.sync(false);
+        } catch (e) {
+          if (apiErrorInfo(e).authExpired) {
+            this.handleAuthExpired('bootstrap-probe');
+            return;
+          }
+        }
         this.coreStatus.set('online-connected');
         await this.refreshThreads();
         void this.refreshNavMeta();
         this.connectLiveEvents();
         this.startBackgroundSync();
         this.requestNotifyPermission();
-        // Probe Gmail credentials immediately — expired tokens open sign-in
-        void this.quietSync();
       } else {
         this.coreStatus.set('online-disconnected');
         this.accountEmail.set(null);
@@ -566,6 +670,20 @@ export class UiShellService {
       return;
     }
 
+    if (type === 'auth.expired') {
+      if (payload['email']) {
+        this.accountEmail.set(String(payload['email']));
+      }
+      this.handleAuthExpired('sse');
+      return;
+    }
+
+    if (type === 'workflow.job') {
+      const job = payload['job'] as WorkflowJob | undefined;
+      if (job?.id) this.upsertWorkflowJob(job);
+      return;
+    }
+
     if (type === 'mail.synced' || type === 'mail.changed') {
       void this.refreshThreads();
     }
@@ -607,36 +725,27 @@ export class UiShellService {
     if (batch.length === 1) {
       const m = batch[0]!;
       console.info('[notify] show', m.from, m.subject);
-      const result = await showNotification({
+      this.pushNotifyToast({
         title: m.from,
         body: m.subject,
         threadId: m.threadId,
       });
-      // Always surface in-app so dogfood works even if OS banners are suppressed
-      this.statusMessage.set(
-        result.ok
-          ? `New mail: ${m.from} — ${m.subject}`
-          : `New mail (notify failed): ${m.from} — ${m.subject}`,
-      );
+      this.statusMessage.set(`New mail: ${m.from} — ${m.subject}`);
       return;
     }
 
     // Multiple arrivals: one summary + open first
     const first = batch[0]!;
     console.info('[notify] show batch', batch.length);
-    const result = await showNotification({
+    this.pushNotifyToast({
       title: `${batch.length} new messages`,
       body: batch
         .slice(0, 3)
         .map((m) => `${m.from}: ${m.subject}`)
-        .join('\n'),
+        .join(' · '),
       threadId: first.threadId,
     });
-    this.statusMessage.set(
-      result.ok
-        ? `${batch.length} new messages`
-        : `${batch.length} new messages (OS notify failed — check Settings → Notifications)`,
-    );
+    this.statusMessage.set(`${batch.length} new messages`);
   }
 
   /** Dev / Settings: verify Notification Center without waiting for mail. */
@@ -644,6 +753,11 @@ export class UiShellService {
     await requestNotifyPermission();
     await this.refreshNotifyStatus();
     const result = await showNotification({
+      title: 'Local Mail',
+      body: 'Test notification — if you see this, notifications work.',
+      threadId: this.selectedId() ?? undefined,
+    });
+    this.pushNotifyToast({
       title: 'Local Mail',
       body: 'Test notification — if you see this, notifications work.',
       threadId: this.selectedId() ?? undefined,
@@ -682,13 +796,33 @@ export class UiShellService {
     })();
   }
 
+  pushNotifyToast(item: {
+    title: string;
+    body: string;
+    threadId?: string;
+  }): void {
+    this.lastNotify.set({ ...item, at: Date.now() });
+  }
+
+  dismissNotifyToast(): void {
+    this.lastNotify.set(null);
+  }
+
+  openNotifyToast(): void {
+    const n = this.lastNotify();
+    this.lastNotify.set(null);
+    if (n?.threadId) void this.selectThread(n.threadId);
+  }
+
   private notify(title: string, body: string, threadId?: string): void {
     void showNotification({ title, body, threadId });
+    this.pushNotifyToast({ title, body, threadId });
   }
 
   private clearMailbox(): void {
     this.threads.set([]);
     this.selectedId.set(null);
+    this.listCursorId.set(null);
     this.clearChecked();
     this.replyOpen.set(false);
     this.replyBody.set('');
@@ -754,6 +888,7 @@ export class UiShellService {
   }
 
   async setMailView(view: MailView): Promise<void> {
+    this.shellSection.set('mail');
     this.mailView.set(view);
     if (view !== 'label') this.activeLabelId.set(null);
     if (view !== 'custom') this.activeCustomViewId.set(null);
@@ -762,10 +897,12 @@ export class UiShellService {
       this.searchQuery.set('');
       this.searchActive.set(false);
     }
+    if (!this.isSplitLayout()) this.backToList();
     await this.refreshThreads();
   }
 
   async openLabel(labelId: string): Promise<void> {
+    this.shellSection.set('mail');
     this.activeLabelId.set(labelId);
     this.activeCustomViewId.set(null);
     this.mailView.set('label');
@@ -773,14 +910,17 @@ export class UiShellService {
       this.searchQuery.set('');
       this.searchActive.set(false);
     }
+    if (!this.isSplitLayout()) this.backToList();
     await this.refreshThreads();
   }
 
   async openCustomView(view: ApiMailView): Promise<void> {
+    this.shellSection.set('mail');
     this.activeCustomViewId.set(view.id);
     this.activeLabelId.set(null);
     this.mailView.set('custom');
     this.searchQuery.set(view.query);
+    if (!this.isSplitLayout()) this.backToList();
     await this.runSearch();
   }
 
@@ -894,22 +1034,44 @@ export class UiShellService {
 
   closeAiInsight(): void {
     this.aiInsightOpen.set(false);
+    this.aiInsightError.set(null);
+    this.aiChatBusy.set(false);
   }
 
-  /** Copy insight into the reply composer (user can edit before send). */
+  setAiChatDraft(value: string): void {
+    this.aiChatDraft.set(value);
+  }
+
+  private resetAiChat(): void {
+    this.aiChatMessages.set([]);
+    this.aiChatDraft.set('');
+    this.aiInsightText.set('');
+    this.aiInsightError.set(null);
+  }
+
+  lastAssistantReply(): string {
+    const msgs = this.aiChatMessages();
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]!.role === 'assistant' && msgs[i]!.content.trim()) {
+        return msgs[i]!.content.trim();
+      }
+    }
+    return parseInsightText(this.aiInsightText()).plainText.trim();
+  }
+
+  /** Copy last AI turn into the reply composer (user can edit before send). */
   insertInsightIntoReply(): void {
-    const parsed = parseInsightText(this.aiInsightText());
-    const text = parsed.plainText.trim();
+    const text = this.lastAssistantReply();
     if (!text) return;
     const existing = this.replyBody().trim();
     this.replyBody.set(existing ? `${existing}\n\n${text}` : text);
     this.replyOpen.set(true);
     this.composeOpen.set(false);
-    this.statusMessage.set('Summary inserted into reply — edit before send');
+    this.statusMessage.set('Inserted into reply — edit before send');
   }
 
   async copyAiInsight(): Promise<void> {
-    const text = parseInsightText(this.aiInsightText()).plainText.trim();
+    const text = this.lastAssistantReply();
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -924,10 +1086,233 @@ export class UiShellService {
     this.accountMenuOpen.set(false);
     this.commandPaletteOpen.set(false);
     void this.refreshNotifyStatus();
+    void this.refreshAiStatus();
+  }
+
+  async refreshAiStatus(): Promise<void> {
+    try {
+      const s = await this.api.aiStatus();
+      this.aiStatus.set(s);
+      this.aiMode.set(s.mode);
+      if (s.config) this.aiConfig.set(s.config);
+    } catch {
+      /* core offline */
+    }
+  }
+
+  async saveAiConfig(next: {
+    backends: NonNullable<AiConfigPublic['backends']>;
+    roles: NonNullable<AiConfigPublic['roles']>;
+  }): Promise<void> {
+    this.aiConfigSaving.set(true);
+    try {
+      const saved = await this.api.saveAiConfig(next);
+      this.aiConfig.set(saved);
+      this.statusMessage.set(`Saved AI config · ${saved.path}`);
+      await this.refreshAiStatus();
+    } catch (e) {
+      this.statusMessage.set(e instanceof Error ? e.message : 'Save AI config failed');
+    } finally {
+      this.aiConfigSaving.set(false);
+    }
+  }
+
+  setAiRole(roleId: string, patch: { backend?: string; model?: string }): void {
+    const cfg = this.aiConfig();
+    if (!cfg) return;
+    const prev = cfg.roles[roleId] ?? { backend: 'local', model: '' };
+    const roles = {
+      ...cfg.roles,
+      [roleId]: {
+        backend: patch.backend ?? prev.backend,
+        model: patch.model ?? prev.model,
+      },
+    };
+    void this.saveAiConfig({ backends: cfg.backends, roles });
   }
 
   closeSettings(): void {
     this.settingsOpen.set(false);
+  }
+
+  openWorkflows(): void {
+    this.shellSection.set('workflows');
+    this.workflowsOpen.set(false);
+    this.closeSettings();
+    void this.refreshWorkflows();
+  }
+
+  closeWorkflows(): void {
+    this.workflowsOpen.set(false);
+    this.workflowDraft.set(null);
+    if (this.shellSection() === 'workflows') this.shellSection.set('mail');
+  }
+
+  async refreshWorkflows(): Promise<void> {
+    try {
+      const res = await this.api.listWorkflows();
+      this.workflows.set(res.workflows);
+      this.workflowRuns.set(res.runs);
+      this.workflowJobs.set(res.jobs ?? []);
+      this.workflowCatalog.set(res.catalog);
+      this.workflowPath.set(res.path);
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
+  }
+
+  async suggestWorkflow(
+    english: string,
+    backend: string,
+    model: string,
+  ): Promise<void> {
+    this.workflowBusy.set(true);
+    try {
+      const res = await this.api.suggestWorkflow(english, backend, model);
+      this.workflowDraft.set(res.workflow);
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    } finally {
+      this.workflowBusy.set(false);
+    }
+  }
+
+  applyWorkflowDraft(wf: Workflow): void {
+    this.workflowDraft.set(wf);
+  }
+
+  async saveWorkflowEdits(wf: Workflow): Promise<void> {
+    this.workflowBusy.set(true);
+    try {
+      await this.api.saveWorkflow(wf);
+      await this.refreshWorkflows();
+      this.statusMessage.set(`Saved “${wf.name}”`);
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    } finally {
+      this.workflowBusy.set(false);
+    }
+  }
+
+  async approveWorkflow(wf: Workflow): Promise<void> {
+    this.workflowBusy.set(true);
+    try {
+      const saved = await this.api.saveWorkflow({
+        ...wf,
+        approved: true,
+        enabled: true,
+      });
+      this.workflowDraft.set(null);
+      await this.refreshWorkflows();
+      this.statusMessage.set(`Workflow “${saved.workflow.name}” on`);
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    } finally {
+      this.workflowBusy.set(false);
+    }
+  }
+
+  async setWorkflowEnabled(id: string, enabled: boolean): Promise<void> {
+    try {
+      await this.api.patchWorkflow(id, { enabled });
+      await this.refreshWorkflows();
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
+  }
+
+  async removeWorkflow(id: string): Promise<void> {
+    try {
+      await this.api.deleteWorkflow(id);
+      await this.refreshWorkflows();
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
+  }
+
+  openWorkflowActivity(): void {
+    this.workflowActivityOpen.set(true);
+  }
+
+  closeWorkflowActivity(): void {
+    this.workflowActivityOpen.set(false);
+  }
+
+  upsertWorkflowJob(job: WorkflowJob): void {
+    this.workflowJobs.update((list) => {
+      const i = list.findIndex((j) => j.id === job.id);
+      if (i < 0) return [job, ...list].slice(0, 30);
+      const next = list.slice();
+      next[i] = job;
+      return next;
+    });
+    if (job.status === 'queued' || job.status === 'running') {
+      this.workflowActivityOpen.set(true);
+    }
+    if (job.output?.trim() && (job.status === 'done' || job.status === 'cancelled')) {
+      this.openWorkflowReport(job);
+    }
+    if (job.status === 'done' || job.status === 'error' || job.status === 'cancelled') {
+      void this.refreshWorkflows();
+      void this.refreshNavMeta();
+      void this.refreshThreads();
+    }
+  }
+
+  openWorkflowReport(job: WorkflowJob): void {
+    if (!job.output?.trim()) return;
+    this.workflowReport.set({
+      title: job.workflowName,
+      body: job.output,
+      jobId: job.id,
+    });
+    this.workflowReportOpen.set(true);
+  }
+
+  closeWorkflowReport(): void {
+    this.workflowReportOpen.set(false);
+  }
+
+  liveWorkflowJob(workflowId: string): WorkflowJob | undefined {
+    return this.workflowJobs().find(
+      (j) =>
+        j.workflowId === workflowId &&
+        (j.status === 'queued' || j.status === 'running'),
+    );
+  }
+
+  async stopWorkflowJob(jobId: string): Promise<void> {
+    try {
+      const res = await this.api.stopWorkflowJob(jobId);
+      this.upsertWorkflowJob(res.job);
+      this.statusMessage.set('Workflow stopped');
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
+  }
+
+  async stopWorkflow(id: string): Promise<void> {
+    try {
+      const res = await this.api.stopWorkflow(id);
+      for (const job of res.jobs ?? []) this.upsertWorkflowJob(job);
+      if (res.jobs?.length) this.statusMessage.set('Workflow stopped');
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
+  }
+
+  async runWorkflow(id: string, dryRun = false): Promise<void> {
+    const wf = this.workflows().find((w) => w.id === id);
+    try {
+      const res = await this.api.runWorkflow(id, { dryRun, limit: 120 });
+      this.upsertWorkflowJob(res.job);
+      this.statusMessage.set(
+        `${dryRun ? 'Dry run' : 'Run'} queued · ${wf?.name ?? 'workflow'}`,
+      );
+      this.workflowActivityOpen.set(true);
+    } catch (e) {
+      this.statusMessage.set(apiErrorInfo(e).message);
+    }
   }
 
   toggleAccountMenu(): void {
@@ -976,8 +1361,101 @@ export class UiShellService {
     applyTheme(next);
   }
 
+  setUiLayout(uiLayout: UiLayout): void {
+    const next = { ...this.theme(), uiLayout };
+    this.theme.set(next);
+    saveThemePrefs(next);
+    applyTheme(next);
+  }
+
   readonly fontFamilyOptions = FONT_FAMILY_OPTIONS;
   readonly fontSizeOptions = FONT_SIZE_OPTIONS;
+  readonly uiLayoutOptions = UI_LAYOUT_OPTIONS;
+
+  readonly suggestedReplies = computed(() => {
+    const t = this.selectedThread();
+    if (!t) return [] as string[];
+    const last = t.messages.at(-1);
+    const body = (last?.body || t.snippet || '').toLowerCase();
+    const chips = ['Thanks', 'Sounds good', "I'll take a look"];
+    if (/\?/.test(last?.body || t.snippet || '')) {
+      chips.push("I'll get back to you");
+    }
+    if (body.includes('meet') || body.includes('call') || body.includes('calendar')) {
+      chips.push('That time works');
+    }
+    return chips;
+  });
+
+  applySuggestedReply(text: string): void {
+    this.setReplyBody(text);
+    this.openReply();
+  }
+
+  setMailboxAskDraft(value: string): void {
+    this.mailboxAskDraft.set(value);
+  }
+
+  openMailboxAsk(): void {
+    this.mailboxAskOpen.set(true);
+  }
+
+  closeMailboxAsk(): void {
+    this.mailboxAskOpen.set(false);
+  }
+
+  toggleMailboxAsk(): void {
+    this.mailboxAskOpen.update((v) => !v);
+  }
+
+  backToList(): void {
+    const keep = this.selectedId();
+    if (keep) this.listCursorId.set(keep);
+    this.selectedId.set(null);
+    this.replyOpen.set(false);
+    this.aiInsightOpen.set(false);
+    this.closeMailboxAsk();
+  }
+
+  async sendMailboxAsk(): Promise<void> {
+    const q = this.mailboxAskDraft().trim();
+    if (!q || this.mailboxAskBusy()) return;
+    const history = [
+      ...this.mailboxAskMessages(),
+      { role: 'user' as const, content: q },
+    ];
+    this.mailboxAskDraft.set('');
+    this.mailboxAskMessages.set(history);
+    this.mailboxAskBusy.set(true);
+    this.mailboxAskError.set(null);
+    try {
+      const res = await this.api.aiAsk(q, history);
+      this.mailboxAskMessages.set([
+        ...history,
+        { role: 'assistant', content: res.text },
+      ]);
+    } catch (e) {
+      this.mailboxAskError.set(apiErrorInfo(e).message);
+    } finally {
+      this.mailboxAskBusy.set(false);
+    }
+  }
+
+  private rememberRecentOpen(id: string): void {
+    const t = this.threads().find((x) => x.id === id);
+    if (!t) return;
+    const entry = { id: t.id, subject: t.subject, from: t.from };
+    const next = [
+      entry,
+      ...this.recentOpens().filter((r) => r.id !== id),
+    ].slice(0, 8);
+    this.recentOpens.set(next);
+    try {
+      localStorage.setItem(RECENT_OPENS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  }
 
   /** Live status line for Settings → Notifications. */
   readonly notifyStatus = signal<{
@@ -1018,9 +1496,17 @@ export class UiShellService {
   }
 
   async refreshThreads(opts?: { skipFill?: boolean }): Promise<void> {
+    if (this.coreStatus() === 'auth-expired') {
+      this.clearMailbox();
+      return;
+    }
     this.listLoading.set(true);
     try {
       const res = await this.api.listThreads(this.listViewParams());
+      if (res.authExpired) {
+        this.handleAuthExpired('list');
+        return;
+      }
       if (res.account) {
         this.applyAccountSession({ account: res.account });
       }
@@ -1072,8 +1558,16 @@ export class UiShellService {
       }
       void setDockBadge(mapped.filter((t) => t.unread).length);
       const keep = mapped.find((t) => t.id === this.selectedId());
-      const nextId = keep?.id ?? mapped[0]?.id ?? null;
+      // List-first: stay on the inbox unless this thread is still in the list.
+      // Split: keep the current thread or fall back to the first row.
+      const nextId = this.isSplitLayout()
+        ? (keep?.id ?? mapped[0]?.id ?? null)
+        : (keep?.id ?? null);
       this.selectedId.set(nextId);
+      const cursorKeep = mapped.find((t) => t.id === this.listCursorId());
+      this.listCursorId.set(
+        cursorKeep?.id ?? nextId ?? mapped[0]?.id ?? null,
+      );
       // Top up list after archive / thin cache (async, non-blocking for selection)
       if (!opts?.skipFill) {
         void this.ensureListFilled();
@@ -1121,10 +1615,13 @@ export class UiShellService {
                 from: detail.from,
                 time: detail.time,
                 unread: detail.unread,
+                participants: detail.participants ?? t.participants,
                 messages: detail.messages.map((m) => ({
                   id: m.id,
                   from: m.from,
                   to: m.to,
+                  cc: m.cc ?? '',
+                  bcc: m.bcc ?? '',
                   time: m.time,
                   body: m.body,
                   bodyHtml: m.bodyHtml ?? '',
@@ -1162,8 +1659,13 @@ export class UiShellService {
     if (this.remoteImagesUnlockedThreadId() !== id) {
       this.remoteImagesUnlockedThreadId.set(null);
     }
+    if (this.selectedId() !== id) {
+      this.resetAiChat();
+      this.aiInsightOpen.set(false);
+    }
     this.selectedId.set(id);
-    this.replyOpen.set(true);
+    this.listCursorId.set(id);
+    this.rememberRecentOpen(id);
     this.threads.update((list) =>
       list.map((t) => (t.id === id ? { ...t, unread: false } : t)),
     );
@@ -1249,7 +1751,7 @@ export class UiShellService {
    */
   async archiveSelected(): Promise<void> {
     const targets = new Set(this.checkedIds());
-    const focused = this.selectedId();
+    const focused = this.focusedThreadId();
     if (focused) targets.add(focused);
 
     if (!targets.size) {
@@ -1259,7 +1761,7 @@ export class UiShellService {
 
     const ids = [...targets];
     if (ids.length === 1) {
-      this.selectedId.set(ids[0]!);
+      this.listCursorId.set(ids[0]!);
       this.clearChecked();
       await this.archiveFocusedOnly();
       return;
@@ -1302,13 +1804,10 @@ export class UiShellService {
       if (idSet.has(t.id)) this.pushArchiveUndo(t, i);
     }
 
+    const wasReading = this.isSplitLayout() || Boolean(this.selectedId());
     this.threads.set(remaining);
     this.clearChecked();
-    if (nextFocus) void this.selectThread(nextFocus);
-    else {
-      this.selectedId.set(null);
-      this.replyOpen.set(false);
-    }
+    this.applyFocusAfterArchive(nextFocus, wasReading);
     this.statusMessage.set(
       `Archiving ${ids.length}… · z undoes (${this.undoCount()})`,
     );
@@ -1340,7 +1839,7 @@ export class UiShellService {
   }
 
   private async archiveFocusedOnly(): Promise<void> {
-    const id = this.selectedId();
+    const id = this.focusedThreadId();
     if (!id || !this.isConnected()) {
       this.statusMessage.set('Archive needs a connected Gmail inbox.');
       return;
@@ -1348,14 +1847,15 @@ export class UiShellService {
     const list = this.threads();
     const idx = list.findIndex((t) => t.id === id);
     if (idx < 0) {
-      this.statusMessage.set('Open a thread in the list to archive.');
+      this.statusMessage.set('Select a thread to archive.');
       return;
     }
     const removed = list[idx]!;
+    const wasReading = this.isSplitLayout() || this.selectedId() === id;
 
     this.pendingArchiveIds.add(id);
 
-    // Optimistic remove + jump to next
+    // Optimistic remove + jump to next so `e e e` keeps triaging
     const next = list[idx + 1] ?? list[idx - 1] ?? null;
     this.threads.update((ts) => ts.filter((t) => t.id !== id));
     if (this.checkedIds().has(id)) {
@@ -1363,11 +1863,7 @@ export class UiShellService {
       c.delete(id);
       this.checkedIds.set(c);
     }
-    if (next) void this.selectThread(next.id);
-    else {
-      this.selectedId.set(null);
-      this.replyOpen.set(false);
-    }
+    this.applyFocusAfterArchive(next?.id ?? null, wasReading);
 
     this.pushArchiveUndo(removed, idx);
     this.statusMessage.set(
@@ -1395,19 +1891,55 @@ export class UiShellService {
   }
 
   selectNext(): void {
-    const list = this.threads();
-    if (!list.length) return;
-    const idx = list.findIndex((t) => t.id === this.selectedId());
-    const next = list[Math.min(idx + 1, list.length - 1)];
-    if (next) void this.selectThread(next.id);
+    this.moveListCursor(1);
   }
 
   selectPrevious(): void {
+    this.moveListCursor(-1);
+  }
+
+  /** Open the highlighted row (Enter / →). */
+  openFocusedThread(): void {
+    const id = this.focusedThreadId();
+    if (id) void this.selectThread(id);
+  }
+
+  isListCursor(id: string): boolean {
+    return this.listCursorId() === id || this.focusedThreadId() === id;
+  }
+
+  /**
+   * Move the list highlight. Opens the thread when the reading pane is
+   * already showing (split, or list-first after Enter) so j/k and arrows
+   * keep working while reading. On the inbox list, only the cursor moves.
+   */
+  moveListCursor(delta: 1 | -1): void {
     const list = this.threads();
     if (!list.length) return;
-    const idx = list.findIndex((t) => t.id === this.selectedId());
-    const prev = list[Math.max(idx - 1, 0)];
-    if (prev) void this.selectThread(prev.id);
+    const cur = this.listCursorId() ?? this.selectedId();
+    let idx = list.findIndex((t) => t.id === cur);
+    if (idx < 0) idx = delta > 0 ? -1 : 0;
+    const nextIdx = Math.max(0, Math.min(list.length - 1, idx + delta));
+    const next = list[nextIdx];
+    if (!next) return;
+    this.listCursorId.set(next.id);
+    this.lastCheckedAnchor = next.id;
+    if (this.isSplitLayout() || this.selectedId()) {
+      void this.selectThread(next.id);
+    }
+  }
+
+  /** After archive: stay on the list in list-first; keep reading in split. */
+  private applyFocusAfterArchive(nextId: string | null, keepReading: boolean): void {
+    if (nextId) {
+      this.listCursorId.set(nextId);
+      if (keepReading) void this.selectThread(nextId);
+      else this.selectedId.set(null);
+      return;
+    }
+    this.listCursorId.set(null);
+    this.selectedId.set(null);
+    this.replyOpen.set(false);
   }
 
   /**
@@ -1449,7 +1981,7 @@ export class UiShellService {
       await new Promise((r) => setTimeout(r, 2000));
       try {
         const status = await this.api.authStatus();
-        if (status.connected && status.email) {
+        if (status.connected && status.email && !status.authExpired) {
           this.applyAccountSession({
             accounts: status.accounts ?? [],
             activeId: status.accountId ?? null,
@@ -1865,22 +2397,67 @@ export class UiShellService {
   async aiSummarizeSelected(): Promise<void> {
     const id = this.selectedId();
     if (!id) return;
+    const model = this.aiConfig()?.roles['summarize']?.model
+      ?? this.aiStatus()?.model
+      ?? 'Ollama';
     this.aiBusy.set(true);
+    this.aiInsightError.set(null);
+    this.aiInsightText.set('');
+    this.aiChatMessages.set([]);
+    this.aiInsightMode.set('ollama');
+    this.aiInsightOpen.set(true);
+    this.statusMessage.set(`Summarizing with ${model}…`);
     try {
       const res = await this.api.aiSummarize(id);
       this.aiInsightText.set(res.text);
-      this.aiInsightMode.set(res.mode ?? null);
-      this.aiInsightOpen.set(true);
-      // Do not put summary into the reply composer
+      this.aiInsightMode.set(res.mode ?? 'ollama');
+      this.aiChatMessages.set([{ role: 'assistant', content: res.text }]);
       this.statusMessage.set(
         res.mode === 'template'
-          ? 'Summary ready (template — configure Ollama/OpenAI for better results)'
-          : `Summary ready (${res.mode})`,
+          ? 'Summary ready (template — Ollama not available)'
+          : `Summary ready (${res.mode}${res.model ? ' · ' + res.model : ''})`,
       );
     } catch (e) {
-      this.handleGmailFailure(e, 'AI failed');
+      const info = apiErrorInfo(e);
+      if (info.authExpired) {
+        this.handleAuthExpired('ai-summarize');
+        return;
+      }
+      this.aiInsightError.set(info.message || 'Summarize failed');
+      this.statusMessage.set(info.message || 'Summarize failed');
     } finally {
       this.aiBusy.set(false);
+    }
+  }
+
+  async sendAiChat(): Promise<void> {
+    const id = this.selectedId();
+    const q = this.aiChatDraft().trim();
+    if (!id || !q || this.aiChatBusy() || this.aiBusy()) return;
+    const history = [
+      ...this.aiChatMessages(),
+      { role: 'user' as const, content: q },
+    ];
+    this.aiChatMessages.set(history);
+    this.aiChatDraft.set('');
+    this.aiChatBusy.set(true);
+    this.aiInsightError.set(null);
+    try {
+      const res = await this.api.aiChat(id, history);
+      this.aiChatMessages.set([
+        ...history,
+        { role: 'assistant', content: res.text },
+      ]);
+      this.aiInsightMode.set(res.mode ?? this.aiInsightMode());
+    } catch (e) {
+      const info = apiErrorInfo(e);
+      if (info.authExpired) {
+        this.handleAuthExpired('ai-chat');
+        return;
+      }
+      this.aiInsightError.set(info.message || 'Chat failed');
+    } finally {
+      this.aiChatBusy.set(false);
     }
   }
 
@@ -1901,14 +2478,35 @@ export class UiShellService {
     }
   }
 
-  openReply(): void {
+  openReply(opts?: {
+    all?: boolean;
+    messageId?: string;
+    quote?: string;
+  }): void {
     if (!this.isConnected() || !this.selectedId()) return;
+    this.replyAll.set(Boolean(opts?.all));
+    this.replyToMessageId.set(opts?.messageId ?? null);
+    const quote = (opts?.quote ?? '').trim();
+    if (quote) {
+      const quoted = quote
+        .split('\n')
+        .map((line) => `> ${line}`)
+        .join('\n');
+      const prev = this.replyBody().trim();
+      this.replyBody.set(prev ? `${prev}\n\n${quoted}\n` : `${quoted}\n\n`);
+    }
     this.replyOpen.set(true);
     this.composeOpen.set(false);
   }
 
+  openReplyAll(opts?: { messageId?: string; quote?: string }): void {
+    this.openReply({ ...opts, all: true });
+  }
+
   closeReply(): void {
     this.replyOpen.set(false);
+    this.replyAll.set(false);
+    this.replyToMessageId.set(null);
     this.replyAttachments.set([]);
   }
 
@@ -2162,6 +2760,9 @@ export class UiShellService {
       case 'reply':
         this.openReply();
         break;
+      case 'reply-all':
+        this.openReplyAll();
+        break;
       case 'compose':
         this.openCompose();
         break;
@@ -2189,8 +2790,17 @@ export class UiShellService {
       case 'theme':
         this.toggleTheme();
         break;
+      case 'layout':
+        this.setUiLayout(this.theme().uiLayout === 'list' ? 'split' : 'list');
+        break;
+      case 'ask-ai':
+        this.toggleMailboxAsk();
+        break;
       case 'settings':
         this.openSettings();
+        break;
+      case 'workflows':
+        this.openWorkflows();
         break;
       case 'help':
         this.openHelp();
@@ -2243,6 +2853,8 @@ export class UiShellService {
         id,
         body,
         attachments.length ? attachments : undefined,
+        this.replyAll(),
+        this.replyToMessageId() ?? undefined,
       );
       this.replyBody.set('');
       this.replyAttachments.set([]);

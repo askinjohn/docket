@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   refresh_token TEXT,
   token_expiry INTEGER,
   history_id TEXT,
+  auth_status TEXT NOT NULL DEFAULT 'ok',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -45,6 +46,8 @@ CREATE TABLE IF NOT EXISTS messages (
   account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   from_header TEXT NOT NULL DEFAULT '',
   to_header TEXT NOT NULL DEFAULT '',
+  cc_header TEXT NOT NULL DEFAULT '',
+  bcc_header TEXT NOT NULL DEFAULT '',
   subject TEXT NOT NULL DEFAULT '',
   date_ms INTEGER,
   snippet TEXT NOT NULL DEFAULT '',

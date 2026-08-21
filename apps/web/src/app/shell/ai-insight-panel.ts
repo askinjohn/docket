@@ -1,6 +1,14 @@
-import { Component, computed, inject } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  viewChild,
+} from '@angular/core';
 
-import { parseInsightText } from '../core/ai-insight';
 import { UiShellService } from '../core/ui-shell.service';
 
 @Component({
@@ -8,23 +16,25 @@ import { UiShellService } from '../core/ui-shell.service';
   template: `
     @if (shell.aiInsightOpen()) {
       <div
-        class="flex min-h-0 flex-col overflow-hidden border-lm-border bg-lm-panel"
-        [class.border-t]="shell.theme().replyDock === 'bottom'"
-        [class.border-b]="shell.theme().replyDock === 'right' && shell.replyOpen()"
-        aria-label="AI summary"
+        class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-lm-panel"
+        aria-label="Thread chat"
       >
         <div
           class="flex shrink-0 items-center justify-between gap-2 border-b border-lm-border/70 bg-lm-bg/50 px-4 py-2"
         >
           <div class="flex min-w-0 items-center gap-2">
             <span class="text-sm" aria-hidden="true">✨</span>
-            <span class="truncate text-[0.82rem] font-semibold text-lm-text">{{
-              insight().title
-            }}</span>
-            @if (modeLabel()) {
+            <span class="truncate text-[0.82rem] font-semibold text-lm-text">
+              @if (shell.aiBusy()) {
+                Summarizing…
+              } @else {
+                Thread chat
+              }
+            </span>
+            @if (shell.aiInsightMode()) {
               <span
                 class="shrink-0 rounded-full border border-lm-border px-1.5 py-0.5 text-[0.65rem] text-lm-muted"
-                >{{ modeLabel() }}</span
+                >{{ shell.aiInsightMode() }}</span
               >
             }
           </div>
@@ -32,81 +42,135 @@ import { UiShellService } from '../core/ui-shell.service';
             type="button"
             class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
             (click)="shell.closeAiInsight()"
-            aria-label="Close summary"
+            aria-label="Close chat"
             title="Close (Esc)"
           >
             ×
           </button>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          @if (insight().rows.length) {
-            <dl class="m-0 grid gap-2">
-              @for (row of insight().rows; track row.label) {
-                <div class="grid grid-cols-[5.5rem_1fr] gap-2 text-[0.82rem]">
-                  <dt class="m-0 text-lm-muted">{{ row.label }}</dt>
-                  <dd class="m-0 break-words font-medium text-lm-text">{{ row.value }}</dd>
-                </div>
-              }
-            </dl>
+        <div #chatScroll class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          @if (shell.aiInsightError()) {
+            <p class="m-0 mb-3 text-[0.82rem] leading-relaxed text-lm-danger">
+              {{ shell.aiInsightError() }}
+            </p>
           }
-          @if (insight().points.length) {
-            <div [class.mt-3]="insight().rows.length" class="text-[0.82rem]">
-              <div class="mb-1.5 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
-                Highlights
+          @for (msg of shell.aiChatMessages(); track $index) {
+            <div
+              class="mb-2.5 flex"
+              [class.justify-end]="msg.role === 'user'"
+              [class.justify-start]="msg.role === 'assistant'"
+            >
+              <div
+                class="max-w-[95%] whitespace-pre-wrap rounded-xl px-3 py-2 text-[0.82rem] leading-relaxed break-words"
+                [class.bg-lm-accent]="msg.role === 'user'"
+                [class.text-white]="msg.role === 'user'"
+                [class.bg-lm-bg]="msg.role === 'assistant'"
+                [class.text-lm-text]="msg.role === 'assistant'"
+              >
+                {{ msg.content }}
               </div>
-              <ul class="m-0 list-none space-y-1.5 p-0">
-                @for (p of insight().points; track $index) {
-                  <li class="flex gap-2 leading-relaxed text-lm-text">
-                    <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-lm-accent" aria-hidden="true"></span>
-                    <span class="min-w-0 break-words">{{ p }}</span>
-                  </li>
-                }
-              </ul>
             </div>
+          }
+          @if (shell.aiBusy() && shell.aiChatMessages().length === 0) {
+            <p class="m-0 text-[0.82rem] leading-relaxed text-lm-muted">
+              Asking {{ summarizeModel() }} to summarize… this can take a while
+              on a long thread.
+            </p>
+          }
+          @if (shell.aiChatBusy()) {
+            <p class="m-0 text-[0.82rem] text-lm-muted">Thinking…</p>
           }
         </div>
 
-        <div
-          class="flex shrink-0 flex-wrap items-center gap-2 border-t border-lm-border bg-lm-bg/40 px-4 py-2.5"
-        >
-          <button
-            type="button"
-            class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.78rem] text-lm-text hover:bg-lm-hover"
-            (click)="shell.copyAiInsight()"
-          >
-            Copy
-          </button>
-          <button
-            type="button"
-            class="cursor-pointer rounded-lg border-0 bg-lm-accent/90 px-2.5 py-1.5 text-[0.78rem] font-semibold text-white hover:brightness-110 disabled:opacity-40"
-            (click)="shell.insertInsightIntoReply()"
-            [disabled]="!shell.isConnected()"
-          >
-            Insert into reply
-          </button>
+        <div class="shrink-0 border-t border-lm-border bg-lm-bg/40 px-3 py-2.5">
+          <textarea
+            #chatInput
+            class="mb-2 max-h-28 min-h-14 w-full resize-none rounded-lg border border-lm-border bg-lm-panel px-3 py-2 text-[0.85rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted"
+            rows="2"
+            placeholder="Ask about this thread…"
+            [value]="shell.aiChatDraft()"
+            [disabled]="shell.aiBusy() || shell.aiChatBusy()"
+            (input)="onDraft($event)"
+            (keydown)="onKey($event)"
+          ></textarea>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.75rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+                (click)="shell.copyAiInsight()"
+                [disabled]="!shell.lastAssistantReply()"
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.75rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
+                (click)="shell.insertInsightIntoReply()"
+                [disabled]="!shell.isConnected() || !shell.lastAssistantReply()"
+              >
+                Insert into reply
+              </button>
+            </div>
+            <button
+              type="button"
+              class="cursor-pointer rounded-lg border-0 bg-lm-accent px-3 py-1.5 text-[0.78rem] font-semibold text-white hover:brightness-110 disabled:opacity-40"
+              (click)="shell.sendAiChat()"
+              [disabled]="
+                shell.aiBusy() ||
+                shell.aiChatBusy() ||
+                !shell.aiChatDraft().trim()
+              "
+            >
+              {{ shell.aiChatBusy() ? 'Sending…' : 'Ask' }}
+            </button>
+          </div>
         </div>
       </div>
     }
   `,
   styles: `
     :host {
-      display: contents;
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
     }
   `,
 })
 export class AiInsightPanel {
   protected readonly shell = inject(UiShellService);
-
-  protected readonly insight = computed(() =>
-    parseInsightText(this.shell.aiInsightText()),
-  );
-
-  protected readonly modeLabel = computed(() => {
-    const mode = this.shell.aiInsightMode();
-    const note = this.insight().modeNote;
-    if (mode && note) return `${mode} · ${note}`;
-    if (mode) return mode;
-    return note;
+  private readonly injector = inject(Injector);
+  protected readonly summarizeModel = computed(() => {
+    const roles = this.shell.aiConfig()?.roles;
+    return roles?.['summarize']?.model || this.shell.aiStatus()?.model || 'Ollama';
   });
+  private readonly chatScroll = viewChild<ElementRef<HTMLElement>>('chatScroll');
+
+  constructor() {
+    effect(() => {
+      void this.shell.aiChatMessages().length;
+      void this.shell.aiChatBusy();
+      void this.shell.aiBusy();
+      afterNextRender(
+        () => {
+          const el = this.chatScroll()?.nativeElement;
+          if (el) el.scrollTop = el.scrollHeight;
+        },
+        { injector: this.injector },
+      );
+    });
+  }
+
+  onDraft(event: Event): void {
+    this.shell.setAiChatDraft((event.target as HTMLTextAreaElement).value);
+  }
+
+  onKey(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void this.shell.sendAiChat();
+    }
+  }
 }

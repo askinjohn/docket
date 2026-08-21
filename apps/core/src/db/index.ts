@@ -19,11 +19,48 @@ export function getDb(): Db {
     ).run();
     migrateCompositeThreadIds(db);
     ensureMailViewsTable(db);
+    ensureAuthStatusColumn(db);
+    ensureCcHeaderColumn(db);
+    ensureBccHeaderColumn(db);
   }
   return db;
 }
 
+/** Idempotent for DBs created before accounts.auth_status existed. */
+function ensureAuthStatusColumn(database: Db): void {
+  const cols = database.prepare(`PRAGMA table_info(accounts)`).all() as {
+    name: string;
+  }[];
+  if (!cols.some((c) => c.name === 'auth_status')) {
+    database.exec(
+      `ALTER TABLE accounts ADD COLUMN auth_status TEXT NOT NULL DEFAULT 'ok'`,
+    );
+  }
+}
+
 /** Idempotent for DBs created before mail_views existed. */
+function ensureCcHeaderColumn(database: Db): void {
+  const cols = database.prepare(`PRAGMA table_info(messages)`).all() as {
+    name: string;
+  }[];
+  if (!cols.some((c) => c.name === 'cc_header')) {
+    database.exec(
+      `ALTER TABLE messages ADD COLUMN cc_header TEXT NOT NULL DEFAULT ''`,
+    );
+  }
+}
+
+function ensureBccHeaderColumn(database: Db): void {
+  const cols = database.prepare(`PRAGMA table_info(messages)`).all() as {
+    name: string;
+  }[];
+  if (!cols.some((c) => c.name === 'bcc_header')) {
+    database.exec(
+      `ALTER TABLE messages ADD COLUMN bcc_header TEXT NOT NULL DEFAULT ''`,
+    );
+  }
+}
+
 function ensureMailViewsTable(database: Db): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS mail_views (
@@ -110,6 +147,8 @@ export interface AccountRow {
   refresh_token: string | null;
   token_expiry: number | null;
   history_id: string | null;
+  /** `ok` | `expired` — expired means Google rejected the refresh token. */
+  auth_status: 'ok' | 'expired';
   created_at: number;
   updated_at: number;
 }
@@ -135,6 +174,8 @@ export interface MessageRow {
   account_id: number;
   from_header: string;
   to_header: string;
+  cc_header: string;
+  bcc_header: string;
   subject: string;
   date_ms: number | null;
   snippet: string;

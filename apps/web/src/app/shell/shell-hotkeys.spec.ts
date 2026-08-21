@@ -25,7 +25,16 @@ function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
     clearChecked: vi.fn(),
     closeCommandPalette: vi.fn(),
     closeSettings: vi.fn(),
+    workflowsOpen: () => false,
+    closeWorkflows: vi.fn(),
+    openSettings: vi.fn(),
     closeAccountMenu: vi.fn(),
+    mailboxAskOpen: () => false,
+    closeMailboxAsk: vi.fn(),
+    workflowReportOpen: () => false,
+    closeWorkflowReport: vi.fn(),
+    isSplitLayout: () => true,
+    backToList: vi.fn(),
     closeHelp: vi.fn(),
     toggleHelp: vi.fn(),
     openHelp: vi.fn(),
@@ -34,8 +43,11 @@ function makeShell(overrides: Partial<Record<string, unknown>> = {}) {
     selectAllVisible: vi.fn(),
     selectNext: vi.fn(),
     selectPrevious: vi.fn(),
+    openFocusedThread: vi.fn(),
+    focusedThreadId: () => null,
     onThreadListClick: vi.fn(),
     openReply: vi.fn(),
+    openReplyAll: vi.fn(),
     openCompose: vi.fn(),
     archiveSelected: vi.fn(),
     undoArchive: vi.fn(),
@@ -69,12 +81,50 @@ describe('handleShellKeydown', () => {
     expect(shell.toggleCommandPalette).toHaveBeenCalled();
   });
 
+  it('opens settings on ⌘,', () => {
+    const shell = makeShell();
+    const event = key(',', { metaKey: true });
+    expect(handleShellKeydown(event, shell)).toBe(true);
+    expect(shell.openSettings).toHaveBeenCalled();
+  });
+
   it('navigates with j/k', () => {
     const shell = makeShell();
     expect(handleShellKeydown(key('j'), shell)).toBe(true);
     expect(shell.selectNext).toHaveBeenCalled();
     expect(handleShellKeydown(key('k'), shell)).toBe(true);
     expect(shell.selectPrevious).toHaveBeenCalled();
+  });
+
+  it('navigates with arrow keys and opens with Enter', () => {
+    const shell = makeShell();
+    expect(handleShellKeydown(key('ArrowDown'), shell)).toBe(true);
+    expect(shell.selectNext).toHaveBeenCalled();
+    expect(handleShellKeydown(key('ArrowUp'), shell)).toBe(true);
+    expect(shell.selectPrevious).toHaveBeenCalled();
+    expect(handleShellKeydown(key('Enter'), shell)).toBe(true);
+    expect(shell.openFocusedThread).toHaveBeenCalled();
+    expect(handleShellKeydown(key('ArrowRight'), shell)).toBe(true);
+    expect(shell.openFocusedThread).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not open compose on ⌘C', () => {
+    const shell = makeShell();
+    const event = key('c', { metaKey: true });
+    expect(handleShellKeydown(event, shell)).toBe(false);
+    expect(shell.openCompose).not.toHaveBeenCalled();
+  });
+
+  it('opens compose on c without modifiers', () => {
+    const shell = makeShell();
+    expect(handleShellKeydown(key('c'), shell)).toBe(true);
+    expect(shell.openCompose).toHaveBeenCalled();
+  });
+
+  it('opens reply all on a', () => {
+    const shell = makeShell();
+    expect(handleShellKeydown(key('a'), shell)).toBe(true);
+    expect(shell.openReplyAll).toHaveBeenCalled();
   });
 
   it('archives with e and undoes with z', () => {
@@ -101,6 +151,15 @@ describe('handleShellKeydown', () => {
     const shell = makeShell();
     handleShellKeydown(key('?'), shell);
     expect(shell.toggleHelp).toHaveBeenCalled();
+  });
+
+  it('returns to the list on Esc in list-first layout', () => {
+    const shell = makeShell({
+      isSplitLayout: () => false,
+      selectedId: () => 't1',
+    });
+    expect(handleShellKeydown(key('Escape'), shell)).toBe(true);
+    expect(shell.backToList).toHaveBeenCalled();
   });
 
   it('handles g i / g s / g a go chords', () => {

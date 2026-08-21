@@ -1,4 +1,6 @@
 import { appConfig } from '../config.js';
+import { knownLabelNames, labelDisplayName } from '../gmail/labels.js';
+import { uniqueAddresses } from './addresses.js';
 import { getActiveAccount } from '../db/accounts.js';
 import {
   getDb,
@@ -195,10 +197,18 @@ export function listLabels(): {
     const system = Boolean(systemNames[id]) || id.startsWith('CATEGORY_');
     out.push({
       id,
-      name: systemNames[id] ?? (id.startsWith('Label_') ? id : id),
+      name: systemNames[id] ?? labelDisplayName(id) ?? id,
       system,
       count,
     });
+  }
+
+  for (const { id, name } of knownLabelNames()) {
+    if (counts.has(id) || systemNames[id] || id.startsWith('CATEGORY_')) continue;
+    if (id === 'UNREAD' || id === 'INBOX' || id === 'STARRED' || id === 'SENT') {
+      continue;
+    }
+    out.push({ id, name, system: false, count: 0 });
   }
 
   out.sort((a, b) => {
@@ -230,37 +240,48 @@ export function getThreadDetail(threadId: string) {
   // Absolute core URL so cid: rewrites work inside sandboxed iframe srcdoc
   const attachBase = `http://${appConfig.host}:${appConfig.port}/attachments`;
 
+  const mapped = messages.map((m) => {
+    const allAtts = attStmt.all(m.id) as AttachmentRow[];
+    const { html: bodyHtml } = rewriteCidImages(
+      m.body_html || '',
+      allAtts,
+      attachBase,
+    );
+    return {
+      id: m.id,
+      from: m.from_header,
+      to: m.to_header,
+      cc: m.cc_header || '',
+      bcc: m.bcc_header || '',
+      time: formatTime(m.internal_date ?? m.date_ms),
+      body: m.body_text || m.snippet || stripHtml(m.body_html),
+      bodyHtml,
+      attachments: allAtts.map((a) => ({
+        id: a.id,
+        name: a.filename || 'attachment',
+        sizeLabel: formatSize(a.size_bytes),
+        kind: kindFromMime(a.mime_type, a.filename),
+        mimeType: a.mime_type,
+      })),
+    };
+  });
+
+  const participants = uniqueAddresses(
+    mapped.flatMap((m) => [m.from, m.to, m.cc, m.bcc]),
+  ).map((a) => ({
+    name: a.name,
+    email: a.email,
+    display: a.name || a.email,
+  }));
+
   return {
     id: thread.id,
     subject: thread.subject || '(no subject)',
     from: thread.from_name || thread.from_email,
     time: formatTime(thread.last_message_at),
     unread: Boolean(thread.unread),
-    messages: messages.map((m) => {
-      const allAtts = attStmt.all(m.id) as AttachmentRow[];
-      const { html: bodyHtml } = rewriteCidImages(
-        m.body_html || '',
-        allAtts,
-        attachBase,
-      );
-      // Always return attachments as chips (even if inlined) so the user can
-      // still open the viewer if the iframe image fails to load.
-      return {
-        id: m.id,
-        from: m.from_header,
-        to: m.to_header,
-        time: formatTime(m.internal_date ?? m.date_ms),
-        body: m.body_text || m.snippet || stripHtml(m.body_html),
-        bodyHtml,
-        attachments: allAtts.map((a) => ({
-          id: a.id,
-          name: a.filename || 'attachment',
-          sizeLabel: formatSize(a.size_bytes),
-          kind: kindFromMime(a.mime_type, a.filename),
-          mimeType: a.mime_type,
-        })),
-      };
-    }),
+    participants,
+    messages: mapped,
   };
 }
 

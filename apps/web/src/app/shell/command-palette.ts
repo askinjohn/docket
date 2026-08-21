@@ -18,6 +18,7 @@ export const PALETTE_ITEMS = [
   { cmd: 'test-notify', label: 'Test notification', hint: '' },
   { cmd: 'compose', label: 'Compose', hint: 'c' },
   { cmd: 'reply', label: 'Reply', hint: 'r' },
+  { cmd: 'reply-all', label: 'Reply all', hint: 'a' },
   { cmd: 'archive', label: 'Archive', hint: 'e' },
   { cmd: 'undo', label: 'Undo archive', hint: 'z' },
   { cmd: 'star', label: 'Toggle star', hint: 's' },
@@ -32,7 +33,10 @@ export const PALETTE_ITEMS = [
   { cmd: 'all', label: 'Go to all mail', hint: 'g a' },
   { cmd: 'sent', label: 'Go to sent', hint: '' },
   { cmd: 'theme', label: 'Toggle dark / light', hint: '' },
+  { cmd: 'layout', label: 'Toggle list / split layout', hint: '' },
+  { cmd: 'ask-ai', label: 'Ask AI about mailbox', hint: '' },
   { cmd: 'settings', label: 'Appearance settings', hint: '' },
+  { cmd: 'workflows', label: 'Workflows', hint: '' },
   { cmd: 'help', label: 'Keyboard shortcuts', hint: '?' },
   { cmd: 'add-account', label: 'Add Google account', hint: '' },
 ] as const;
@@ -46,7 +50,7 @@ export const PALETTE_ITEMS = [
         (click)="shell.closeCommandPalette()"
       ></div>
       <div
-        class="fixed top-[18%] left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-lm-border bg-lm-panel px-4 py-4 shadow-2xl"
+        class="fixed top-[18%] left-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 rounded-md border border-lm-border bg-lm-panel px-4 py-4 shadow-[0_24px_80px_rgba(20,18,16,0.35)]"
         role="dialog"
         aria-label="Command palette"
         aria-modal="true"

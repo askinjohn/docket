@@ -15,10 +15,18 @@ export interface ShellMessage {
   id: string;
   from: string;
   to: string;
+  cc: string;
+  bcc: string;
   time: string;
   body: string;
   bodyHtml: string;
   attachments: ShellAttachment[];
+}
+
+export interface ShellParticipant {
+  name: string;
+  email: string;
+  display: string;
 }
 
 export interface ShellThreadPreview {
@@ -31,6 +39,7 @@ export interface ShellThreadPreview {
   starred?: boolean;
   messages: ShellMessage[];
   hasAttachments?: boolean;
+  participants?: ShellParticipant[];
 }
 
 export type MailView =

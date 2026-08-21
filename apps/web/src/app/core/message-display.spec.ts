@@ -15,6 +15,8 @@ function msg(partial: Partial<ShellMessage>): ShellMessage {
     id: '1',
     from: 'a@example.com',
     to: 'b@example.com',
+    cc: '',
+    bcc: '',
     time: '',
     body: '',
     bodyHtml: '',

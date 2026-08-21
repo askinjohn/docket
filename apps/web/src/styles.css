@@ -1,18 +1,19 @@
 @import 'tailwindcss';
 
-/* Local Mail design tokens → Tailwind utilities (bg-lm-*, text-lm-*, etc.) */
+/* Correspondence-desk tokens → Tailwind utilities (bg-lm-*, text-lm-*, etc.) */
 @theme {
-  --color-lm-bg: #0b0d12;
-  --color-lm-panel: #12161f;
-  --color-lm-hover: #1a2030;
-  --color-lm-border: #2a3344;
-  --color-lm-text: #e8ecf4;
-  --color-lm-muted: #8b95a8;
-  --color-lm-accent: #7c6af7;
-  --color-lm-accent-2: #3dd6c6;
-  --color-lm-danger: #f07178;
+  --color-lm-bg: #141210;
+  --color-lm-panel: #1c1915;
+  --color-lm-hover: #26221c;
+  --color-lm-border: #3a342c;
+  --color-lm-text: #f3eee6;
+  --color-lm-muted: #9a9084;
+  --color-lm-accent: #c45c26;
+  --color-lm-accent-2: #c9a36a;
+  --color-lm-danger: #c45c4a;
   --font-lm:
-    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-lm-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
 }
 
 html,
@@ -27,28 +28,70 @@ body {
   background: var(--color-lm-bg);
   color: var(--color-lm-text);
   font-family: var(--font-lm);
-  /* Scale set by theme.ts (--font-size-scale); rem sizes track user preference */
   font-size: 1rem;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Theme + density applied via JS (theme.ts) using CSS variables.
-   Fallbacks when JS has not run yet: */
 html[data-theme='light'] {
-  --color-lm-bg: #f4f5f7;
-  --color-lm-panel: #ffffff;
-  --color-lm-hover: #e8eaef;
-  --color-lm-border: #d0d5dd;
-  --color-lm-text: #101828;
-  --color-lm-muted: #667085;
+  --color-lm-bg: #f4efe6;
+  --color-lm-panel: #fffaf3;
+  --color-lm-hover: #ebe3d4;
+  --color-lm-border: #ddd2c0;
+  --color-lm-text: #1c1814;
+  --color-lm-muted: #6f665c;
+}
+
+html[data-theme='dark'] {
+  --color-lm-bg: #141210;
+  --color-lm-panel: #1c1915;
+  --color-lm-hover: #26221c;
+  --color-lm-border: #3a342c;
+  --color-lm-text: #f3eee6;
+  --color-lm-muted: #9a9084;
 }
 
 html[data-density='compact'] .thread-row,
 html[data-density='compact'] [role='option'] {
-  padding-top: 0.4rem;
-  padding-bottom: 0.4rem;
+  padding-top: 0.42rem;
+  padding-bottom: 0.42rem;
 }
 
 html[data-density='compact'] aside {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+}
+
+.lm-display {
+  font-family: var(--font-lm-display);
+  font-optical-sizing: auto;
+}
+
+.thread-row[data-selected='true'],
+.thread-row[data-cursor='true'] {
+  box-shadow: inset 2px 0 0 var(--color-lm-accent);
+}
+
+.thread-row[data-cursor='true'] {
+  background: var(--color-lm-hover);
+}
+
+html[data-layout='list'] .thread-row {
+  padding-top: 0.62rem;
+  padding-bottom: 0.62rem;
+  padding-inline: 0.85rem;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-lm-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

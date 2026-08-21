@@ -4,6 +4,27 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 ---
 
+## ADR-015 — Workflow harness (local function calls)
+
+- **Status:** Accepted (2026-08-21)
+- **Context:** Compiling English to keyword JSON failed on small local models (schema placeholders, AND of extra words like “separate”). A filing workflow could scan a full inbox and apply nothing. Users need the model to see mail and pick tools, with mail staying on-device.
+- **Decision:** Run path is a **harness**: send English intent + from/subject/snippet to the workflow’s local model; parse JSON function calls; execute only `addLabel` / `archive` / `star` / `notify`. `delete`/`trash` map to archive (leave inbox). No send/forward/permanent delete. Keyword JSON is a hint and preferred tool bundle, not a gate. Cloud backends are allowed only if the user picked one; UI warns.
+- **Consequences:** Runs are slower (one model call per mail on 1B models, batches of 5 on larger). Activity shows “choosing tools”. Matcher/judge path is no longer the executor.
+
+## ADR-014 — Approved workflows (catalog + cron + model pick)
+
+- **Status:** Accepted (2026-08-19) · run executor superseded by ADR-015
+- **Context:** Users want English automations (urgent notify, file GitLab/leave mail, morning triage) without a free-running agent.
+- **Decision:** Closed catalog of triggers (`mail.received`, `manual`, `cron`), matchers, judges, and actions (notify / label / leave inbox / star). AI compiles English into that JSON using a **user-selected** backend+model. Nothing mutates mail until Approve. Stored in `~/.local-mail/workflows.json`. No send/delete.
+- **Consequences:** Core engine on `mail.new` + 30s cron tick (catch-up if the Mac slept through a slot). Dry-run and Run now from the Workflows dialog.
+
+## ADR-013 — Configurable shell layouts (List first | Split)
+
+- **Status:** Accepted (2026-08-18)
+- **Context:** Superhuman-style centered letter cards + a permanent Ask AI column wasted space and collided with the reply bar. Users want to land on the inbox list, click a thread to read it, and optionally keep the list on the side.
+- **Decision:** Persist `theme.uiLayout` (`list` | `split`). List-first hides the list while reading (Back / Esc). Split is the classic 3-pane. Ask AI is an overlay, not a grid column.
+- **Consequences:** Settings + Cmd+K toggle. New/unset prefs default to list. `classic` migrates to split; `mail` migrates to list.
+
 ## ADR-010 — Angular 22 stable feature set for UI
 
 - **Status:** Accepted (2026-07-20)

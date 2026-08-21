@@ -6,18 +6,22 @@ export const SHORTCUT_GROUPS = [
   {
     title: 'Navigate',
     items: [
-      { keys: 'j / k', label: 'Next / previous thread' },
+      { keys: 'j / k or ↓ / ↑', label: 'Next / previous thread' },
+      { keys: 'Enter / →', label: 'Open highlighted thread' },
+      { keys: '← / Esc', label: 'Back to list' },
       { keys: 'g i', label: 'Go to Inbox' },
       { keys: 'g s', label: 'Go to Starred' },
       { keys: 'g a', label: 'Go to All' },
       { keys: '/', label: 'Focus search' },
       { keys: '⌘K', label: 'Command palette' },
+      { keys: '⌘K workflows', label: 'Open workflows' },
+      { keys: '⌘,', label: 'Settings' },
     ],
   },
   {
     title: 'Triage',
     items: [
-      { keys: 'e', label: 'Archive' },
+      { keys: 'e', label: 'Archive · stays on the next thread' },
       { keys: 'z', label: 'Undo archive' },
       { keys: 's', label: 'Toggle star' },
       { keys: 'u', label: 'Mark unread' },
@@ -34,6 +38,7 @@ export const SHORTCUT_GROUPS = [
     items: [
       { keys: 'c', label: 'Compose' },
       { keys: 'r', label: 'Reply' },
+      { keys: 'a', label: 'Reply all' },
       { keys: '⌘↵', label: 'Send' },
     ],
   },

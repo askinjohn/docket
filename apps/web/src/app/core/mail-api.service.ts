@@ -7,6 +7,7 @@ import { environment } from '../../environments/environment';
 export interface AuthStatus {
   googleConfigured: boolean;
   connected: boolean;
+  authExpired?: boolean;
   email: string | null;
 }
 
@@ -14,16 +15,180 @@ export interface PublicAccount {
   id: number;
   email: string;
   provider: string;
+  authStatus?: 'ok' | 'expired';
 }
 
 export interface HealthResponse {
   ok: boolean;
   service: string;
   googleConfigured: boolean;
-  account: { id?: number; email: string } | null;
+  account: { id?: number; email: string; authStatus?: 'ok' | 'expired' } | null;
   accounts?: PublicAccount[];
+  authExpired?: boolean;
+  connected?: boolean;
   aiMode?: string;
+  ai?: AiStatus;
   notesDir?: string;
+}
+
+export interface AiBackendConfig {
+  type: 'ollama' | 'openai_compatible' | 'template';
+  baseURL: string;
+  apiKey?: string | null;
+  apiKeyEnv?: string | null;
+  hasKey?: boolean;
+}
+
+export interface AiRoleConfig {
+  backend: string;
+  model: string;
+}
+
+export interface AiRoleMeta {
+  id: string;
+  label: string;
+  help: string;
+}
+
+export interface AiConfigPublic {
+  version: number;
+  backends: Record<string, AiBackendConfig>;
+  roles: Record<string, AiRoleConfig>;
+  path: string;
+  roleMeta: AiRoleMeta[];
+}
+
+export type WorkflowTriggerType = 'mail.received' | 'manual' | 'cron';
+export type WorkflowJudge =
+  | 'urgent'
+  | 'needs_reply'
+  | 'noise'
+  | 'can_archive';
+export type WorkflowActionType =
+  | 'notify'
+  | 'addLabel'
+  | 'removeFromInbox'
+  | 'archive'
+  | 'star'
+  | 'report';
+
+export interface WorkflowTrigger {
+  type: WorkflowTriggerType;
+  expr?: string;
+}
+
+export interface WorkflowMatcher {
+  fromIncludes?: string[];
+  subjectIncludes?: string[];
+  query?: string;
+  hasAttachment?: boolean;
+  unread?: boolean;
+  labelIncludes?: string[];
+  maxAgeDays?: number;
+}
+
+export interface WorkflowAction {
+  type: WorkflowActionType;
+  name?: string;
+  title?: string;
+  text?: string;
+}
+
+export interface WorkflowRule {
+  id: string;
+  matchers?: WorkflowMatcher;
+  judge?: WorkflowJudge;
+  then: WorkflowAction[];
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  english: string;
+  enabled: boolean;
+  approved: boolean;
+  trigger: WorkflowTrigger;
+  model: { backend: string; model: string };
+  rules: WorkflowRule[];
+  createdAt: string;
+  updatedAt: string;
+  lastRunAt?: string | null;
+  lastError?: string | null;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  at: string;
+  reason: string;
+  dryRun: boolean;
+  threadCount: number;
+  actions: {
+    threadId: string;
+    action: string;
+    detail?: string;
+    from?: string;
+    subject?: string;
+  }[];
+  error?: string;
+  output?: string;
+}
+
+export interface WorkflowCatalog {
+  triggers: { id: string; label: string; help: string }[];
+  judges: { id: string; label: string; help: string }[];
+  actions: { id: string; label: string; help: string }[];
+  blocked: string[];
+}
+
+export type WorkflowJobStatus =
+  | 'queued'
+  | 'running'
+  | 'done'
+  | 'error'
+  | 'cancelled';
+
+export interface WorkflowJob {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  reason: string;
+  dryRun: boolean;
+  status: WorkflowJobStatus;
+  threadCount: number;
+  scanned: number;
+  actions: {
+    threadId: string;
+    action: string;
+    detail?: string;
+    from?: string;
+    subject?: string;
+  }[];
+  current?: { from: string; subject: string } | null;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  output?: string;
+}
+
+export interface WorkflowsResponse {
+  path: string;
+  catalog: WorkflowCatalog;
+  workflows: Workflow[];
+  runs: WorkflowRun[];
+  jobs?: WorkflowJob[];
+}
+
+export interface AiStatus {
+  mode: 'template' | 'ollama' | 'openai';
+  model: string | null;
+  ollamaReachable: boolean;
+  ollamaBaseUrl: string;
+  models: string[];
+  hasChatModel: boolean;
+  hint: string;
+  config?: AiConfigPublic;
 }
 
 export interface ApiThread {
@@ -49,10 +214,18 @@ export interface ApiMessage {
   id: string;
   from: string;
   to: string;
+  cc?: string;
+  bcc?: string;
   time: string;
   body: string;
   bodyHtml?: string;
   attachments: ApiAttachment[];
+}
+
+export interface ApiParticipant {
+  name: string;
+  email: string;
+  display: string;
 }
 
 export interface ApiThreadDetail {
@@ -61,6 +234,7 @@ export interface ApiThreadDetail {
   from: string;
   time: string;
   unread: boolean;
+  participants?: ApiParticipant[];
   messages: ApiMessage[];
 }
 
@@ -144,6 +318,7 @@ export class MailApiService {
         threads: ApiThread[];
         searchHasMore?: boolean;
         inboxHasMore?: boolean;
+        authExpired?: boolean;
       }>(`${this.baseUrl}/threads${qs ? `?${qs}` : ''}`),
     );
   }
@@ -276,11 +451,13 @@ export class MailApiService {
       mimeType: string;
       contentBase64: string;
     }[],
+    replyAll = false,
+    messageId?: string,
   ) {
     return firstValueFrom(
       this.http.post<{ ok: boolean; id: string }>(
         `${this.baseUrl}/threads/${encodeURIComponent(threadId)}/reply`,
-        { bodyText, attachments },
+        { bodyText, attachments, replyAll, messageId },
       ),
     );
   }
@@ -331,12 +508,48 @@ export class MailApiService {
     );
   }
 
+  aiStatus() {
+    return firstValueFrom(this.http.get<AiStatus>(`${this.baseUrl}/ai/status`));
+  }
+
+  getAiConfig() {
+    return firstValueFrom(
+      this.http.get<AiConfigPublic>(`${this.baseUrl}/ai/config`),
+    );
+  }
+
+  saveAiConfig(config: {
+    backends: Record<string, AiBackendConfig>;
+    roles: Record<string, AiRoleConfig>;
+  }) {
+    return firstValueFrom(
+      this.http.put<AiConfigPublic & { ok: boolean }>(
+        `${this.baseUrl}/ai/config`,
+        config,
+      ),
+    );
+  }
+
   aiSummarize(threadId: string) {
     return firstValueFrom(
-      this.http.post<{ ok: boolean; text: string; mode: string }>(
+      this.http.post<{ ok: boolean; text: string; mode: string; model?: string }>(
         `${this.baseUrl}/ai/summarize`,
         { threadId },
       ),
+    );
+  }
+
+  aiChat(
+    threadId: string,
+    messages: { role: 'user' | 'assistant'; content: string }[],
+  ) {
+    return firstValueFrom(
+      this.http.post<{
+        ok: boolean;
+        text: string;
+        mode: string;
+        model?: string;
+      }>(`${this.baseUrl}/ai/chat`, { threadId, messages }),
     );
   }
 
@@ -346,6 +559,88 @@ export class MailApiService {
         `${this.baseUrl}/ai/draft`,
         { threadId },
       ),
+    );
+  }
+
+  listWorkflows() {
+    return firstValueFrom(
+      this.http.get<WorkflowsResponse>(`${this.baseUrl}/workflows`),
+    );
+  }
+
+  suggestWorkflow(english: string, backend: string, model: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; workflow: Workflow }>(
+        `${this.baseUrl}/workflows/suggest`,
+        { english, backend, model },
+      ),
+    );
+  }
+
+  saveWorkflow(workflow: Partial<Workflow>) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; workflow: Workflow }>(
+        `${this.baseUrl}/workflows`,
+        workflow,
+      ),
+    );
+  }
+
+  patchWorkflow(id: string, patch: Partial<Workflow>) {
+    return firstValueFrom(
+      this.http.patch<{ ok: boolean; workflow: Workflow }>(
+        `${this.baseUrl}/workflows/${encodeURIComponent(id)}`,
+        patch,
+      ),
+    );
+  }
+
+  deleteWorkflow(id: string) {
+    return firstValueFrom(
+      this.http.delete<{ ok: boolean }>(
+        `${this.baseUrl}/workflows/${encodeURIComponent(id)}`,
+      ),
+    );
+  }
+
+  runWorkflow(id: string, opts?: { dryRun?: boolean; limit?: number }) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; job: WorkflowJob }>(
+        `${this.baseUrl}/workflows/${encodeURIComponent(id)}/run`,
+        opts ?? {},
+      ),
+    );
+  }
+
+  stopWorkflowJob(jobId: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; job: WorkflowJob }>(
+        `${this.baseUrl}/workflows/jobs/${encodeURIComponent(jobId)}/stop`,
+        {},
+      ),
+    );
+  }
+
+  stopWorkflow(id: string) {
+    return firstValueFrom(
+      this.http.post<{ ok: boolean; jobs: WorkflowJob[] }>(
+        `${this.baseUrl}/workflows/${encodeURIComponent(id)}/stop`,
+        {},
+      ),
+    );
+  }
+
+  aiAsk(
+    question: string,
+    messages: { role: 'user' | 'assistant'; content: string }[] = [],
+  ) {
+    return firstValueFrom(
+      this.http.post<{
+        ok: boolean;
+        text: string;
+        mode: string;
+        model?: string;
+      }>(`${this.baseUrl}/ai/ask`, { question, messages }),
     );
   }
 }
