@@ -7,7 +7,7 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 ## ADR-015 — Workflow harness (local function calls)
 
 - **Status:** Accepted (2026-08-21)
-- **Context:** Compiling English to keyword JSON failed on small local models (schema placeholders, AND of extra words like “separate”). Vacation-India scanned 120 threads and applied nothing. Users need the model to see mail and pick tools, with mail staying on-device.
+- **Context:** Compiling English to keyword JSON failed on small local models (schema placeholders, AND of extra words like “separate”). A filing workflow could scan a full inbox and apply nothing. Users need the model to see mail and pick tools, with mail staying on-device.
 - **Decision:** Run path is a **harness**: send English intent + from/subject/snippet to the workflow’s local model; parse JSON function calls; execute only `addLabel` / `archive` / `star` / `notify`. `delete`/`trash` map to archive (leave inbox). No send/forward/permanent delete. Keyword JSON is a hint and preferred tool bundle, not a gate. Cloud backends are allowed only if the user picked one; UI warns.
 - **Consequences:** Runs are slower (one model call per mail on 1B models, batches of 5 on larger). Activity shows “choosing tools”. Matcher/judge path is no longer the executor.
 

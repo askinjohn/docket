@@ -11,7 +11,7 @@ Runs no longer AND keyword matchers. Core sends the English intent plus each inb
 
 ## Why
 
-Vacation-India compiled placeholders and extra AND tokens (`separate`), scanned 120 threads, 0 actions.
+A hyphenated filing label compiled placeholders and extra AND tokens (`separate`), scanned many threads, 0 actions.
 
 ## Key files
 

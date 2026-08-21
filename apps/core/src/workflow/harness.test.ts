@@ -13,10 +13,10 @@ import {
 function wf(partial: Partial<Workflow> = {}): Workflow {
   return {
     id: 'w1',
-    name: 'Vacation-India',
+    name: 'Team-Offsite',
     description: '',
     english:
-      'Remove any email that contains Vacation-India. They need to be moved out of inbox to a separate folder or archived',
+      'Remove any email that contains Team-Offsite. They need to be moved out of inbox to a separate folder or archived',
     enabled: true,
     approved: true,
     trigger: { type: 'manual' },
@@ -29,7 +29,7 @@ function wf(partial: Partial<Workflow> = {}): Workflow {
         },
         then: [
           { type: 'notify' },
-          { type: 'addLabel', name: 'Vacation-India' },
+          { type: 'addLabel', name: 'Team-Offsite' },
           { type: 'archive' },
           { type: 'star' },
         ],
@@ -42,10 +42,10 @@ function wf(partial: Partial<Workflow> = {}): Workflow {
 }
 
 describe('harness', () => {
-  it('hints include vacation/india, not separate', () => {
+  it('hints include hyphenated name tokens, not separate', () => {
     const hints = intentHints(wf().english);
-    assert.equal(hints.some((h) => h.includes('vacation')), true);
-    assert.equal(hints.some((h) => h.includes('india')), true);
+    assert.equal(hints.some((h) => h.includes('team')), true);
+    assert.equal(hints.some((h) => h.includes('offsite')), true);
     assert.equal(hints.includes('separate'), false);
   });
 
@@ -55,12 +55,12 @@ describe('harness', () => {
       acts.map((a) => a.type),
       ['addLabel', 'archive'],
     );
-    assert.equal(acts[0]?.name, 'Vacation-India');
+    assert.equal(acts[0]?.name, 'Team-Offsite');
   });
 
   it('maps delete/trash to archive and drops send', () => {
     const acts = callsFromUnknown(
-      [{ fn: 'delete' }, { fn: 'send' }, { type: 'addLabel', name: 'Vacation-India' }],
+      [{ fn: 'delete' }, { fn: 'send' }, { type: 'addLabel', name: 'Team-Offsite' }],
       [],
     );
     assert.deepEqual(
@@ -72,7 +72,7 @@ describe('harness', () => {
   it('parses per-email calls JSON', () => {
     const defaults = defaultActions(wf());
     const map = parseHarnessResponse(
-      '{"calls":[{"fn":"addLabel","name":"Vacation-India"},{"fn":"archive"}]}',
+      '{"calls":[{"fn":"addLabel","name":"Team-Offsite"},{"fn":"archive"}]}',
       defaults,
       ['e1'],
     );

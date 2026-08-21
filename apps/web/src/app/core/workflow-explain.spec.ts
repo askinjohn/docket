@@ -11,9 +11,9 @@ import {
 function wf(partial: Partial<Workflow> = {}): Workflow {
   return {
     id: 'w1',
-    name: 'Vacation India',
+    name: 'Team Offsite',
     description: 'File leave mail',
-    english: 'label vacation india',
+    english: 'label team offsite',
     enabled: true,
     approved: true,
     trigger: { type: 'mail.received' },
@@ -31,14 +31,14 @@ describe('workflow-explain', () => {
       rules: [
         {
           id: 'r1',
-          matchers: { query: 'vacation india' },
-          then: [{ type: 'addLabel', name: 'Vacation-India' }],
+          matchers: { query: 'team offsite' },
+          then: [{ type: 'addLabel', name: 'Team-Offsite' }],
         },
       ],
     });
     const parsed = parseConfig(configJson(src), src);
-    expect(parsed?.name).toBe('Vacation India');
-    expect(parsed?.rules[0].matchers?.query).toBe('vacation india');
+    expect(parsed?.name).toBe('Team Offsite');
+    expect(parsed?.rules[0].matchers?.query).toBe('team offsite');
   });
 
   it('returns null on broken JSON', () => {
@@ -52,7 +52,7 @@ describe('workflow-explain', () => {
         rules: [
           {
             id: 'r1',
-            matchers: { query: 'vacation india' },
+            matchers: { query: 'team offsite' },
             then: [{ type: 'archive' }],
           },
         ],
@@ -61,7 +61,7 @@ describe('workflow-explain', () => {
     expect(preview.whenTitle).toBe('Each new mail');
     expect(preview.modelNote).toMatch(/approved tools/i);
     expect(preview.rules[0].matchLines[0]).toMatch(/every word/);
-    expect(preview.rules[0].matchLines[0]).toMatch(/vacation/);
+    expect(preview.rules[0].matchLines[0]).toMatch(/team/);
     expect(preview.rules[0].actionLines[0]).toMatch(/inbox/);
   });
 

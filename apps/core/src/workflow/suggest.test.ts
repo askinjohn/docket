@@ -36,7 +36,7 @@ describe('sanitizeRules', () => {
 
   it('replaces schema placeholders with words from English', () => {
     const out = sanitizeRules(
-      'Remove any email that contains Vacation-India. They need to be moved out of inbox',
+      'Remove any email that contains Team-Offsite. They need to be moved out of inbox',
       [
         {
           id: 'r1',
@@ -46,15 +46,15 @@ describe('sanitizeRules', () => {
           },
           then: [
             { type: 'notify' },
-            { type: 'addLabel', name: 'Vacation-India' },
+            { type: 'addLabel', name: 'Team-Offsite' },
             { type: 'archive' },
             { type: 'star' },
           ],
         },
       ],
     );
-    assert.equal(out[0]!.matchers?.query?.includes('vacation'), true);
-    assert.equal(out[0]!.matchers?.query?.includes('india'), true);
+    assert.equal(out[0]!.matchers?.query?.includes('team'), true);
+    assert.equal(out[0]!.matchers?.query?.includes('offsite'), true);
     assert.equal(out[0]!.then.some((a) => a.type === 'notify'), false);
     assert.equal(out[0]!.then.some((a) => a.type === 'star'), false);
     assert.equal(out[0]!.then.some((a) => a.type === 'archive'), true);
