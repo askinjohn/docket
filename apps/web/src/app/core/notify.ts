@@ -239,7 +239,22 @@ export async function showNotification(
     await hookTauriActionOnce();
     await ensureTauriPermission();
 
-    // 1) Direct native command — most reliable on macOS Dock builds
+    // 1) App-owned command — osascript on macOS so `tauri dev` is not
+    //    impersonating Terminal (plugin default), then plugin builder.
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('show_mail_notification', { title, body: body || ' ' });
+      console.info('[notify] rust-osascript ok', title);
+      return {
+        ok: true,
+        channel: 'tauri-native',
+        detail: 'Sent as a macOS notification (Local Mail). Check Notification Center if banners are off.',
+      };
+    } catch (e) {
+      console.warn('[notify] show_mail_notification failed', e);
+    }
+
+    // 2) Plugin notify command
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       try {
@@ -247,13 +262,15 @@ export async function showNotification(
       } catch {
         /* ignore */
       }
-      await invoke('plugin:notification|notify', { options: cleanOptions });
+      await invoke('plugin:notification|notify', {
+        options: { ...cleanOptions, sound: 'Ping' },
+      });
       console.info('[notify] tauri-native ok', title);
       return {
         ok: true,
         channel: 'tauri-native',
         detail:
-          'Sent via native plugin. If nothing appears: System Settings → Notifications → Local Mail (banners on), and disable Focus/DND.',
+          'Sent via native plugin. If nothing appears: System Settings → Notifications → Script Editor / Local Mail (banners on).',
       };
     } catch (e) {
       console.warn('[notify] tauri-native failed', e);

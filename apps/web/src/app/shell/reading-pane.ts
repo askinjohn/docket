@@ -22,6 +22,7 @@ import {
 } from '../core/message-display';
 import { SafeChatHtmlPipe } from '../core/safe-chat-html.pipe';
 import { SafeSrcdocPipe } from '../core/safe-srcdoc.pipe';
+
 import type { ShellMessage } from '../core/ui-shell.service';
 import { UiShellService } from '../core/ui-shell.service';
 import { AiInsightPanel } from './ai-insight-panel';
@@ -36,12 +37,44 @@ import { ReplyPanel } from './reply-panel';
       aria-label="Reading pane"
     >
       @if (shell.selectedThread(); as thread) {
-        <header class="shrink-0 border-b border-lm-border px-5 py-3.5">
+        <header class="shrink-0 border-b border-lm-border px-6 py-4">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
-              <h2 class="m-0 text-[1.05rem] font-semibold tracking-tight break-words">
+              @if (!shell.isSplitLayout()) {
+                <button
+                  type="button"
+                  class="mb-2 cursor-pointer border-0 bg-transparent p-0 text-[0.78rem] font-medium text-lm-muted hover:text-lm-text"
+                  (click)="shell.backToList()"
+                  title="Back to list (Esc)"
+                >
+                  ← Inbox
+                </button>
+              }
+              <h2 class="lm-display m-0 text-[1.28rem] font-medium tracking-tight break-words">
                 {{ thread.subject }}
               </h2>
+              <div class="mt-2 flex flex-col gap-0.5 text-[0.78rem] leading-snug" aria-label="Message headers">
+                <div class="min-w-0">
+                  <span class="inline-block w-10 shrink-0 text-lm-muted">From</span>
+                  <span class="text-lm-text">{{ headerFrom(thread) }}</span>
+                </div>
+                <div class="min-w-0">
+                  <span class="inline-block w-10 shrink-0 text-lm-muted">To</span>
+                  <span class="text-lm-text">{{ headerTo(thread) }}</span>
+                </div>
+                @if (headerCc(thread)) {
+                  <div class="min-w-0">
+                    <span class="inline-block w-10 shrink-0 text-lm-muted">Cc</span>
+                    <span class="text-lm-text">{{ headerCc(thread) }}</span>
+                  </div>
+                }
+                @if (headerBcc(thread)) {
+                  <div class="min-w-0">
+                    <span class="inline-block w-10 shrink-0 text-lm-muted">Bcc</span>
+                    <span class="text-lm-text">{{ headerBcc(thread) }}</span>
+                  </div>
+                }
+              </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 @if (shell.detailLoading()) {
                   <span class="text-[0.75rem] text-lm-muted">Loading…</span>
@@ -99,12 +132,20 @@ import { ReplyPanel } from './reply-panel';
               </button>
               <button
                 type="button"
+                class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover"
+                (click)="shell.toggleMailboxAsk()"
+                title="Ask about your mailbox"
+              >
+                Ask AI
+              </button>
+              <button
+                type="button"
                 class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover disabled:opacity-40"
                 (click)="shell.aiSummarizeSelected()"
                 [disabled]="!shell.isConnected() || shell.aiBusy()"
                 title="AI summarize"
               >
-                {{ shell.aiBusy() ? '…' : 'Summarize' }}
+                {{ shell.aiBusy() ? 'Summarizing…' : 'Summarize' }}
               </button>
               <button
                 type="button"
@@ -118,10 +159,18 @@ import { ReplyPanel } from './reply-panel';
               <button
                 type="button"
                 class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-2.5 py-1.5 text-[0.8rem] text-lm-text hover:bg-lm-hover"
-                (click)="shell.openReply()"
+                (click)="replyHere(undefined, false)"
                 title="Reply (r)"
               >
                 Reply
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded-lg border border-lm-accent/50 bg-lm-accent/10 px-2.5 py-1.5 text-[0.8rem] font-medium text-lm-text hover:bg-lm-accent/20"
+                (click)="replyHere(undefined, true)"
+                title="Reply all (a)"
+              >
+                Reply all
               </button>
               <button
                 type="button"
@@ -179,12 +228,8 @@ import { ReplyPanel } from './reply-panel';
           }
         </header>
 
-        <div
-          class="flex min-h-0 flex-1"
-          [class.flex-col]="shell.theme().replyDock === 'bottom'"
-          [class.flex-row]="shell.theme().replyDock === 'right'"
-        >
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div class="lm-read-body">
+          <div class="lm-read-main">
         <div
           #readingScroll
           class="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6"
@@ -223,6 +268,30 @@ import { ReplyPanel } from './reply-panel';
                     [class.chat-bubble-doc]="bodyMode(msg) === 'iframe'"
                     [title]="bubbleTitle(msg)"
                   >
+                    <div class="mb-1.5 text-[0.72rem] leading-snug text-lm-muted">
+                      <div class="truncate text-lm-text">
+                        <span class="text-lm-muted">From</span>
+                        {{ displayName(msg) }}
+                      </div>
+                      @if (msg.to) {
+                        <div class="truncate">
+                          <span class="text-lm-muted">To</span>
+                          {{ msg.to }}
+                        </div>
+                      }
+                      @if (msg.cc) {
+                        <div class="truncate">
+                          <span class="text-lm-muted">Cc</span>
+                          {{ msg.cc }}
+                        </div>
+                      }
+                      @if (msg.bcc) {
+                        <div class="truncate">
+                          <span class="text-lm-muted">Bcc</span>
+                          {{ msg.bcc }}
+                        </div>
+                      }
+                    </div>
                     @switch (bodyMode(msg)) {
                       @case ('plain') {
                         <div
@@ -311,12 +380,35 @@ import { ReplyPanel } from './reply-panel';
                       </div>
                     }
                   </div>
-                  <time
-                    class="mt-0.5 px-1 text-[0.65rem] text-lm-muted/70 opacity-0 transition group-hover:opacity-100"
-                    >{{ msg.time }}@if (!mine(msg)) {
-                      <span> · {{ displayName(msg) }}</span>
-                    }</time
+                  <div
+                    class="mt-0.5 flex flex-wrap items-center gap-2 px-1 opacity-0 transition group-hover:opacity-100"
                   >
+                    <time class="text-[0.65rem] text-lm-muted/70"
+                      >{{ msg.time }}</time
+                    >
+                    <button
+                      type="button"
+                      class="cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] font-medium text-lm-accent hover:underline"
+                      (click)="replyHere(msg.id, false)"
+                    >
+                      Reply
+                    </button>
+                    <button
+                      type="button"
+                      class="cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] font-medium text-lm-accent hover:underline"
+                      (click)="replyHere(msg.id, true)"
+                    >
+                      Reply all
+                    </button>
+                    <button
+                      type="button"
+                      class="cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] font-medium text-lm-muted hover:text-lm-text"
+                      (click)="replyHere(msg.id, false, true)"
+                      title="Quote the selected text in your reply"
+                    >
+                      Quote selection
+                    </button>
+                  </div>
                 </div>
               </div>
             } @empty {
@@ -327,64 +419,87 @@ import { ReplyPanel } from './reply-panel';
           </div>
         </div>
 
-        @if (shell.theme().replyDock === 'bottom') {
-          <div
-            class="flex max-h-[min(52vh,440px)] min-h-0 shrink-0 flex-col overflow-hidden"
-          >
-            <lm-ai-insight-panel />
-            <lm-reply-panel [replyTo]="thread.from" />
-            @if (
-              !shell.replyOpen() &&
-              !shell.aiInsightOpen() &&
-              shell.isConnected()
-            ) {
-              <button
-                type="button"
-                class="shrink-0 cursor-pointer border-0 border-t border-lm-border bg-lm-panel px-5 py-3.5 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
-                (click)="shell.openReply()"
+            <lm-reply-panel [replyTo]="replyLabel(thread)" />
+            @if (!shell.replyOpen() && shell.isConnected()) {
+              <div
+                class="flex shrink-0 items-center gap-2 border-t border-lm-border bg-lm-panel px-5 py-2.5"
               >
-                Reply to this thread ·
-                <kbd
-                  class="rounded border border-lm-border bg-lm-bg px-1.5 py-0.5 font-mono text-xs"
-                  >r</kbd
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-lg border border-lm-border bg-transparent px-3 py-1.5 text-sm text-lm-text hover:bg-lm-hover"
+                  (click)="replyHere(undefined, false)"
                 >
-              </button>
+                  Reply
+                  <kbd class="ml-1 rounded border border-lm-border px-1 font-mono text-[0.7rem]"
+                    >r</kbd
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded-lg border border-lm-accent/40 bg-lm-accent/10 px-3 py-1.5 text-sm font-medium text-lm-text hover:bg-lm-accent/20"
+                  (click)="replyHere(undefined, true)"
+                >
+                  Reply all
+                  <kbd class="ml-1 rounded border border-lm-border px-1 font-mono text-[0.7rem]"
+                    >a</kbd
+                  >
+                </button>
+                <span class="text-[0.72rem] text-lm-muted"
+                  >Select text in the message, then Quote selection on hover.</span
+                >
+              </div>
             }
           </div>
-        }
-        </div>
 
-        @if (shell.theme().replyDock === 'right') {
-          <aside
-            class="flex w-[min(400px,42%)] min-w-[280px] shrink-0 flex-col overflow-hidden border-l border-lm-border bg-lm-panel"
-            aria-label="Side panels"
-          >
-            <lm-ai-insight-panel class="min-h-0 flex-1" />
-            <lm-reply-panel class="min-h-0 flex-1" [replyTo]="thread.from" />
-            @if (
-              !shell.replyOpen() &&
-              !shell.aiInsightOpen() &&
-              shell.isConnected()
-            ) {
-              <button
-                type="button"
-                class="m-3 cursor-pointer rounded-lg border border-lm-border bg-lm-bg px-3 py-3 text-left text-sm text-lm-muted transition hover:bg-lm-hover hover:text-lm-text"
-                (click)="shell.openReply()"
-              >
-                Reply · <kbd class="font-mono text-xs">r</kbd>
-              </button>
-            }
-          </aside>
-        }
+          @if (shell.aiInsightOpen()) {
+            <aside class="lm-read-ai" aria-label="AI summary">
+              <lm-ai-insight-panel />
+            </aside>
+          }
         </div>
       } @else {
         <div class="m-auto text-sm text-lm-muted">{{ shell.emptyInboxHint() }}</div>
       }
     </section>
   `,
+  host: {
+    '[attr.data-layout]': 'shell.theme().uiLayout',
+  },
   styles: `
     :host {
-      display: contents;
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .lm-read-body {
+      display: grid;
+      min-height: 0;
+      flex: 1;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr);
+    }
+
+    .lm-read-main {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .lm-read-ai {
+      display: flex;
+      width: min(380px, 38vw);
+      min-width: 280px;
+      min-height: 0;
+      flex-direction: column;
+      overflow: hidden;
+      border-left: 1px solid var(--color-lm-border);
+      background: var(--color-lm-panel);
     }
 
     .chat-bubble-theirs {
@@ -629,6 +744,42 @@ export class ReadingPane {
 
   protected usesHtml(msg: ShellMessage): boolean {
     return messageUsesHtml(msg);
+  }
+
+  protected lastMsg(thread: { messages: ShellMessage[] }): ShellMessage | undefined {
+    return thread.messages.at(-1);
+  }
+
+  protected headerFrom(thread: { from: string; messages: ShellMessage[] }): string {
+    return this.lastMsg(thread)?.from || thread.from || '—';
+  }
+
+  protected headerTo(thread: { messages: ShellMessage[] }): string {
+    return this.lastMsg(thread)?.to || '—';
+  }
+
+  protected headerCc(thread: { messages: ShellMessage[] }): string {
+    return this.lastMsg(thread)?.cc || '';
+  }
+
+  protected headerBcc(thread: { messages: ShellMessage[] }): string {
+    return this.lastMsg(thread)?.bcc || '';
+  }
+
+  protected replyHere(messageId: string | undefined, all: boolean, quote = false): void {
+    const selected = quote ? (window.getSelection()?.toString() ?? '') : '';
+    this.shell.openReply({
+      all,
+      messageId,
+      quote: selected,
+    });
+  }
+
+  protected replyLabel(thread: { from: string; messages: ShellMessage[] }): string {
+    if (this.shell.replyAll()) return 'everyone on this message';
+    const id = this.shell.replyToMessageId();
+    const msg = thread.messages.find((m) => m.id === id) ?? this.lastMsg(thread);
+    return msg?.from || thread.from;
   }
 
   protected mine(msg: ShellMessage): boolean {

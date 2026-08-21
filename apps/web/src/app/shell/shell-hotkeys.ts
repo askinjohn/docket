@@ -43,6 +43,12 @@ export function handleShellKeydown(
     return true;
   }
 
+  if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+    event.preventDefault();
+    shell.openSettings();
+    return true;
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     if (shell.composeOpen()) {
       event.preventDefault();
@@ -83,13 +89,34 @@ export function handleShellKeydown(
       shell.closeAiInsight();
       return true;
     }
+    if (shell.workflowReportOpen?.()) {
+      event.preventDefault();
+      shell.closeWorkflowReport();
+      return true;
+    }
     if (shell.checkedCount() > 0) {
       event.preventDefault();
       shell.clearChecked();
       return true;
     }
+    if (shell.mailboxAskOpen?.()) {
+      event.preventDefault();
+      shell.closeMailboxAsk();
+      return true;
+    }
+    if (shell.workflowsOpen?.() || shell.shellSection?.() === 'workflows') {
+      event.preventDefault();
+      shell.closeWorkflows();
+      return true;
+    }
+    if (!shell.isSplitLayout?.() && shell.selectedId()) {
+      event.preventDefault();
+      shell.backToList();
+      return true;
+    }
     shell.closeCommandPalette();
     shell.closeSettings();
+    shell.closeWorkflows?.();
     shell.closeAccountMenu();
     goChordUntil = 0;
     return true;
@@ -133,6 +160,11 @@ export function handleShellKeydown(
     return true;
   }
 
+  // ⌘C / ⌘V / ⌘X / ⌘Z etc. are browser edit keys — not Compose / undo archive.
+  if (event.metaKey || event.ctrlKey) {
+    return false;
+  }
+
   if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey) {
     event.preventDefault();
     shell.focusSearch();
@@ -145,19 +177,32 @@ export function handleShellKeydown(
     return true;
   }
 
-  if (event.key === 'j') {
+  if (event.key === 'j' || event.key === 'ArrowDown') {
     event.preventDefault();
     shell.selectNext();
     return true;
   }
-  if (event.key === 'k') {
+  if (event.key === 'k' || event.key === 'ArrowUp') {
     event.preventDefault();
     shell.selectPrevious();
     return true;
   }
+  if (event.key === 'Enter' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    shell.openFocusedThread();
+    return true;
+  }
+  if (event.key === 'ArrowLeft') {
+    if (!shell.isSplitLayout?.() && shell.selectedId()) {
+      event.preventDefault();
+      shell.backToList();
+      return true;
+    }
+    return false;
+  }
   if (event.key === 'x') {
     event.preventDefault();
-    const id = shell.selectedId();
+    const id = shell.focusedThreadId?.() ?? shell.selectedId();
     if (id) {
       void shell.onThreadListClick(id, {
         metaKey: true,
@@ -170,6 +215,11 @@ export function handleShellKeydown(
   if (event.key === 'r') {
     event.preventDefault();
     shell.openReply();
+    return true;
+  }
+  if (event.key === 'a') {
+    event.preventDefault();
+    shell.openReplyAll();
     return true;
   }
   if (event.key === 'c') {

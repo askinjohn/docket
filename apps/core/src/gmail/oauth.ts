@@ -1,9 +1,14 @@
 import { google } from 'googleapis';
 
 import { appConfig, googleConfigured } from '../config.js';
+import {
+  clearAccountAuthExpired,
+  isAccountAuthExpired,
+  markAccountAuthExpired,
+} from '../db/accounts.js';
 import { getDb, type AccountRow } from '../db/index.js';
 import { getTokenStore } from '../secrets/token-store.js';
-import { toGmailError } from './auth-errors.js';
+import { GmailAuthExpiredError, toGmailError } from './auth-errors.js';
 
 export function createOAuthClient() {
   if (!googleConfigured()) {
@@ -55,8 +60,9 @@ export async function exchangeCode(code: string): Promise<AccountRow> {
     accountId = existing.id;
     // Metadata only when using keychain; sqlite store writes tokens itself
     db.prepare(
-      `UPDATE accounts SET token_expiry = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE accounts SET token_expiry = ?, auth_status = 'ok', updated_at = ? WHERE id = ?`,
     ).run(expiry, now, accountId);
+    clearAccountAuthExpired(accountId, db);
   } else {
     const info = db
       .prepare(
@@ -105,9 +111,14 @@ export async function hydrateAccountTokens(
 }
 
 export async function getAuthedClient(account: AccountRow) {
+  if (isAccountAuthExpired(account)) {
+    throw new GmailAuthExpiredError();
+  }
+
   const hydrated = await hydrateAccountTokens(account);
   if (!hydrated.refresh_token && !hydrated.access_token) {
-    throw toGmailError(new Error('invalid_grant'));
+    await markAccountAuthExpired(account.id);
+    throw new GmailAuthExpiredError();
   }
 
   const client = createOAuthClient();
@@ -129,7 +140,11 @@ export async function getAuthedClient(account: AccountRow) {
   try {
     await client.getAccessToken();
   } catch (e) {
-    throw toGmailError(e);
+    const mapped = toGmailError(e);
+    if (mapped instanceof GmailAuthExpiredError) {
+      await markAccountAuthExpired(account.id);
+    }
+    throw mapped;
   }
 
   return client;

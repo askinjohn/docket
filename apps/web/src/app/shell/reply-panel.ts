@@ -7,9 +7,7 @@ import { UiShellService } from '../core/ui-shell.service';
   template: `
     @if (shell.replyOpen()) {
       <div
-        class="flex min-h-0 flex-col overflow-hidden border-lm-border bg-lm-panel"
-        [class.border-t]="shell.theme().replyDock === 'bottom'"
-        [class.flex-1]="shell.theme().replyDock === 'right'"
+        class="flex max-h-[min(48vh,380px)] min-h-0 shrink-0 flex-col overflow-hidden border-t border-lm-border bg-lm-panel"
         aria-label="Reply"
       >
         <div
@@ -20,55 +18,28 @@ import { UiShellService } from '../core/ui-shell.service';
               class="h-1.5 w-1.5 shrink-0 rounded-full bg-lm-accent"
               aria-hidden="true"
             ></span>
-            <span class="min-w-0 truncate text-[0.82rem] font-semibold text-lm-text"
-              >Reply to {{ replyTo() }}</span
-            >
+            <span class="min-w-0 truncate text-[0.82rem] font-semibold text-lm-text">
+              {{ shell.replyAll() ? 'Reply all' : 'Reply' }}
+              to {{ replyTo() }}
+            </span>
           </div>
-          <div class="flex shrink-0 items-center gap-1">
-            <div
-              class="flex overflow-hidden rounded-lg border border-lm-border"
-              role="group"
-              aria-label="Reply dock position"
-            >
-              <button
-                type="button"
-                class="cursor-pointer border-0 px-2 py-1 text-[0.7rem]"
-                [class.bg-lm-accent]="shell.theme().replyDock === 'bottom'"
-                [class.text-white]="shell.theme().replyDock === 'bottom'"
-                [class.bg-transparent]="shell.theme().replyDock !== 'bottom'"
-                [class.text-lm-muted]="shell.theme().replyDock !== 'bottom'"
-                (click)="shell.setReplyDock('bottom')"
-                title="Dock at bottom"
-              >
-                Bottom
-              </button>
-              <button
-                type="button"
-                class="cursor-pointer border-0 border-l border-lm-border px-2 py-1 text-[0.7rem]"
-                [class.bg-lm-accent]="shell.theme().replyDock === 'right'"
-                [class.text-white]="shell.theme().replyDock === 'right'"
-                [class.bg-transparent]="shell.theme().replyDock !== 'right'"
-                [class.text-lm-muted]="shell.theme().replyDock !== 'right'"
-                (click)="shell.setReplyDock('right')"
-                title="Dock on the right"
-              >
-                Right
-              </button>
-            </div>
-            <button
-              type="button"
-              class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
-              (click)="shell.closeReply()"
-              aria-label="Close reply"
-              title="Close (Esc)"
-            >
-              ×
-            </button>
-          </div>
+          <button
+            type="button"
+            class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg border-0 bg-transparent text-lg leading-none text-lm-muted hover:bg-lm-hover hover:text-lm-text"
+            (click)="shell.closeReply()"
+            aria-label="Close reply"
+            title="Close (Esc)"
+          >
+            ×
+          </button>
         </div>
+        @if (shell.replyAll()) {
+          <p class="m-0 shrink-0 border-b border-lm-border/50 px-4 py-1.5 text-[0.72rem] text-lm-muted">
+            Sends to everyone on the last message (To + Cc), except you.
+          </p>
+        }
         <textarea
-          class="min-h-24 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-[0.92rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted/65"
-          [class.max-h-44]="shell.theme().replyDock === 'bottom'"
+          class="min-h-24 max-h-44 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-[0.92rem] leading-relaxed text-lm-text outline-none placeholder:text-lm-muted/65"
           rows="5"
           [value]="shell.replyBody()"
           (input)="onReplyInput($event)"

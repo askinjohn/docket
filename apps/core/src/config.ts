@@ -66,9 +66,17 @@ export const appConfig = {
   },
   /** Where the browser UI lives (for CORS + post-auth redirect) */
   webOrigin: process.env.LOCAL_MAIL_WEB_ORIGIN ?? 'http://127.0.0.1:4300',
+  /**
+   * Core-owned inbox poll so new-mail OS notifications work with no UI.
+   * Set LOCAL_MAIL_BG_SYNC_MS=0 to disable.
+   */
+  bgSyncIntervalMs: Number(process.env.LOCAL_MAIL_BG_SYNC_MS ?? 30_000),
+  /** macOS Notification Center via osascript (independent of the Dock window). */
+  osNotify: process.env.LOCAL_MAIL_OS_NOTIFY !== '0',
   ai: {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
-    ollamaModel: process.env.OLLAMA_MODEL ?? 'llama3.2',
+    /** Empty = auto-pick from `ollama tags` (Grist order: qwen2.5:7b, gemma2:2b, …). */
+    ollamaModel: process.env.OLLAMA_MODEL ?? '',
     openaiApiKey: process.env.OPENAI_API_KEY ?? '',
     openaiBaseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
     openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',

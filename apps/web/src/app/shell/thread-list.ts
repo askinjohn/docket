@@ -24,9 +24,11 @@ const DRAG_SCROLL_STEP_PX = 18;
       class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-lm-border bg-lm-bg"
       aria-label="Thread list"
     >
-      <header class="flex shrink-0 flex-col gap-2 border-b border-lm-border px-4 py-3">
+      <header class="flex shrink-0 flex-col gap-2 border-b border-lm-border px-3.5 py-3">
         <div class="flex items-center gap-2">
-          <h1 class="m-0 text-[0.95rem] font-semibold capitalize">{{ shell.mailView() }}</h1>
+          <h1 class="lm-display m-0 text-[1.15rem] font-medium capitalize tracking-tight">
+            {{ shell.mailView() }}
+          </h1>
           @if (shell.isConnected()) {
             <span
               class="rounded-full border border-lm-accent-2/50 px-1.5 py-0.5 text-[0.65rem] uppercase tracking-wider text-lm-accent-2"
@@ -44,7 +46,7 @@ const DRAG_SCROLL_STEP_PX = 18;
           <input
             #searchInput
             type="search"
-            class="min-w-0 flex-1 rounded-lg border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/50"
+            class="min-w-0 flex-1 rounded-md border border-lm-border bg-lm-panel px-2.5 py-1.5 text-sm text-lm-text outline-none placeholder:text-lm-muted focus:border-lm-accent/55"
             placeholder="Search Gmail… from: me has:attachment"
             [value]="shell.searchQuery()"
             (input)="onSearchInput($event)"
@@ -169,19 +171,23 @@ const DRAG_SCROLL_STEP_PX = 18;
           <li>
             <button
               type="button"
-              class="thread-row mb-0.5 flex w-full cursor-pointer items-start gap-2 rounded-lg border border-transparent bg-transparent px-2 py-2.5 text-left text-inherit hover:bg-lm-hover data-[selected=true]:border-lm-accent/35 data-[selected=true]:bg-lm-accent/15 data-[checked=true]:border-lm-accent/50 data-[checked=true]:bg-lm-accent/20"
+              class="thread-row mb-px flex w-full cursor-pointer items-start gap-2 rounded-sm border border-transparent bg-transparent px-2.5 py-2 text-left text-inherit hover:bg-lm-hover data-[selected=true]:bg-lm-hover data-[checked=true]:bg-lm-accent/12"
+              [class.thread-row-wide]="!shell.isSplitLayout()"
               role="option"
               [attr.data-thread-id]="thread.id"
               [attr.data-selected]="shell.selectedId() === thread.id"
+              [attr.data-cursor]="shell.isListCursor(thread.id)"
               [attr.data-checked]="shell.isChecked(thread.id)"
               [attr.aria-selected]="
-                shell.selectedId() === thread.id || shell.isChecked(thread.id)
+                shell.isListCursor(thread.id) || shell.isChecked(thread.id)
               "
               (pointerdown)="onRowPointerDown(thread.id, $event)"
               (click)="onThreadClick(thread.id, $event)"
             >
               <span
                 class="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center"
+                [class.mt-0]="!shell.isSplitLayout()"
+                [class.self-center]="!shell.isSplitLayout()"
                 aria-hidden="true"
               >
                 @if (thread.unread) {
@@ -191,40 +197,71 @@ const DRAG_SCROLL_STEP_PX = 18;
                   ></span>
                 }
               </span>
-              <span class="min-w-0 flex-1">
-                <div class="mb-0.5 flex justify-between gap-2">
+              <span
+                class="min-w-0 flex-1"
+                [class.thread-wide-cols]="!shell.isSplitLayout()"
+              >
+                @if (shell.isSplitLayout()) {
+                  <div class="mb-0.5 flex justify-between gap-2">
+                    <span
+                      class="lm-display min-w-0 truncate text-[0.92rem] text-lm-text"
+                      [class.font-semibold]="thread.unread"
+                      [class.text-lm-muted]="!thread.unread"
+                      >{{ thread.from }}</span
+                    >
+                    <span
+                      class="shrink-0 text-[0.72rem] tabular-nums text-lm-muted"
+                      [class.text-lm-accent]="thread.unread"
+                      [class.font-medium]="thread.unread"
+                      >{{ thread.time }}</span
+                    >
+                  </div>
+                  <div
+                    class="mb-0.5 flex min-w-0 items-center gap-1 truncate text-[0.82rem]"
+                    [class.font-semibold]="thread.unread"
+                    [class.text-lm-text]="thread.unread"
+                    [class.text-lm-muted]="!thread.unread"
+                  >
+                    @if (thread.starred) {
+                      <span class="shrink-0 text-[0.75rem] text-amber-400" title="Starred" aria-hidden="true">★</span>
+                    }
+                    @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
+                      <span class="shrink-0 opacity-85" aria-hidden="true" title="Has attachments">📎</span>
+                    }
+                    <span class="min-w-0 truncate">{{ thread.subject }}</span>
+                  </div>
+                  <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
+                } @else {
                   <span
-                    class="min-w-0 truncate text-sm text-lm-text"
+                    class="lm-display min-w-0 truncate text-[0.92rem] text-lm-text"
                     [class.font-semibold]="thread.unread"
                     [class.text-lm-muted]="!thread.unread"
                     >{{ thread.from }}</span
                   >
+                  <span
+                    class="flex min-w-0 items-center gap-1 truncate text-[0.82rem]"
+                    [class.font-semibold]="thread.unread"
+                    [class.text-lm-text]="thread.unread"
+                    [class.text-lm-muted]="!thread.unread"
+                  >
+                    @if (thread.starred) {
+                      <span class="shrink-0 text-[0.75rem] text-amber-400" title="Starred" aria-hidden="true">★</span>
+                    }
+                    @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
+                      <span class="shrink-0 opacity-85" aria-hidden="true" title="Has attachments">📎</span>
+                    }
+                    <span class="min-w-0 truncate">{{ thread.subject }}</span>
+                  </span>
+                  <span class="min-w-0 truncate text-xs text-lm-muted">{{
+                    thread.snippet
+                  }}</span>
                   <span
                     class="shrink-0 text-[0.72rem] tabular-nums text-lm-muted"
                     [class.text-lm-accent]="thread.unread"
                     [class.font-medium]="thread.unread"
                     >{{ thread.time }}</span
                   >
-                </div>
-                <div
-                  class="mb-0.5 flex min-w-0 items-center gap-1 truncate text-[0.82rem]"
-                  [class.font-semibold]="thread.unread"
-                  [class.text-lm-text]="thread.unread"
-                  [class.text-lm-muted]="!thread.unread"
-                >
-                  @if (thread.starred) {
-                    <span class="shrink-0 text-[0.75rem] text-amber-400" title="Starred" aria-hidden="true"
-                      >★</span
-                    >
-                  }
-                  @if (thread.hasAttachments || thread.messages[0]?.attachments?.length) {
-                    <span class="shrink-0 opacity-85" aria-hidden="true" title="Has attachments"
-                      >📎</span
-                    >
-                  }
-                  <span class="min-w-0 truncate">{{ thread.subject }}</span>
-                </div>
-                <div class="truncate text-xs text-lm-muted">{{ thread.snippet }}</div>
+                }
               </span>
             </button>
           </li>
@@ -278,7 +315,17 @@ const DRAG_SCROLL_STEP_PX = 18;
     :host {
       display: contents;
     }
+
+    .thread-wide-cols {
+      display: grid;
+      grid-template-columns: minmax(9rem, 16rem) minmax(12rem, 1.2fr) minmax(8rem, 1fr) auto;
+      align-items: center;
+      gap: 0.85rem;
+    }
   `,
+  host: {
+    '[attr.data-layout]': 'shell.theme().uiLayout',
+  },
 })
 export class ThreadList {
   protected readonly shell = inject(UiShellService);
@@ -323,6 +370,21 @@ export class ThreadList {
           if (!el) return;
           el.focus();
           el.select();
+        },
+        { injector: this.injector },
+      );
+    });
+
+    effect(() => {
+      const id = this.shell.listCursorId();
+      if (!id) return;
+      afterNextRender(
+        () => {
+          const root = this.threadListEl()?.nativeElement;
+          const row = root?.querySelector(
+            `[data-thread-id="${CSS.escape(id)}"]`,
+          );
+          row?.scrollIntoView({ block: 'nearest' });
         },
         { injector: this.injector },
       );

@@ -9,6 +9,8 @@ import {
   type ThreadRow,
 } from '../db/index.js';
 import { publish } from '../events/bus.js';
+import { isGmailAuthExpired, toGmailError } from './auth-errors.js';
+import { replyAllTargets } from '../mail/addresses.js';
 import { getAuthedClient } from './oauth.js';
 
 function decodeBody(data?: string | null): string {
@@ -129,15 +131,17 @@ function upsertThreadAndMessages(
 
   const insertMessage = db.prepare(
     `INSERT INTO messages (
-      id, thread_id, account_id, from_header, to_header, subject, date_ms,
+      id, thread_id, account_id, from_header, to_header, cc_header, bcc_header, subject, date_ms,
       snippet, body_text, body_html, label_ids, internal_date, raw_payload_json, updated_at
     ) VALUES (
-      @id, @thread_id, @account_id, @from_header, @to_header, @subject, @date_ms,
+      @id, @thread_id, @account_id, @from_header, @to_header, @cc_header, @bcc_header, @subject, @date_ms,
       @snippet, @body_text, @body_html, @label_ids, @internal_date, @raw_payload_json, @updated_at
     )
     ON CONFLICT(id) DO UPDATE SET
       from_header = excluded.from_header,
       to_header = excluded.to_header,
+      cc_header = excluded.cc_header,
+      bcc_header = excluded.bcc_header,
       subject = excluded.subject,
       date_ms = excluded.date_ms,
       snippet = excluded.snippet,
@@ -200,6 +204,8 @@ function upsertThreadAndMessages(
       const headers = headerMap(msg.payload?.headers);
       const from = headers.get('from') ?? '';
       const to = headers.get('to') ?? '';
+      const cc = headers.get('cc') ?? '';
+      const bcc = headers.get('bcc') ?? '';
       const subj = headers.get('subject') ?? '';
       const dateHeader = headers.get('date');
       const dateMs = dateHeader ? Date.parse(dateHeader) || null : null;
@@ -234,6 +240,8 @@ function upsertThreadAndMessages(
         account_id: account.id,
         from_header: from,
         to_header: to,
+        cc_header: cc,
+        bcc_header: bcc,
         subject: subj,
         date_ms: dateMs,
         snippet: msg.snippet ?? '',
@@ -548,7 +556,6 @@ export async function modifyThreadLabels(
   if (!account) throw new Error('No Gmail account connected');
 
   const gmailId = toGmailThreadId(threadId);
-  const localId = toLocalThreadId(account.id, gmailId);
 
   const auth = await getAuthedClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
@@ -561,11 +568,6 @@ export async function modifyThreadLabels(
       removeLabelIds: remove,
     },
   });
-
-  if (remove.includes('INBOX')) {
-    getDb().prepare(`DELETE FROM threads WHERE id = ?`).run(localId);
-    return;
-  }
 
   const full = await gmail.users.threads.get({
     userId: 'me',
@@ -652,6 +654,9 @@ export async function sendReply(input: {
   threadId: string;
   bodyText: string;
   to?: string;
+  cc?: string;
+  replyAll?: boolean;
+  messageId?: string;
   subject?: string;
   attachments?: OutboundAttachment[];
 }): Promise<{ id: string }> {
@@ -659,14 +664,24 @@ export async function sendReply(input: {
   if (!account) throw new Error('No Gmail account connected');
 
   const db = getDb();
-  const last = db
-    .prepare(
-      `SELECT * FROM messages WHERE thread_id = ? ORDER BY internal_date DESC LIMIT 1`,
-    )
-    .get(input.threadId) as
+  const last = (
+    input.messageId
+      ? db.prepare(`SELECT * FROM messages WHERE id = ? AND thread_id = ?`).get(
+          input.messageId,
+          input.threadId,
+        )
+      : db
+          .prepare(
+            `SELECT * FROM messages WHERE thread_id = ? ORDER BY internal_date DESC LIMIT 1`,
+          )
+          .get(input.threadId)
+  ) as
     | {
         id: string;
         from_header: string;
+        to_header: string;
+        cc_header?: string;
+        bcc_header?: string;
         subject: string;
       }
     | undefined;
@@ -681,14 +696,35 @@ export async function sendReply(input: {
     userId: 'me',
     id: last.id,
     format: 'metadata',
-    metadataHeaders: ['Message-ID', 'References', 'Subject', 'From'],
+    metadataHeaders: [
+      'Message-ID',
+      'References',
+      'Subject',
+      'From',
+      'To',
+      'Cc',
+      'Bcc',
+    ],
   });
   const hmap = new Map<string, string>();
   for (const h of meta.data.payload?.headers ?? []) {
     if (h.name && h.value) hmap.set(h.name.toLowerCase(), h.value);
   }
 
-  const to = input.to ?? last.from_header;
+  let to = input.to ?? last.from_header;
+  let cc = input.cc ?? '';
+  if (input.replyAll && !input.to) {
+    const targets = replyAllTargets(
+      {
+        from: hmap.get('from') || last.from_header,
+        to: hmap.get('to') || last.to_header || '',
+        cc: hmap.get('cc') || last.cc_header || '',
+      },
+      account.email,
+    );
+    to = targets.to;
+    cc = targets.cc;
+  }
   const subject =
     input.subject ??
     (last.subject.toLowerCase().startsWith('re:')
@@ -701,10 +737,11 @@ export async function sendReply(input: {
   const raw = buildMimeMessage({
     headerLines: [
       `To: ${to}`,
+      cc.trim() ? `Cc: ${cc.trim()}` : '',
       `Subject: ${subject}`,
       `In-Reply-To: ${messageId}`,
       `References: ${references}`,
-    ],
+    ].filter(Boolean),
     bodyText: input.bodyText,
     attachments: input.attachments,
   });
@@ -866,7 +903,10 @@ export async function syncIncremental(options?: {
 
       return { synced, email: account.email, mode: 'history', newMail };
     } catch (e) {
-      console.warn('[sync] history failed, falling back to full', e);
+      if (isGmailAuthExpired(e)) {
+        throw toGmailError(e);
+      }
+      console.warn('[sync] history failed, falling back to full');
     }
   }
 

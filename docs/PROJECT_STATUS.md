@@ -1,7 +1,7 @@
 # Project status
 
 **Phase:** Dogfood / polish (Phase 1 mail path done; Phase 2–6 pieces shipped early)  
-**As of:** 2026-08-03  
+**As of:** 2026-08-21  
 
 ## Done
 
@@ -16,6 +16,18 @@
 - Labels, Sent, custom Gmail-query views; multi-step archive undo; fuzzy palette
 - HTML sanitizer + remote-image block toggle; MCP stdio; launchd daily summary; Playwright smoke
 - `docs/GMAIL_SETUP.md`, `docs/MCP.md`, `docs/PACKAGING.md`
+
+## 2026-08-18
+
+- Expired Gmail refresh tokens now persist `auth_status=expired`, hide the cache, and show a sign-in gate (do not keep serving old mail).
+- Visual tokens: paper/ink palette, Fraunces + IBM Plex, copper accent.
+- Configurable layouts: **List first** (inbox → click to read) or **Split** (list on the side). Ask AI is a drawer.
+
+## 2026-08-21
+
+- Workflows: English → local model suggest → approve; harness run (function calls); Stop; question-style **Answer** pane. Filing JSON is the contract (git-emails will not turn into a briefing).
+- Reply all, thread participants (From/To/Cc/Bcc), per-message reply. `⌘C` copies instead of compose.
+- Workflows live in `~/.local-mail/workflows.json`. Core still `127.0.0.1:8787`.
 
 ## In progress
 

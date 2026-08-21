@@ -1,7 +1,7 @@
 # Active TODO — Local Mail
 
-**Updated:** 2026-08-03  
-**Status:** Backlog pass — views/labels, undo stack, palette, MCP stdio, e2e, packaging docs
+**Updated:** 2026-08-21  
+**Status:** Workflows run as a local function-calling harness (not keyword AND)
 
 ## Shipped in product pass
 
@@ -35,6 +35,15 @@
 - [x] Infinite scroll load-more + focus/scroll-top fetch new
 - [x] Keep ~100 threads in inbox viewport; auto-refill after archive / when thin
 - [x] Multi-select (⌘/Ctrl-click, Shift-range, x, ⌘A) + Clear + bulk archive
+
+## Shipped 2026-08-18
+
+- [x] Expired Gmail token → persist `auth_status=expired`, hide cache, sign-in overlay
+- [x] No incremental→full fallback on `invalid_grant`
+- [x] Correspondence-desk visual tokens (paper/ink, Fraunces + IBM Plex, copper)
+- [x] Settings → Appearance → Layout: List first (inbox → click to read) or Split (list stays on the side)
+- [x] Mailbox Ask AI overlay (`POST /ai/ask`, `ask` role in `ai-config.json`)
+- [x] Workflows: English → model suggest → approve; triggers mail.received / manual / cron
 
 ## Engineering debt (recent)
 
@@ -79,3 +88,5 @@ cd apps/web && npm start   # :4300
 | AI | Thread **Summarize** / **AI draft** (template if no LLM keys) |
 | MCP | `POST http://127.0.0.1:8787/mcp/call` with `{ "name": "search_mail", "arguments": { "q": "invoice" } }` |
 | Palette | `⌘K` |
+| Layout | Settings → Appearance → Layout, or `⌘K` → Toggle list / split |
+| Ask AI | Sidebar or reading **Ask AI** (drawer; Ollama `ask` role) |

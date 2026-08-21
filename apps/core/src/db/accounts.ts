@@ -2,21 +2,29 @@ import { getDb, type AccountRow, type Db } from './index.js';
 
 const ACTIVE_KEY = 'active_account_id';
 
+function normalizeAccount(row: AccountRow): AccountRow {
+  return {
+    ...row,
+    auth_status: row.auth_status === 'expired' ? 'expired' : 'ok',
+  };
+}
+
 export function listAccounts(database: Db = getDb()): AccountRow[] {
-  return database
-    .prepare(`SELECT * FROM accounts ORDER BY email ASC`)
-    .all() as AccountRow[];
+  return (
+    database
+      .prepare(`SELECT * FROM accounts ORDER BY email ASC`)
+      .all() as AccountRow[]
+  ).map(normalizeAccount);
 }
 
 export function getAccountById(
   id: number,
   database: Db = getDb(),
 ): AccountRow | null {
-  return (
-    (database.prepare(`SELECT * FROM accounts WHERE id = ?`).get(id) as
-      | AccountRow
-      | undefined) ?? null
-  );
+  const row = database.prepare(`SELECT * FROM accounts WHERE id = ?`).get(id) as
+    | AccountRow
+    | undefined;
+  return row ? normalizeAccount(row) : null;
 }
 
 export function getActiveAccountId(database: Db = getDb()): number | null {
@@ -98,10 +106,67 @@ export function toGmailThreadId(localThreadId: string): string {
   return m ? m[1]! : localThreadId;
 }
 
+export function isAccountAuthExpired(account: AccountRow | null): boolean {
+  return account?.auth_status === 'expired';
+}
+
 export function publicAccount(a: AccountRow) {
   return {
     id: a.id,
     email: a.email,
     provider: a.provider,
+    authStatus: a.auth_status === 'expired' ? ('expired' as const) : ('ok' as const),
   };
+}
+
+/** Persist revoked-token state and drop secrets so we stop retrying Google. */
+export async function markAccountAuthExpired(
+  accountId: number,
+  database: Db = getDb(),
+): Promise<void> {
+  const account = getAccountById(accountId, database);
+  if (!account) return;
+
+  const already = account.auth_status === 'expired';
+  database
+    .prepare(
+      `UPDATE accounts
+       SET auth_status = 'expired',
+           access_token = NULL,
+           refresh_token = NULL,
+           token_expiry = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(Date.now(), accountId);
+
+  try {
+    const { getTokenStore } = await import('../secrets/token-store.js');
+    await getTokenStore().delete(accountId);
+  } catch (e) {
+    console.warn('[accounts] token store delete on expiry failed', e);
+  }
+
+  if (!already) {
+    const { publish } = await import('../events/bus.js');
+    publish({
+      type: 'auth.expired',
+      email: account.email,
+      at: new Date().toISOString(),
+    });
+    console.warn(
+      `[auth] Gmail session expired for ${account.email} — waiting for sign-in`,
+    );
+  }
+}
+
+export function clearAccountAuthExpired(
+  accountId: number,
+  database: Db = getDb(),
+): void {
+  database
+    .prepare(
+      `UPDATE accounts SET auth_status = 'ok', updated_at = ? WHERE id = ?`,
+    )
+    .run(Date.now(), accountId);
 }

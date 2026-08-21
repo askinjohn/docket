@@ -1,3 +1,5 @@
+import type { WorkflowJob } from '../workflow/store.js';
+
 type Listener = (event: LiveEvent) => void;
 
 export type LiveEvent =
@@ -13,7 +15,13 @@ export type LiveEvent =
       snippet: string;
       at: string;
     }
-  | { type: 'heartbeat'; at: string };
+  | { type: 'heartbeat'; at: string }
+  | { type: 'auth.expired'; email: string; at: string }
+  | {
+      type: 'workflow.job';
+      job: WorkflowJob;
+      at: string;
+    };
 
 const listeners = new Set<Listener>();
 

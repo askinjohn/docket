@@ -1,8 +1,39 @@
 import { Hono, type Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { draftReply, resolveAiMode, summarizeThread } from '../ai/provider.js';
+import {
+  getAiConfig,
+  publicAiConfig,
+  saveAiConfig,
+  type AiConfigFile,
+} from '../ai/config.js';
+import {
+  askMailbox,
+  chatAboutThread,
+  draftReply,
+  getAiStatus,
+  lastAiStatus,
+  resolveAiMode,
+  summarizeThread,
+} from '../ai/provider.js';
 import { appConfig, googleConfigured } from '../config.js';
+import { publicCatalog, type Workflow } from '../workflow/catalog.js';
+import {
+  cancelJob,
+  cancelWorkflowJobs,
+  enqueueWorkflow,
+  listJobs,
+} from '../workflow/queue.js';
+import {
+  deleteWorkflow,
+  getWorkflow,
+  listRuns,
+  listWorkflows,
+  patchWorkflow,
+  upsertWorkflow,
+  workflowsPath,
+} from '../workflow/store.js';
+import { suggestWorkflow } from '../workflow/suggest.js';
 import {
   GmailAuthExpiredError,
   isGmailAuthExpired,
@@ -10,12 +41,14 @@ import {
 import {
   deleteAccount,
   getActiveAccount,
+  isAccountAuthExpired,
   listAccounts,
   publicAccount,
   setActiveAccountId,
 } from '../db/accounts.js';
 import { publish, subscribe } from '../events/bus.js';
 import { downloadAttachment } from '../gmail/attachments.js';
+import { refreshLabelDirectory } from '../gmail/labels.js';
 import { contentDispositionHeader } from '../gmail/content-disposition.js';
 import { exchangeCode, getAuthUrl } from '../gmail/oauth.js';
 import {
@@ -76,6 +109,7 @@ function jsonGmailError(
 
 api.get('/health', (c) => {
   const account = getActiveAccount();
+  const expired = isAccountAuthExpired(account);
   const accounts = listAccounts().map(publicAccount);
   return c.json({
     ok: true,
@@ -85,9 +119,18 @@ api.get('/health', (c) => {
     googleConfigured: googleConfigured(),
     /** sqlite = tokens in DB (default); keychain = OS secret store */
     tokenStore: appConfig.tokenStore,
-    account: account ? { id: account.id, email: account.email } : null,
+    account: account
+      ? {
+          id: account.id,
+          email: account.email,
+          authStatus: expired ? 'expired' : 'ok',
+        }
+      : null,
     accounts,
-    aiMode: resolveAiMode(),
+    authExpired: expired,
+    connected: Boolean(account) && !expired,
+    aiMode: lastAiStatus()?.mode ?? resolveAiMode(),
+    ai: lastAiStatus(),
     notesDir: appConfig.notesDir,
     time: new Date().toISOString(),
   });
@@ -95,9 +138,11 @@ api.get('/health', (c) => {
 
 api.get('/auth/status', (c) => {
   const account = getActiveAccount();
+  const expired = isAccountAuthExpired(account);
   return c.json({
     googleConfigured: googleConfigured(),
-    connected: Boolean(account),
+    connected: Boolean(account) && !expired,
+    authExpired: expired,
     email: account?.email ?? null,
     accountId: account?.id ?? null,
     accounts: listAccounts().map(publicAccount),
@@ -272,6 +317,16 @@ api.post('/sync', async (c) => {
 });
 
 api.get('/threads', (c) => {
+  const account = getActiveAccount();
+  if (isAccountAuthExpired(account)) {
+    return c.json({
+      account: account ? publicAccount(account) : null,
+      threads: [],
+      authExpired: true,
+      searchHasMore: false,
+      inboxHasMore: false,
+    });
+  }
   const q = c.req.query('q') ?? undefined;
   const view = (c.req.query('view') as ThreadListView) || 'inbox';
   const label = c.req.query('label') ?? undefined;
@@ -282,8 +337,13 @@ api.get('/threads', (c) => {
   });
 });
 
-/** Distinct Gmail labels present in the local cache. */
-api.get('/labels', (c) => {
+/** Distinct Gmail labels (names from Gmail, counts from local cache). */
+api.get('/labels', async (c) => {
+  try {
+    await refreshLabelDirectory();
+  } catch (e) {
+    console.warn('[labels] directory refresh failed', e);
+  }
   return c.json({ labels: listLabels() });
 });
 
@@ -444,6 +504,10 @@ api.post('/threads/:id/reply', async (c) => {
     () =>
       ({} as {
         bodyText?: string;
+        replyAll?: boolean;
+        messageId?: string;
+        to?: string;
+        cc?: string;
         attachments?: OutboundAttachment[];
       }),
   );
@@ -454,6 +518,10 @@ api.post('/threads/:id/reply', async (c) => {
     const result = await sendReply({
       threadId: decodeURIComponent(c.req.param('id')),
       bodyText: body.bodyText,
+      replyAll: Boolean(body.replyAll),
+      messageId: body.messageId,
+      to: body.to,
+      cc: body.cc,
       attachments: body.attachments,
     });
     return c.json({ ok: true, ...result });
@@ -529,6 +597,30 @@ api.post('/summary/daily', (c) => {
   }
 });
 
+api.get('/ai/status', async (c) => {
+  return c.json(await getAiStatus());
+});
+
+api.get('/ai/config', (c) => {
+  return c.json(publicAiConfig(getAiConfig()));
+});
+
+api.put('/ai/config', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'invalid_config' }, 400);
+  }
+  const incoming = body as Partial<AiConfigFile>;
+  const current = getAiConfig();
+  const next: AiConfigFile = {
+    version: 1,
+    backends: incoming.backends ?? current.backends,
+    roles: incoming.roles ?? current.roles,
+  };
+  const saved = saveAiConfig(next);
+  return c.json({ ok: true, ...publicAiConfig(saved) });
+});
+
 api.post('/ai/summarize', async (c) => {
   const body = await c.req.json().catch(() => ({} as { threadId?: string }));
   if (!body.threadId) return c.json({ error: 'threadId required' }, 400);
@@ -540,11 +632,124 @@ api.post('/ai/summarize', async (c) => {
   }
 });
 
+api.post('/ai/chat', async (c) => {
+  const body = await c.req.json().catch(
+    () =>
+      ({} as {
+        threadId?: string;
+        messages?: { role: 'user' | 'assistant'; content: string }[];
+      }),
+  );
+  if (!body.threadId) return c.json({ error: 'threadId required' }, 400);
+  try {
+    const result = await chatAboutThread(body.threadId, body.messages ?? []);
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return jsonGmailError(c, e, 'ai_failed');
+  }
+});
+
 api.post('/ai/draft', async (c) => {
   const body = await c.req.json().catch(() => ({} as { threadId?: string }));
   if (!body.threadId) return c.json({ error: 'threadId required' }, 400);
   try {
     const result = await draftReply(body.threadId);
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    return jsonGmailError(c, e, 'ai_failed');
+  }
+});
+
+api.get('/workflows', (c) => {
+  return c.json({
+    path: workflowsPath(),
+    catalog: publicCatalog(),
+    workflows: listWorkflows(),
+    runs: listRuns(),
+    jobs: listJobs(),
+  });
+});
+
+api.post('/workflows/suggest', async (c) => {
+  const body = await c.req.json().catch(
+    () =>
+      ({} as {
+        english?: string;
+        backend?: string;
+        model?: string;
+      }),
+  );
+  const english = typeof body.english === 'string' ? body.english.trim() : '';
+  if (!english) return c.json({ error: 'english required' }, 400);
+  try {
+    const draft = await suggestWorkflow(english, {
+      backend: body.backend || 'local',
+      model: body.model || process.env.OLLAMA_MODEL || 'qwen2.5:7b',
+    });
+    return c.json({ ok: true, workflow: draft });
+  } catch (e) {
+    return jsonGmailError(c, e, 'workflow_suggest_failed');
+  }
+});
+
+api.post('/workflows', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    return c.json({ error: 'invalid_workflow' }, 400);
+  }
+  const saved = upsertWorkflow(body as Partial<Workflow>);
+  return c.json({ ok: true, workflow: saved });
+});
+
+api.patch('/workflows/:id', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const updated = patchWorkflow(c.req.param('id'), body ?? {});
+  if (!updated) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, workflow: updated });
+});
+
+api.delete('/workflows/:id', (c) => {
+  const ok = deleteWorkflow(c.req.param('id'));
+  return c.json({ ok });
+});
+
+api.post('/workflows/:id/run', async (c) => {
+  const wf = getWorkflow(c.req.param('id'));
+  if (!wf) return c.json({ error: 'not_found' }, 404);
+  const body = await c.req.json().catch(
+    () => ({} as { dryRun?: boolean; limit?: number; threadId?: string }),
+  );
+  const job = enqueueWorkflow(wf, {
+    reason: body.dryRun ? 'dry-run' : 'manual',
+    dryRun: Boolean(body.dryRun),
+    limit: body.limit,
+    threadId: body.threadId,
+  });
+  return c.json({ ok: true, job });
+});
+
+api.post('/workflows/jobs/:id/stop', (c) => {
+  const job = cancelJob(c.req.param('id'));
+  if (!job) return c.json({ error: 'not_found' }, 404);
+  return c.json({ ok: true, job });
+});
+
+api.post('/workflows/:id/stop', (c) => {
+  const jobs = cancelWorkflowJobs(c.req.param('id'));
+  return c.json({ ok: true, jobs });
+});
+
+api.post('/ai/ask', async (c) => {
+  const body = await c.req.json().catch(
+    () =>
+      ({} as {
+        question?: string;
+        messages?: { role: 'user' | 'assistant'; content: string }[];
+      }),
+  );
+  const question = typeof body.question === 'string' ? body.question : '';
+  try {
+    const result = await askMailbox(question, body.messages ?? []);
     return c.json({ ok: true, ...result });
   } catch (e) {
     return jsonGmailError(c, e, 'ai_failed');

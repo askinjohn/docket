@@ -1,6 +1,6 @@
-import { Component, inject } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 
-import { REMOTE_IMAGES_OPTIONS } from '../core/theme';
+import { REMOTE_IMAGES_OPTIONS, UI_LAYOUT_OPTIONS } from '../core/theme';
 import { UiShellService } from '../core/ui-shell.service';
 
 @Component({
@@ -8,11 +8,11 @@ import { UiShellService } from '../core/ui-shell.service';
   template: `
     @if (shell.settingsOpen()) {
       <div
-        class="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]"
+        class="fixed inset-0 z-[70] bg-black/55 backdrop-blur-[2px]"
         (click)="shell.closeSettings()"
       ></div>
       <div
-        class="fixed top-1/2 left-1/2 z-50 flex max-h-[min(92vh,720px)] w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-lm-border bg-lm-panel shadow-2xl"
+        class="fixed top-1/2 left-1/2 z-[80] flex max-h-[min(92vh,720px)] w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-lm-border bg-lm-panel shadow-2xl"
         role="dialog"
         aria-label="Settings"
         aria-modal="true"
@@ -41,7 +41,9 @@ import { UiShellService } from '../core/ui-shell.service';
             <h3 class="mb-1 m-0 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
               Appearance
             </h3>
-            <p class="mb-3 m-0 text-[0.78rem] text-lm-muted">Theme and accent color.</p>
+            <p class="mb-3 m-0 text-[0.78rem] text-lm-muted">
+              Theme, accent, and mailbox layout.
+            </p>
 
             <div class="mb-4">
               <div class="mb-2 text-[0.72rem] font-medium text-lm-muted">Mode</div>
@@ -96,7 +98,7 @@ import { UiShellService } from '../core/ui-shell.service';
               </div>
             </div>
 
-            <div>
+            <div class="mb-4">
               <div class="mb-2 text-[0.72rem] font-medium text-lm-muted">Density</div>
               <div class="grid grid-cols-2 gap-2">
                 @for (d of densities; track d) {
@@ -113,6 +115,32 @@ import { UiShellService } from '../core/ui-shell.service';
                     (click)="shell.setThemeDensity(d)"
                   >
                     {{ d }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            <div>
+              <div class="mb-2 text-[0.72rem] font-medium text-lm-muted">Layout</div>
+              <div class="flex flex-col gap-2" role="radiogroup" aria-label="Mailbox layout">
+                @for (opt of layoutOptions; track opt.id) {
+                  <button
+                    type="button"
+                    role="radio"
+                    class="cursor-pointer rounded-xl border px-4 py-3 text-left transition"
+                    [attr.aria-checked]="shell.theme().uiLayout === opt.id"
+                    [class.border-lm-accent]="shell.theme().uiLayout === opt.id"
+                    [class.bg-lm-accent/10]="shell.theme().uiLayout === opt.id"
+                    [class.border-lm-border]="shell.theme().uiLayout !== opt.id"
+                    [class.hover:bg-lm-hover]="shell.theme().uiLayout !== opt.id"
+                    (click)="shell.setUiLayout(opt.id)"
+                  >
+                    <span class="block text-sm font-semibold text-lm-text">{{
+                      opt.label
+                    }}</span>
+                    <span class="mt-0.5 block text-[0.75rem] leading-snug text-lm-muted">{{
+                      opt.description
+                    }}</span>
                   </button>
                 }
               </div>
@@ -181,47 +209,11 @@ import { UiShellService } from '../core/ui-shell.service';
 
           <section class="mb-7 border-t border-lm-border/60 pt-6">
             <h3 class="mb-1 m-0 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
-              Layout
-            </h3>
-            <p class="mb-3 m-0 text-[0.78rem] text-lm-muted">
-              Where the reply / AI dock sits while reading mail.
-            </p>
-            <div class="grid grid-cols-2 gap-2">
-              @for (d of docks; track d) {
-                <button
-                  type="button"
-                  class="cursor-pointer rounded-xl border px-3 py-3 text-left transition"
-                  [class.border-lm-accent]="shell.theme().replyDock === d"
-                  [class.bg-lm-accent/15]="shell.theme().replyDock === d"
-                  [class.border-lm-border]="shell.theme().replyDock !== d"
-                  [class.hover:bg-lm-hover]="shell.theme().replyDock !== d"
-                  (click)="shell.setReplyDock(d)"
-                >
-                  <span
-                    class="block text-sm capitalize"
-                    [class.font-semibold]="shell.theme().replyDock === d"
-                    [class.text-lm-text]="shell.theme().replyDock === d"
-                    [class.text-lm-muted]="shell.theme().replyDock !== d"
-                    >{{ d }}</span
-                  >
-                  <span class="mt-0.5 block text-[0.72rem] leading-snug text-lm-muted">
-                    @if (d === 'bottom') {
-                      Under the thread, full width
-                    } @else {
-                      Right side of the reading pane
-                    }
-                  </span>
-                </button>
-              }
-            </div>
-          </section>
-
-          <section class="mb-7 border-t border-lm-border/60 pt-6">
-            <h3 class="mb-1 m-0 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
               Notifications
             </h3>
             <p class="mb-3 m-0 text-[0.78rem] leading-relaxed text-lm-muted">
-              New mail alerts via macOS Notification Center (Dock app) or the browser.
+              New mail: core watches Gmail every 30s and notifies macOS even if the
+              window is closed (red button hides to Dock; ⌘Q quits and stops watching).
             </p>
             <p class="mb-3 m-0 rounded-lg border border-lm-border/70 bg-lm-bg/40 px-3 py-2 text-[0.8rem] text-lm-text">
               {{ shell.notifyStatus()?.label ?? 'Checking permission…' }}
@@ -248,6 +240,131 @@ import { UiShellService } from '../core/ui-shell.service';
               hides banners while the app is frontmost — check Notification Center (swipe from
               right). Browser-only runs show under Chrome/Safari, not as “Local Mail”.
             </p>
+          </section>
+
+          <section class="mb-7 border-t border-lm-border/60 pt-6">
+            <h3 class="mb-1 m-0 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
+              Workflows
+            </h3>
+            <p class="mb-3 m-0 text-[0.78rem] leading-relaxed text-lm-muted">
+              English → suggested plan (you pick the model) → approve. Runs on new mail,
+              on a cron, or when you tap Run now.
+            </p>
+            <button
+              type="button"
+              class="cursor-pointer rounded-xl border-0 bg-lm-accent px-3 py-2 text-sm font-semibold text-white hover:brightness-110"
+              (click)="shell.openWorkflows()"
+            >
+              Open workflows
+            </button>
+          </section>
+
+          <section class="mb-7 border-t border-lm-border/60 pt-6">
+            <h3 class="mb-1 m-0 text-[0.7rem] font-semibold tracking-wide text-lm-muted uppercase">
+              AI
+            </h3>
+            <p class="mb-3 m-0 text-[0.78rem] leading-relaxed text-lm-muted">
+              Grist-style JSON: each job picks a backend + model.
+              File:
+              <code class="break-all text-lm-text">{{
+                shell.aiConfig()?.path || '~/.local-mail/ai-config.json'
+              }}</code>
+            </p>
+            <p class="mb-3 m-0 text-[0.78rem] text-lm-muted">
+              @if (shell.aiStatus(); as s) {
+                @if (s.ollamaReachable) {
+                  Ollama reachable · {{ s.models.length }} model(s)
+                } @else {
+                  Ollama not running at {{ s.ollamaBaseUrl }}
+                }
+              }
+              @if (shell.aiStatus()?.hint) {
+                — {{ shell.aiStatus()!.hint }}
+              }
+            </p>
+
+            @if (shell.aiConfig(); as cfg) {
+              <div class="mb-4 flex flex-col gap-3">
+                @for (role of cfg.roleMeta; track role.id) {
+                  <div class="rounded-lg border border-lm-border/70 px-3 py-2.5">
+                    <div class="text-sm font-semibold text-lm-text">{{ role.label }}</div>
+                    <div class="mb-2 text-[0.72rem] text-lm-muted">{{ role.help }}</div>
+                    <div class="flex flex-col gap-2">
+                      <div>
+                        <div class="mb-1 text-[0.72rem] text-lm-muted">Backend</div>
+                        <div class="flex flex-wrap gap-1.5">
+                          @for (name of backendNames(); track name) {
+                            <button
+                              type="button"
+                              class="cursor-pointer rounded-lg border px-2.5 py-1 text-[0.78rem] capitalize transition"
+                              [class.border-lm-accent]="
+                                (cfg.roles[role.id]?.backend ?? 'local') === name
+                              "
+                              [class.bg-lm-accent/15]="
+                                (cfg.roles[role.id]?.backend ?? 'local') === name
+                              "
+                              [class.text-lm-text]="
+                                (cfg.roles[role.id]?.backend ?? 'local') === name
+                              "
+                              [class.border-lm-border]="
+                                (cfg.roles[role.id]?.backend ?? 'local') !== name
+                              "
+                              [class.text-lm-muted]="
+                                (cfg.roles[role.id]?.backend ?? 'local') !== name
+                              "
+                              (click)="shell.setAiRole(role.id, { backend: name })"
+                            >
+                              {{ name }}
+                            </button>
+                          }
+                        </div>
+                      </div>
+                      <label class="flex min-w-0 flex-col gap-1 text-[0.72rem] text-lm-muted">
+                        Model
+                        <input
+                          type="text"
+                          list="lm-ollama-models"
+                          class="rounded-lg border border-lm-border bg-lm-bg px-3 py-2 text-sm text-lm-text outline-none focus:border-lm-accent/50"
+                          [value]="cfg.roles[role.id]?.model ?? ''"
+                          (change)="onRoleModel(role.id, $event)"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                }
+              </div>
+              <datalist id="lm-ollama-models">
+                @for (m of shell.aiStatus()?.models ?? []; track m) {
+                  <option [value]="m"></option>
+                }
+              </datalist>
+            }
+
+            <label class="mb-2 block text-[0.72rem] font-medium text-lm-muted">
+              ai-config.json
+            </label>
+            <textarea
+              class="mb-2 min-h-36 w-full resize-y rounded-lg border border-lm-border bg-lm-bg px-3 py-2 font-mono text-[0.75rem] leading-relaxed text-lm-text outline-none"
+              [value]="jsonDraft()"
+              (input)="onJsonInput($event)"
+            ></textarea>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="cursor-pointer rounded-xl border-0 bg-lm-accent px-3 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-40"
+                (click)="saveJson()"
+                [disabled]="shell.aiConfigSaving()"
+              >
+                Save JSON
+              </button>
+              <button
+                type="button"
+                class="cursor-pointer rounded-xl border border-lm-border bg-transparent px-3 py-2 text-sm text-lm-text hover:bg-lm-hover"
+                (click)="shell.refreshAiStatus()"
+              >
+                Reload
+              </button>
+            </div>
           </section>
 
           <section class="border-t border-lm-border/60 pt-6">
@@ -308,8 +425,62 @@ export class SettingsDialog {
   protected readonly shell = inject(UiShellService);
   protected readonly modes = ['dark', 'light', 'system'] as const;
   protected readonly densities = ['comfortable', 'compact'] as const;
-  protected readonly docks = ['bottom', 'right'] as const;
   protected readonly remoteImageOptions = REMOTE_IMAGES_OPTIONS;
+  protected readonly layoutOptions = UI_LAYOUT_OPTIONS;
+  protected readonly jsonDraft = signal('');
+
+  constructor() {
+    effect(() => {
+      const cfg = this.shell.aiConfig();
+      if (!cfg) return;
+      this.jsonDraft.set(
+        JSON.stringify(
+          { version: cfg.version, backends: cfg.backends, roles: cfg.roles },
+          null,
+          2,
+        ),
+      );
+    });
+  }
+
+  protected backendNames(): string[] {
+    return Object.keys(this.shell.aiConfig()?.backends ?? { local: true });
+  }
+
+  onRoleBackend(roleId: string, event: Event): void {
+    this.shell.setAiRole(roleId, {
+      backend: (event.target as HTMLSelectElement).value,
+    });
+  }
+
+  onRoleModel(roleId: string, event: Event): void {
+    this.shell.setAiRole(roleId, {
+      model: (event.target as HTMLInputElement).value,
+    });
+  }
+
+  onJsonInput(event: Event): void {
+    this.jsonDraft.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  saveJson(): void {
+    try {
+      const parsed = JSON.parse(this.jsonDraft()) as {
+        backends?: Record<string, { type: string; baseURL: string }>;
+        roles?: Record<string, { backend: string; model: string }>;
+      };
+      if (!parsed.backends || !parsed.roles) {
+        this.shell.statusMessage.set('JSON needs backends and roles');
+        return;
+      }
+      void this.shell.saveAiConfig({
+        backends: parsed.backends as never,
+        roles: parsed.roles,
+      });
+    } catch {
+      this.shell.statusMessage.set('Invalid JSON');
+    }
+  }
 
   onAccentColor(event: Event): void {
     this.shell.setThemeAccent((event.target as HTMLInputElement).value);

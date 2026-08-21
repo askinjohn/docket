@@ -32,16 +32,20 @@ function saveCollapsed(key: string, collapsed: boolean): void {
     >
       <div class="mb-6 flex items-center gap-2.5 px-2">
         <span
-          class="h-6 w-6 shrink-0 rounded-md bg-linear-to-br from-lm-accent to-lm-accent-2"
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[3px] bg-lm-accent text-[0.7rem] font-semibold text-white"
           aria-hidden="true"
-        ></span>
-        <span class="text-sm font-semibold tracking-tight text-lm-text">Local Mail</span>
+          >L</span
+        >
+        <span
+          class="lm-display text-[0.98rem] font-medium tracking-tight text-lm-text"
+          >Local Mail</span
+        >
       </div>
 
       @if (shell.coreStatus() === 'auth-expired') {
         <button
           type="button"
-          class="mb-2 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
+          class="mb-2 w-full rounded-md bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110"
           (click)="shell.connectGmail()"
         >
           Sign in again
@@ -52,10 +56,17 @@ function saveCollapsed(key: string, collapsed: boolean): void {
       } @else if (shell.isConnected()) {
         <button
           type="button"
-          class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+          class="mb-2 w-full rounded-md bg-lm-accent px-3 py-2.5 text-sm font-semibold tracking-wide text-white transition hover:brightness-110 disabled:opacity-40"
           (click)="shell.openCompose()"
         >
           Compose
+        </button>
+        <button
+          type="button"
+          class="mb-5 w-full cursor-pointer rounded-md border border-lm-border bg-transparent px-3 py-2 text-sm text-lm-text hover:bg-lm-hover"
+          (click)="shell.toggleMailboxAsk()"
+        >
+          Ask AI
         </button>
       } @else if (shell.coreStatus() === 'misconfigured') {
         <p class="mb-4 px-2 text-xs leading-relaxed text-lm-muted">
@@ -64,7 +75,7 @@ function saveCollapsed(key: string, collapsed: boolean): void {
       } @else {
         <button
           type="button"
-          class="mb-5 w-full rounded-lg bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-45"
+          class="mb-5 w-full rounded-md bg-lm-accent px-3 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-45"
           (click)="shell.connectGmail()"
           [disabled]="shell.coreStatus() === 'offline' || shell.coreStatus() === 'checking'"
         >
@@ -76,10 +87,10 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
-          [class.bg-lm-hover]="shell.mailView() === 'inbox'"
-          [class.text-lm-text]="shell.mailView() === 'inbox'"
-          [class.font-medium]="shell.mailView() === 'inbox'"
-          [class.text-lm-muted]="shell.mailView() !== 'inbox'"
+          [class.bg-lm-hover]="isMailNav('inbox')"
+          [class.text-lm-text]="isMailNav('inbox')"
+          [class.font-medium]="isMailNav('inbox')"
+          [class.text-lm-muted]="!isMailNav('inbox')"
           (click)="shell.setMailView('inbox')"
         >
           Inbox
@@ -87,10 +98,10 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
-          [class.bg-lm-hover]="shell.mailView() === 'starred'"
-          [class.text-lm-text]="shell.mailView() === 'starred'"
-          [class.font-medium]="shell.mailView() === 'starred'"
-          [class.text-lm-muted]="shell.mailView() !== 'starred'"
+          [class.bg-lm-hover]="isMailNav('starred')"
+          [class.text-lm-text]="isMailNav('starred')"
+          [class.font-medium]="isMailNav('starred')"
+          [class.text-lm-muted]="!isMailNav('starred')"
           (click)="shell.setMailView('starred')"
         >
           Starred
@@ -98,10 +109,10 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
-          [class.bg-lm-hover]="shell.mailView() === 'sent'"
-          [class.text-lm-text]="shell.mailView() === 'sent'"
-          [class.font-medium]="shell.mailView() === 'sent'"
-          [class.text-lm-muted]="shell.mailView() !== 'sent'"
+          [class.bg-lm-hover]="isMailNav('sent')"
+          [class.text-lm-text]="isMailNav('sent')"
+          [class.font-medium]="isMailNav('sent')"
+          [class.text-lm-muted]="!isMailNav('sent')"
           (click)="shell.setMailView('sent')"
         >
           Sent
@@ -109,13 +120,32 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         <button
           type="button"
           class="rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
-          [class.bg-lm-hover]="shell.mailView() === 'all'"
-          [class.text-lm-text]="shell.mailView() === 'all'"
-          [class.font-medium]="shell.mailView() === 'all'"
-          [class.text-lm-muted]="shell.mailView() !== 'all'"
+          [class.bg-lm-hover]="isMailNav('all')"
+          [class.text-lm-text]="isMailNav('all')"
+          [class.font-medium]="isMailNav('all')"
+          [class.text-lm-muted]="!isMailNav('all')"
           (click)="shell.setMailView('all')"
         >
           All
+        </button>
+        <button
+          type="button"
+          class="mt-3 rounded-md px-2.5 py-2 text-left text-[0.8125rem] transition"
+          [class.bg-lm-hover]="shell.shellSection() === 'workflows'"
+          [class.text-lm-text]="shell.shellSection() === 'workflows'"
+          [class.font-medium]="shell.shellSection() === 'workflows'"
+          [class.text-lm-muted]="shell.shellSection() !== 'workflows'"
+          (click)="shell.openWorkflows()"
+        >
+          <span class="flex items-center justify-between gap-2">
+            Workflows
+            @if (liveJobs()) {
+              <span
+                class="rounded-full bg-lm-accent/20 px-1.5 py-0.5 text-[0.62rem] font-semibold text-lm-accent"
+                >{{ liveJobs() }}</span
+              >
+            }
+          </span>
         </button>
 
         @if (shell.customViews().length) {
@@ -361,8 +391,10 @@ function saveCollapsed(key: string, collapsed: boolean): void {
           type="button"
           class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-lm-muted hover:bg-lm-hover hover:text-lm-text"
           (click)="shell.openSettings()"
+          title="Settings (⌘,)"
         >
           Settings
+          <span class="ml-auto font-mono text-[0.65rem] opacity-70">⌘,</span>
         </button>
       </div>
     </aside>
@@ -375,6 +407,16 @@ function saveCollapsed(key: string, collapsed: boolean): void {
 })
 export class Sidebar {
   protected readonly shell = inject(UiShellService);
+
+  protected isMailNav(view: string): boolean {
+    return this.shell.shellSection() === 'mail' && this.shell.mailView() === view;
+  }
+
+  protected liveJobs(): number {
+    return this.shell
+      .workflowJobs()
+      .filter((j) => j.status === 'queued' || j.status === 'running').length;
+  }
 
   /** Collapsed by default when there are many labels (saves sidebar space). */
   protected readonly labelsCollapsed = signal(
@@ -392,7 +434,7 @@ export class Sidebar {
   /** Hide system labels that already have primary nav entries. */
   protected readonly navLabels = computed(() => {
     const skip = new Set(['INBOX', 'STARRED', 'SENT', 'DRAFT', 'TRASH', 'SPAM']);
-    return this.shell.labels().filter((l) => !skip.has(l.id)).slice(0, 24);
+    return this.shell.labels().filter((l) => !skip.has(l.id)).slice(0, 48);
   });
 
   toggleLabels(): void {
