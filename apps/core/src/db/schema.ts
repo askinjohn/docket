@@ -1,4 +1,4 @@
-/** SQL bootstrap for Local Mail SQLite. */
+/** SQL bootstrap for Docket SQLite. */
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;

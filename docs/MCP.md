@@ -1,4 +1,4 @@
-# MCP — agents talking to Local Mail
+# MCP — agents talking to Docket
 
 Core exposes mail tools two ways:
 
@@ -29,11 +29,11 @@ cd apps/core && npm run mcp
 ```json
 {
   "mcpServers": {
-    "local-mail": {
+    "docket": {
       "command": "npx",
       "args": [
         "tsx",
-        "/ABSOLUTE/PATH/TO/local-mail/apps/core/src/mcp-stdio.ts"
+        "/ABSOLUTE/PATH/TO/docket/apps/core/src/mcp-stdio.ts"
       ]
     }
   }

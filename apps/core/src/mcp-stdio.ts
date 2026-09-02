@@ -8,9 +8,9 @@
  * Cursor mcp.json example:
  * {
  *   "mcpServers": {
- *     "local-mail": {
+ *     "docket": {
  *       "command": "npx",
- *       "args": ["tsx", "/ABS/PATH/local-mail/apps/core/src/mcp-stdio.ts"]
+ *       "args": ["tsx", "/ABS/PATH/docket/apps/core/src/mcp-stdio.ts"]
  *     }
  *   }
  * }
@@ -131,7 +131,7 @@ async function handle(req: JsonRpcReq): Promise<void> {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
         serverInfo: {
-          name: 'local-mail',
+          name: 'docket',
           version: '0.1.0',
         },
       });

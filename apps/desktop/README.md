@@ -1,4 +1,4 @@
-# Local Mail — Desktop (Tauri)
+# Docket — Desktop (Tauri)
 
 Mac Dock app shell. Embeds the **Angular** UI and starts the **local core** (Gmail/SQLite API on `127.0.0.1:8787`) when needed.
 
@@ -28,7 +28,7 @@ cd apps/desktop && npm run dev
 This will:
 
 1. Start Angular on `http://127.0.0.1:4300` (if not already)
-2. Open a **Local Mail** native window loading that UI
+2. Open a **Docket** native window loading that UI
 3. Spawn `apps/core` if port **8787** is free
 
 **Tip:** If something already uses port 4300 or 8787, stop the old process first, or leave core running — Tauri reuses an existing core.
@@ -46,7 +46,7 @@ npm run desktop:build
 Tauri window (webview)
     → Angular UI (dev: :4300 / prod: bundled dist)
     → http://127.0.0.1:8787 core (sidecar process)
-         → SQLite ~/.local-mail
+         → SQLite ~/.docket
          → Gmail API
 ```
 

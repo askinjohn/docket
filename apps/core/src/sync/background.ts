@@ -49,7 +49,7 @@ export function startBackgroundSync(): void {
   stopBackgroundSync();
   const ms = appConfig.bgSyncIntervalMs;
   if (ms <= 0) {
-    console.log('[bg-sync] disabled (LOCAL_MAIL_BG_SYNC_MS=0)');
+    console.log('[bg-sync] disabled (DOCKET_BG_SYNC_MS=0)');
     return;
   }
   console.log(

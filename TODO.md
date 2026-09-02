@@ -1,4 +1,4 @@
-# Active TODO — Local Mail
+# Active TODO — Docket
 
 **Updated:** 2026-08-21  
 **Status:** Workflows run as a local function-calling harness (not keyword AND)
@@ -11,7 +11,7 @@
 - [x] New compose send (`POST /messages/send`)
 - [x] Better reply Message-ID / References headers
 - [x] Incremental history sync (`POST /sync` default; `full: true` for full pull)
-- [x] Daily summary → `~/.local-mail/notes/YYYY-MM-DD.md`
+- [x] Daily summary → `~/.docket/notes/YYYY-MM-DD.md`
 - [x] AI summarize / draft (template | Ollama | OpenAI)
 - [x] MCP-style tools over HTTP (`/mcp/tools`, `/mcp/call`)
 - [x] SSE `/events` + optional web notifications
@@ -26,7 +26,7 @@
 - [x] Compose window polish (From/Cc, docked card, discard confirm, ⌘↵ send)
 - [x] Recipient typeahead from local mail history (`GET /contacts/suggest`)
 - [x] Native Mac notifications (Tauri) + `mail.new` SSE + Dock badge (unread)
-- [x] Configurable OAuth token store: `LOCAL_MAIL_TOKEN_STORE=sqlite|keychain`
+- [x] Configurable OAuth token store: `DOCKET_TOKEN_STORE=sqlite|keychain`
 - [x] Quiet bg sync (no “Background sync: N” list banner)
 - [x] Outbound attachments on compose + reply (multipart MIME, 8MB/file)
 - [x] Deeper inbox sync (100 threads) + Load more from Gmail

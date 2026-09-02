@@ -151,7 +151,7 @@ export async function getNotifyPermissionState(): Promise<{
         return {
           state: 'granted',
           runtime,
-          label: 'Dock app · notifications allowed (also check System Settings → Notifications → Local Mail)',
+          label: 'Dock app · notifications allowed (also check System Settings → Notifications → Docket)',
         };
       }
       return {
@@ -179,7 +179,7 @@ export async function getNotifyPermissionState(): Promise<{
     return {
       state: 'granted',
       runtime,
-      label: 'Browser · allowed (alerts appear under Chrome/Safari, not as “Local Mail”)',
+      label: 'Browser · allowed (alerts appear under Chrome/Safari, not as “Docket”)',
     };
   }
   if (p === 'denied') {
@@ -248,7 +248,7 @@ export async function showNotification(
       return {
         ok: true,
         channel: 'tauri-native',
-        detail: 'Sent as a macOS notification (Local Mail). Check Notification Center if banners are off.',
+        detail: 'Sent as a macOS notification (Docket). Check Notification Center if banners are off.',
       };
     } catch (e) {
       console.warn('[notify] show_mail_notification failed', e);
@@ -270,7 +270,7 @@ export async function showNotification(
         ok: true,
         channel: 'tauri-native',
         detail:
-          'Sent via native plugin. If nothing appears: System Settings → Notifications → Script Editor / Local Mail (banners on).',
+          'Sent via native plugin. If nothing appears: System Settings → Notifications → Script Editor / Docket (banners on).',
       };
     } catch (e) {
       console.warn('[notify] tauri-native failed', e);

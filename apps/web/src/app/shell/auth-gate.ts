@@ -31,7 +31,7 @@ import { UiShellService } from '../core/ui-shell.service';
             id="lm-auth-gate-body"
             class="mt-3 mb-0 text-[0.92rem] leading-relaxed text-lm-muted"
           >
-            Google revoked Local Mail’s access
+            Google revoked Docket’s access
             @if (shell.accountEmail(); as email) {
               for <span class="text-lm-text">{{ email }}</span>
             }

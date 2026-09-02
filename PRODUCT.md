@@ -1,8 +1,8 @@
-# Product plan — Local Mail
+# Product plan — Docket
 
 **Status:** Dogfood · Phase 1 mail path done; UX/AI/desktop shipped ahead of roadmap  
-**Last updated:** 2026-07-29  
-**Codename / folder:** `local-mail`
+**Last updated:** 2026-09-02  
+**Codename / folder:** `docket`
 
 ---
 

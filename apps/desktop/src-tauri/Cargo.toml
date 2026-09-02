@@ -1,12 +1,12 @@
 [package]
-name = "local-mail"
+name = "docket"
 version = "0.1.0"
-description = "Local Mail — local-first Gmail client"
-authors = ["Local Mail"]
+description = "Docket — local-first Gmail client"
+authors = ["Docket"]
 edition = "2021"
 
 [lib]
-name = "local_mail_lib"
+name = "docket_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,6 +1,6 @@
-# `@local-mail/core`
+# `@docket/core`
 
-Local backend for Local Mail: Gmail, SQLite, REST API on `127.0.0.1`.
+Local backend for Docket: Gmail, SQLite, REST API on `127.0.0.1`.
 
 **Status:** Phase 1 — Gmail OAuth, inbox sync, list/read/archive/reply.
 

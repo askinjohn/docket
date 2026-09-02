@@ -1,8 +1,8 @@
 {
-  "name": "@local-mail/desktop",
+  "name": "@docket/desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Local Mail — Tauri Dock shell (Angular UI + core sidecar)",
+  "description": "Docket — Tauri Dock shell (Angular UI + core sidecar)",
   "type": "module",
   "scripts": {
     "tauri": "tauri",

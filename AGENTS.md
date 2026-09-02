@@ -1,4 +1,4 @@
-# Agent & contributor rules — Local Mail
+# Agent & contributor rules — Docket
 
 This file is the **source of truth** for humans and coding agents working in this repository.  
 Angular-specific UI rules also live in `apps/web/AGENTS.md` (CLI-generated); **repo rules here win** on product/architecture conflicts.
@@ -77,7 +77,7 @@ After UI changes: run `npm run build` in `apps/web` (or root `npm run web:build`
 
 ## Git & process
 
-- This project is its **own git repo** (`local-mail/`).  
+- This project is its **own git repo** (`docket/`).  
 - Prefer small commits with clear messages.  
 - Update `TODO.md` when finishing checklist items.  
 - New architectural choices → add ADR entry in `docs/DECISIONS.md`.  
@@ -85,7 +85,7 @@ After UI changes: run `npm run build` in `apps/web` (or root `npm run web:build`
 
 ### Worktrees (if using a parent monorepo workflow later)
 
-For feature work intended as an MR from a shared remote, use a dedicated worktree off the default branch. Today the project is standalone under `Projects/gemini-cli/local-mail`.
+For feature work intended as an MR from a shared remote, use a dedicated worktree off the default branch. Today the project is standalone under `Projects/gemini-cli/docket`.
 
 ---
 

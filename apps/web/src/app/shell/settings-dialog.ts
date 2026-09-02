@@ -235,10 +235,10 @@ import { UiShellService } from '../core/ui-shell.service';
               </button>
             </div>
             <p class="mt-2 m-0 text-[0.72rem] leading-relaxed text-lm-muted">
-              If Test says sent but nothing appears: System Settings → Notifications → Local Mail
-              (or “local-mail”) → allow Banners/Alerts, and turn off Focus/Do Not Disturb. macOS often
+              If Test says sent but nothing appears: System Settings → Notifications → Docket
+              (or “docket”) → allow Banners/Alerts, and turn off Focus/Do Not Disturb. macOS often
               hides banners while the app is frontmost — check Notification Center (swipe from
-              right). Browser-only runs show under Chrome/Safari, not as “Local Mail”.
+              right). Browser-only runs show under Chrome/Safari, not as “Docket”.
             </p>
           </section>
 
@@ -267,7 +267,7 @@ import { UiShellService } from '../core/ui-shell.service';
               Grist-style JSON: each job picks a backend + model.
               File:
               <code class="break-all text-lm-text">{{
-                shell.aiConfig()?.path || '~/.local-mail/ai-config.json'
+                shell.aiConfig()?.path || '~/.docket/ai-config.json'
               }}</code>
             </p>
             <p class="mb-3 m-0 text-[0.78rem] text-lm-muted">

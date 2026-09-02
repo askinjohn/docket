@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Local Mail: ensure core on :8787, then browser UI or Tauri Dock.
+# Start Docket: ensure core on :8787, then browser UI or Tauri Dock.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +36,7 @@ fi
 
 cleanup() {
   echo ""
-  echo "Stopping Local Mail…"
+  echo "Stopping Docket…"
   if [[ -n "${CORE_PID:-}" ]] && kill -0 "$CORE_PID" 2>/dev/null; then
     kill "$CORE_PID" 2>/dev/null || true
     wait "$CORE_PID" 2>/dev/null || true
@@ -53,7 +53,7 @@ core_up() {
   curl -sf http://127.0.0.1:8787/health >/dev/null 2>&1
 }
 
-echo "▶ Local Mail ($MODE)"
+echo "▶ Docket ($MODE)"
 
 # ── Core ─────────────────────────────────────────────────────────────
 if core_up; then
@@ -104,7 +104,7 @@ else
     fi
   fi
   echo ""
-  echo "Local Mail running:"
+  echo "Docket running:"
   echo "  UI   http://127.0.0.1:4300"
   echo "  Core http://127.0.0.1:8787/health"
   echo "Press Ctrl+C to stop."

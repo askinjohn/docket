@@ -22,28 +22,28 @@ fn core_port_open() -> bool {
 
 fn start_core_if_needed() -> Option<Child> {
     if core_port_open() {
-        eprintln!("[local-mail] core already listening on 127.0.0.1:8787 — reusing");
+        eprintln!("[docket] core already listening on 127.0.0.1:8787 — reusing");
         return None;
     }
 
     let dir = core_dir();
     if !dir.exists() {
         eprintln!(
-            "[local-mail] core directory missing at {} — start core manually",
+            "[docket] core directory missing at {} — start core manually",
             dir.display()
         );
         return None;
     }
 
-    eprintln!("[local-mail] starting core from {}", dir.display());
+    eprintln!("[docket] starting core from {}", dir.display());
 
     // Prefer npm so local tsx/node resolution matches apps/core package.json
     let mut cmd = Command::new("npm");
     cmd.args(["run", "start"])
         .current_dir(&dir)
-        .env("LOCAL_MAIL_CORE_HOST", "127.0.0.1")
-        .env("LOCAL_MAIL_CORE_PORT", "8787")
-        .env("LOCAL_MAIL_WEB_ORIGIN", "http://127.0.0.1:4300")
+        .env("DOCKET_CORE_HOST", "127.0.0.1")
+        .env("DOCKET_CORE_PORT", "8787")
+        .env("DOCKET_WEB_ORIGIN", "http://127.0.0.1:4300")
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 
@@ -52,19 +52,19 @@ fn start_core_if_needed() -> Option<Child> {
             // Brief wait so /health can come up
             for _ in 0..40 {
                 if core_port_open() {
-                    eprintln!("[local-mail] core is up");
+                    eprintln!("[docket] core is up");
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
             if !core_port_open() {
-                eprintln!("[local-mail] warning: core did not open :8787 yet (UI may show offline briefly)");
+                eprintln!("[docket] warning: core did not open :8787 yet (UI may show offline briefly)");
             }
             Some(child)
         }
         Err(e) => {
-            eprintln!("[local-mail] failed to spawn core: {e}");
-            eprintln!("[local-mail] run manually: cd apps/core && npm run dev");
+            eprintln!("[docket] failed to spawn core: {e}");
+            eprintln!("[docket] run manually: cd apps/core && npm run dev");
             None
         }
     }
@@ -75,7 +75,7 @@ fn stop_core(state: &CoreProcess) {
         if let Some(mut child) = guard.take() {
             let _ = child.kill();
             let _ = child.wait();
-            eprintln!("[local-mail] core process stopped");
+            eprintln!("[docket] core process stopped");
         }
     }
 }
@@ -104,7 +104,7 @@ fn show_mail_notification(
     use tauri_plugin_notification::NotificationExt;
 
     let title = if title.trim().is_empty() {
-        "Local Mail".to_string()
+        "Docket".to_string()
     } else {
         title
     };
@@ -117,17 +117,17 @@ fn show_mail_notification(
     #[cfg(target_os = "macos")]
     {
         let script = format!(
-            r#"display notification "{body}" with title "{title}" subtitle "Local Mail" sound name "New Mail""#,
+            r#"display notification "{body}" with title "{title}" subtitle "Docket" sound name "New Mail""#,
             title = apple_escape(&title),
             body = apple_escape(&body),
         );
         match Command::new("osascript").args(["-e", &script]).status() {
             Ok(st) if st.success() => {
-                eprintln!("[local-mail] notification sent via osascript: {title}");
+                eprintln!("[docket] notification sent via osascript: {title}");
                 return Ok(());
             }
-            Ok(st) => eprintln!("[local-mail] osascript notification exit {st}"),
-            Err(e) => eprintln!("[local-mail] osascript notification failed: {e}"),
+            Ok(st) => eprintln!("[docket] osascript notification exit {st}"),
+            Err(e) => eprintln!("[docket] osascript notification failed: {e}"),
         }
     }
 
@@ -166,14 +166,14 @@ pub fn run() {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = hidden.hide();
-                        eprintln!("[local-mail] window hidden — core still watching inbox");
+                        eprintln!("[docket] window hidden — core still watching inbox");
                     }
                 });
             }
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building Local Mail")
+        .expect("error while building Docket")
         .run(|app_handle, event| {
             match event {
                 tauri::RunEvent::Reopen { .. } => {

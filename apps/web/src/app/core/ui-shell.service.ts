@@ -26,6 +26,7 @@ import {
   type NotifyPermissionState,
 } from './notify';
 import { openExternalUrl } from './open-external';
+import { readPref, writePref } from './pref-storage';
 import {
   ACCENT_PRESETS,
   applyTheme,
@@ -76,11 +77,11 @@ export interface AttachmentPreviewState {
   textError: string | null;
 }
 
-const RECENT_OPENS_KEY = 'local-mail.recent-opens';
+const RECENT_OPENS_KEY = 'recent-opens';
 
 function loadRecentOpens(): { id: string; subject: string; from: string }[] {
   try {
-    const raw = localStorage.getItem(RECENT_OPENS_KEY);
+    const raw = readPref(RECENT_OPENS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -331,7 +332,7 @@ export class UiShellService {
       /* ignore — offline / race */
     }
   }
-  readonly phaseLabel = signal('Local Mail');
+  readonly phaseLabel = signal('Docket');
   readonly accentPresets = ACCENT_PRESETS;
   /** True while at least one archive can still be undone. */
   readonly undoAvailable = signal(false);
@@ -753,12 +754,12 @@ export class UiShellService {
     await requestNotifyPermission();
     await this.refreshNotifyStatus();
     const result = await showNotification({
-      title: 'Local Mail',
+      title: 'Docket',
       body: 'Test notification — if you see this, notifications work.',
       threadId: this.selectedId() ?? undefined,
     });
     this.pushNotifyToast({
-      title: 'Local Mail',
+      title: 'Docket',
       body: 'Test notification — if you see this, notifications work.',
       threadId: this.selectedId() ?? undefined,
     });
@@ -783,12 +784,12 @@ export class UiShellService {
         );
         if (!isTauri) {
           console.info(
-            '[notify] Browser mode — Notifications appear under Chrome/Safari, not “Local Mail”. Use npm run desktop:dev for a Dock app entry.',
+            '[notify] Browser mode — Notifications appear under Chrome/Safari, not “Docket”. Use npm run desktop:dev for a Dock app entry.',
           );
           return;
         }
         console.info(
-          '[notify] Dock mode — after Test notification, check System Settings → Notifications for “Local Mail” or “local-mail”.',
+          '[notify] Dock mode — after Test notification, check System Settings → Notifications for “Docket” or “docket”.',
         );
       } catch {
         /* ignore */
@@ -1451,7 +1452,7 @@ export class UiShellService {
     ].slice(0, 8);
     this.recentOpens.set(next);
     try {
-      localStorage.setItem(RECENT_OPENS_KEY, JSON.stringify(next));
+      writePref(RECENT_OPENS_KEY, JSON.stringify(next));
     } catch {
       /* ignore */
     }
@@ -2728,7 +2729,7 @@ export class UiShellService {
   async removeActiveAccount(): Promise<void> {
     const id = this.activeAccountId();
     if (id == null) return;
-    if (!confirm(`Remove account ${this.accountEmail()} from Local Mail?`)) {
+    if (!confirm(`Remove account ${this.accountEmail()} from Docket?`)) {
       return;
     }
     try {

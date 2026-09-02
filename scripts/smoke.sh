@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Local Mail smoke checks (core must be running)
+# Docket smoke checks (core must be running)
 set -euo pipefail
-BASE="${LOCAL_MAIL_CORE_URL:-http://127.0.0.1:8787}"
+BASE="${DOCKET_CORE_URL:-${LOCAL_MAIL_CORE_URL:-http://127.0.0.1:8787}}"
 
 echo "→ GET $BASE/health"
 curl -sf "$BASE/health" | head -c 400

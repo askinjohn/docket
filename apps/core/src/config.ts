@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,18 +10,35 @@ const coreRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnv({ path: join(coreRoot, '.env') });
 loadEnv(); // optional cwd .env as override
 
-const host = process.env.LOCAL_MAIL_CORE_HOST ?? '127.0.0.1';
+/** Prefer DOCKET_*; accept LOCAL_MAIL_* from existing .env files. */
+export function env(suffix: string): string | undefined {
+  const docket = process.env[`DOCKET_${suffix}`];
+  if (docket) return docket;
+  const legacy = process.env[`LOCAL_MAIL_${suffix}`];
+  if (legacy) return legacy;
+  return undefined;
+}
+
+function resolveDataDir(): string {
+  const explicit = env('DATA_DIR');
+  if (explicit) return explicit;
+  const next = join(homedir(), '.docket');
+  const prev = join(homedir(), '.local-mail');
+  if (existsSync(next)) return next;
+  if (existsSync(prev)) return prev;
+  return next;
+}
+
+const host = env('CORE_HOST') ?? '127.0.0.1';
 if (host !== '127.0.0.1' && host !== 'localhost') {
   console.warn(
     `[config] WARNING: binding host is "${host}". Prefer 127.0.0.1 for local-only security.`,
   );
 }
 
-const dataDir =
-  process.env.LOCAL_MAIL_DATA_DIR ?? join(homedir(), '.local-mail');
+const dataDir = resolveDataDir();
 
-const notesDir =
-  process.env.LOCAL_MAIL_NOTES_DIR ?? join(dataDir, 'notes');
+const notesDir = env('NOTES_DIR') ?? join(dataDir, 'notes');
 
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(notesDir, { recursive: true });
@@ -33,30 +50,32 @@ function parseTokenStore(
   if (v === 'keychain' || v === 'keytar' || v === 'os') return 'keychain';
   if (v === 'sqlite' || v === 'db' || v === 'plaintext') return 'sqlite';
   console.warn(
-    `[config] Unknown LOCAL_MAIL_TOKEN_STORE="${raw}" — using sqlite. Valid: sqlite | keychain`,
+    `[config] Unknown DOCKET_TOKEN_STORE="${raw}" — using sqlite. Valid: sqlite | keychain`,
   );
   return 'sqlite';
 }
 
+const port = Number(env('CORE_PORT') ?? 8787);
+
 export const appConfig = {
   host,
-  port: Number(process.env.LOCAL_MAIL_CORE_PORT ?? 8787),
+  port,
   dataDir,
   notesDir,
-  dbPath: process.env.LOCAL_MAIL_DB_PATH ?? join(dataDir, 'mail.sqlite'),
+  dbPath: env('DB_PATH') ?? join(dataDir, 'mail.sqlite'),
   /**
    * Where OAuth access/refresh tokens live.
    * - sqlite (default): columns on accounts — simple clone-and-run
    * - keychain: OS secret store via keytar (recommended for daily use)
    */
-  tokenStore: parseTokenStore(process.env.LOCAL_MAIL_TOKEN_STORE),
+  tokenStore: parseTokenStore(env('TOKEN_STORE')),
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     /** Loopback redirect for desktop/local apps */
     redirectUri:
       process.env.GOOGLE_REDIRECT_URI ??
-      `http://127.0.0.1:${Number(process.env.LOCAL_MAIL_CORE_PORT ?? 8787)}/auth/gmail/callback`,
+      `http://127.0.0.1:${port}/auth/gmail/callback`,
     scopes: [
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/gmail.send',
@@ -65,14 +84,14 @@ export const appConfig = {
     ],
   },
   /** Where the browser UI lives (for CORS + post-auth redirect) */
-  webOrigin: process.env.LOCAL_MAIL_WEB_ORIGIN ?? 'http://127.0.0.1:4300',
+  webOrigin: env('WEB_ORIGIN') ?? 'http://127.0.0.1:4300',
   /**
    * Core-owned inbox poll so new-mail OS notifications work with no UI.
-   * Set LOCAL_MAIL_BG_SYNC_MS=0 to disable.
+   * Set DOCKET_BG_SYNC_MS=0 to disable.
    */
-  bgSyncIntervalMs: Number(process.env.LOCAL_MAIL_BG_SYNC_MS ?? 30_000),
+  bgSyncIntervalMs: Number(env('BG_SYNC_MS') ?? 30_000),
   /** macOS Notification Center via osascript (independent of the Dock window). */
-  osNotify: process.env.LOCAL_MAIL_OS_NOTIFY !== '0',
+  osNotify: env('OS_NOTIFY') !== '0',
   ai: {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
     /** Empty = auto-pick from `ollama tags` (Grist order: qwen2.5:7b, gemma2:2b, …). */

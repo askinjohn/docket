@@ -1,26 +1,19 @@
 import { Component, computed, inject, signal } from '@angular/core';
 
+import { readPref, writePref } from '../core/pref-storage';
 import { UiShellService } from '../core/ui-shell.service';
 
-const LABELS_COLLAPSED_KEY = 'local-mail.sidebar.labelsCollapsed';
-const VIEWS_COLLAPSED_KEY = 'local-mail.sidebar.viewsCollapsed';
+const LABELS_COLLAPSED_KEY = 'sidebar.labelsCollapsed';
+const VIEWS_COLLAPSED_KEY = 'sidebar.viewsCollapsed';
 
 function loadCollapsed(key: string, fallback = false): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    if (v === null) return fallback;
-    return v === '1' || v === 'true';
-  } catch {
-    return fallback;
-  }
+  const v = readPref(key);
+  if (v === null) return fallback;
+  return v === '1' || v === 'true';
 }
 
 function saveCollapsed(key: string, collapsed: boolean): void {
-  try {
-    localStorage.setItem(key, collapsed ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
+  writePref(key, collapsed ? '1' : '0');
 }
 
 @Component({
@@ -34,11 +27,11 @@ function saveCollapsed(key: string, collapsed: boolean): void {
         <span
           class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[3px] bg-lm-accent text-[0.7rem] font-semibold text-white"
           aria-hidden="true"
-          >L</span
+          >D</span
         >
         <span
           class="lm-display text-[0.98rem] font-medium tracking-tight text-lm-text"
-          >Local Mail</span
+          >Docket</span
         >
       </div>
 
