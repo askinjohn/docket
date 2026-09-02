@@ -214,7 +214,7 @@ function buildSafetyStyle(opts: WrapEmailHtmlOptions = {}): string {
   }
   img[src^="http://127.0.0.1"],
   img[src^="https://127.0.0.1"] {
-    /* local-mail attachment proxy — keep visible */
+    /* docket attachment proxy — keep visible */
   }
   table {
     max-width: 100% !important;

@@ -1,8 +1,8 @@
 {
-  "name": "local-mail",
+  "name": "docket",
   "version": "0.0.1",
   "private": true,
-  "description": "Local-first Gmail client — Angular 22 UI + local core",
+  "description": "Docket — local-first Gmail client (Angular 22 UI + local core)",
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },

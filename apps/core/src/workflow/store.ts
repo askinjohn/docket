@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { appConfig } from '../config.js';
+import { appConfig, env } from '../config.js';
 import {
   newId,
   parseRule,
@@ -63,8 +63,7 @@ const RUNS_CAP = 40;
 
 export function workflowsPath(): string {
   return (
-    process.env.LOCAL_MAIL_WORKFLOWS ??
-    join(appConfig.dataDir, 'workflows.json')
+    env('WORKFLOWS') ?? join(appConfig.dataDir, 'workflows.json')
   );
 }
 

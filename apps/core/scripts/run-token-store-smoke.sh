@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot Local Mail core token-store smoke (sqlite + optional keychain)
+# One-shot Docket core token-store smoke (sqlite + optional keychain)
 set -euo pipefail
 
 CORE_DIR="$(cd "$(dirname "$0")/.." && pwd)"

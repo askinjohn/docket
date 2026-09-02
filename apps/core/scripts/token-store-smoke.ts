@@ -6,7 +6,7 @@
  *   npx tsx scripts/token-store-smoke.ts
  *
  * Worker (spawned by driver):
- *   LOCAL_MAIL_TOKEN_STORE=sqlite LOCAL_MAIL_DATA_DIR=... LOCAL_MAIL_DB_PATH=... \
+ *   DOCKET_TOKEN_STORE=sqlite DOCKET_DATA_DIR=... DOCKET_DB_PATH=... \
  *     ROLE=sqlite npx tsx scripts/token-store-smoke.ts
  */
 import { spawnSync } from 'node:child_process';
@@ -223,9 +223,9 @@ function runWorker(
     ...process.env,
     ...extraEnv,
     ROLE: workerRole,
-    LOCAL_MAIL_TOKEN_STORE: workerRole,
-    LOCAL_MAIL_DATA_DIR: dataDir,
-    LOCAL_MAIL_DB_PATH: join(dataDir, 'mail.sqlite'),
+    DOCKET_TOKEN_STORE: workerRole,
+    DOCKET_DATA_DIR: dataDir,
+    DOCKET_DB_PATH: join(dataDir, 'mail.sqlite'),
     // Avoid loading real OAuth secrets into this smoke
   };
   const tsxCli = join(coreRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');

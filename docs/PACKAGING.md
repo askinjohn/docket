@@ -1,6 +1,6 @@
 # Packaging & notarization (macOS)
 
-Local Mail’s primary desktop shell is **Tauri 2** (`apps/desktop`).
+Docket’s primary desktop shell is **Tauri 2** (`apps/desktop`).
 
 ## Dev / unsigned local build
 
@@ -16,7 +16,7 @@ npm run build                # or: npx tauri build
 
 Output typically under:
 
-- `apps/desktop/src-tauri/target/release/bundle/macos/Local Mail.app`
+- `apps/desktop/src-tauri/target/release/bundle/macos/Docket.app`
 - `apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg`
 
 ## Notarization (requires your Apple Developer account)

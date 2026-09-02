@@ -8,11 +8,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 NONINTERACTIVE=0
-[[ "${1:-}" == "--yes" || "${1:-}" == "-y" || "${LOCAL_MAIL_NONINTERACTIVE:-}" == "1" ]] && NONINTERACTIVE=1
+[[ "${1:-}" == "--yes" || "${1:-}" == "-y" || "${DOCKET_NONINTERACTIVE:-${LOCAL_MAIL_NONINTERACTIVE:-}}" == "1" ]] && NONINTERACTIVE=1
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║           Local Mail — setup                     ║"
+echo "║           Docket — setup                     ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 echo "For zero prompts, run instead:"
@@ -56,10 +56,10 @@ CORE_ENV="apps/core/.env"
 if [[ ! -f "$CORE_ENV" ]]; then
   cp apps/core/.env.example "$CORE_ENV" 2>/dev/null || true
   [[ -f "$CORE_ENV" ]] || cat >"$CORE_ENV" <<'EOF'
-LOCAL_MAIL_CORE_HOST=127.0.0.1
-LOCAL_MAIL_CORE_PORT=8787
-LOCAL_MAIL_WEB_ORIGIN=http://127.0.0.1:4300
-LOCAL_MAIL_TOKEN_STORE=sqlite
+DOCKET_CORE_HOST=127.0.0.1
+DOCKET_CORE_PORT=8787
+DOCKET_WEB_ORIGIN=http://127.0.0.1:4300
+DOCKET_TOKEN_STORE=sqlite
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/auth/gmail/callback
@@ -86,8 +86,8 @@ fi
 if ask_yn "Use Keychain for OAuth tokens (Mac)?" "n"; then
   npm --prefix apps/core install keytar 2>/dev/null || true
   awk '
-    BEGIN{d=0} /^LOCAL_MAIL_TOKEN_STORE=/ {print "LOCAL_MAIL_TOKEN_STORE=keychain"; d=1; next} {print}
-    END{if(!d) print "LOCAL_MAIL_TOKEN_STORE=keychain"}
+    BEGIN{d=0} /^(DOCKET|LOCAL_MAIL)_TOKEN_STORE=/ {print "DOCKET_TOKEN_STORE=keychain"; d=1; next} {print}
+    END{if(!d) print "DOCKET_TOKEN_STORE=keychain"}
   ' "$CORE_ENV" >"$CORE_ENV.tmp" && mv "$CORE_ENV.tmp" "$CORE_ENV"
 fi
 
@@ -96,6 +96,6 @@ echo "✅ Setup done. Start with:"
 echo "  ./up.sh"
 echo "  ./up.sh --desktop"
 echo ""
-if ask_yn "Start Local Mail now?" "y"; then
+if ask_yn "Start Docket now?" "y"; then
   exec bash "$ROOT/up.sh"
 fi

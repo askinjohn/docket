@@ -1,15 +1,15 @@
-# Local Mail
+# Docket
 
 A **local-first Gmail client** that runs on your laptop: Angular 22 UI, a Node core on `127.0.0.1`, and an optional Tauri 2 Dock app. Superhuman-inspired keyboard triage. Not a SaaS — mail, tokens, and models stay on your machine.
 
 ## What it is
 
 - **Gmail only (v1)** via the Gmail API (OAuth). Archive, labels, star, send, reply, reply-all.
-- **Local cache** in SQLite under `~/.local-mail/` (override with `LOCAL_MAIL_DATA_DIR`).
+- **Local cache** in SQLite under `~/.docket/` (override with `DOCKET_DATA_DIR`; existing `~/.local-mail` is reused).
 - **Keyboard-first inbox** — `j`/`k`, `e` archive and stay on the next thread, `z` undo, `c` compose, `r` / `a` reply, `⌘K` command palette, `?` shortcuts.
 - **Layouts** — Settings → Appearance: **List first** (inbox, then click to read) or **Split** (list stays on the side).
 - **Workflows** — describe an automation in English, pick a local (or BYO) model, approve, run in the background. Filing workflows label/archive; question workflows write an answer in a right-hand pane. Stop a run at any time.
-- **Local AI** — Ollama by default (`~/.local-mail/ai-config.json`). Optional OpenAI-compatible backends. Secrets never go in the Angular bundle.
+- **Local AI** — Ollama by default (`~/.docket/ai-config.json`). Optional OpenAI-compatible backends. Secrets never go in the Angular bundle.
 - **Desktop** — Tauri 2 window, Notification Center, Dock badge. Browser + core is a valid dev path.
 
 ## Architecture
@@ -40,8 +40,8 @@ Hard rules: core binds **localhost only**; Gmail refresh tokens and LLM keys liv
 ## Quick start
 
 ```bash
-git clone https://github.com/askinjohn/local-mail.git
-cd local-mail
+git clone https://github.com/askinjohn/docket.git
+cd docket
 nvm use
 ./up.sh                 # core + browser UI on http://127.0.0.1:4300
 # or
@@ -69,7 +69,7 @@ Health: [http://127.0.0.1:8787/health](http://127.0.0.1:8787/health)
 
 Step-by-step: [docs/GMAIL_SETUP.md](./docs/GMAIL_SETUP.md).
 
-Tokens: `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (macOS Keychain via keytar — recommended for daily use).
+Tokens: `DOCKET_TOKEN_STORE=sqlite` (default) or `keychain` (macOS Keychain via keytar — recommended for daily use). `LOCAL_MAIL_*` env names still work.
 
 ## Using the client
 
@@ -84,9 +84,9 @@ Tokens: `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (macOS Keychain 
 
 Approved JSON is the contract: a filing workflow will not be turned into a briefing. Mail summaries sent to the model stay on-device when the backend is `local`. Nothing is permanently deleted — archive leaves the inbox. No send/delete from workflows.
 
-Workflows persist in `~/.local-mail/workflows.json`.
+Workflows persist in `~/.docket/workflows.json`.
 
-**AI.** Settings / `~/.local-mail/ai-config.json` maps roles (`summarize`, `ask`, …) to backends. Mailbox Ask AI is an overlay, not a permanent column.
+**AI.** Settings / `~/.docket/ai-config.json` maps roles (`summarize`, `ask`, …) to backends. Mailbox Ask AI is an overlay, not a permanent column.
 
 ## Keyboard
 
@@ -111,7 +111,7 @@ Workflows persist in `~/.local-mail/workflows.json`.
 ## Repository
 
 ```
-local-mail/
+docket/
 ├── apps/core/       Node core — Hono, SQLite, Gmail, AI, workflows (127.0.0.1:8787)
 ├── apps/web/        Angular 22 UI (signals, Tailwind)
 ├── apps/desktop/    Tauri 2 Dock shell
@@ -122,7 +122,7 @@ local-mail/
 └── up.sh            One-command run
 ```
 
-Data and secrets are **not** in the repo: `apps/core/.env`, `~/.local-mail/` (SQLite, tokens, `ai-config.json`, `workflows.json`).
+Data and secrets are **not** in the repo: `apps/core/.env`, `~/.docket/` (SQLite, tokens, `ai-config.json`, `workflows.json`).
 
 ## Docs
 

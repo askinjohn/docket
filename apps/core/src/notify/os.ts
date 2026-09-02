@@ -11,9 +11,9 @@ export function notifyOsMail(title: string, body: string): void {
   if (!appConfig.osNotify) return;
   if (process.platform !== 'darwin') return;
 
-  const t = appleEscape((title || 'Local Mail').slice(0, 80));
+  const t = appleEscape((title || 'Docket').slice(0, 80));
   const b = appleEscape((body || 'New mail').slice(0, 160));
-  const script = `display notification "${b}" with title "${t}" subtitle "Local Mail" sound name "New Mail"`;
+  const script = `display notification "${b}" with title "${t}" subtitle "Docket" sound name "New Mail"`;
 
   try {
     const child = spawn('osascript', ['-e', script], {

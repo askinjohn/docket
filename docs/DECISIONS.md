@@ -4,6 +4,13 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 ---
 
+## ADR-016 — Product name is Docket
+
+- **Status:** Accepted (2026-09-02) · closes O-2
+- **Context:** “Local Mail” read as a git folder, not a Dock app. Need a one-word display name for window, notifications, and the GitHub repo.
+- **Decision:** Display name **Docket**. Engineering ids: npm `docket` / `@docket/*`, GitHub `askinjohn/docket`, Tauri identifier `dev.docket.app`, data dir `~/.docket`. Env prefix `DOCKET_*` with `LOCAL_MAIL_*` still accepted. Existing `~/.local-mail` is reused if `~/.docket` is absent. Keychain service stays `dev.localmail.core` so OAuth tokens keep working.
+- **Consequences:** macOS treats `dev.docket.app` as a new app (re-grant notifications). Clone URL and package names change with the GitHub rename.
+
 ## ADR-015 — Workflow harness (local function calls)
 
 - **Status:** Accepted (2026-08-21)
@@ -15,7 +22,7 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 - **Status:** Accepted (2026-08-19) · run executor superseded by ADR-015
 - **Context:** Users want English automations (urgent notify, file GitLab/leave mail, morning triage) without a free-running agent.
-- **Decision:** Closed catalog of triggers (`mail.received`, `manual`, `cron`), matchers, judges, and actions (notify / label / leave inbox / star). AI compiles English into that JSON using a **user-selected** backend+model. Nothing mutates mail until Approve. Stored in `~/.local-mail/workflows.json`. No send/delete.
+- **Decision:** Closed catalog of triggers (`mail.received`, `manual`, `cron`), matchers, judges, and actions (notify / label / leave inbox / star). AI compiles English into that JSON using a **user-selected** backend+model. Nothing mutates mail until Approve. Stored in `~/.docket/workflows.json`. No send/delete.
 - **Consequences:** Core engine on `mail.new` + 30s cron tick (catch-up if the Mac slept through a slot). Dry-run and Run now from the Workflows dialog.
 
 ## ADR-013 — Configurable shell layouts (List first | Split)
@@ -36,7 +43,7 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 - **Status:** Accepted (2026-07-21)
 - **Context:** Refresh tokens in plaintext SQLite are risky but clone-and-run must stay easy.
-- **Decision:** `LOCAL_MAIL_TOKEN_STORE=sqlite` (default) or `keychain` (keytar / OS secret store). Keychain clears token columns in SQLite after migrate.
+- **Decision:** `DOCKET_TOKEN_STORE=sqlite` (default) or `keychain` (keytar / OS secret store). `LOCAL_MAIL_TOKEN_STORE` still accepted. Keychain clears token columns in SQLite after migrate.
 - **Consequences:** Cloners get zero native deps by default; daily drivers set keychain in `.env`.
 
 ## ADR-011 — Native Mac notifications via Tauri + mail.new
@@ -125,5 +132,4 @@ Newest first. Status: **Accepted** · **Proposed** · **Superseded** · **Reject
 
 | ID | Question | Options |
 |----|----------|---------|
-| O-2 | App display name | “Local Mail” vs brand name |
 | O-3 | Google Cloud OAuth credentials | User must create — see GMAIL_SETUP.md |

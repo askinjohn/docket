@@ -1,4 +1,4 @@
-# Local Mail — `apps/web` Angular rules
+# Docket — `apps/web` Angular rules
 
 **Also read the repo root [`AGENTS.md`](../../AGENTS.md)** for product, security, and phase rules. Root rules win on conflicts.
 

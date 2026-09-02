@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local Mail — one command after clone:
+# Docket — one command after clone:
 #   ./up.sh
 # Installs deps (if needed), ensures .env exists, starts core + UI.
 set -euo pipefail
@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-MODE="${LOCAL_MAIL_UI:-browser}" # browser | desktop
+MODE="${DOCKET_UI:-${LOCAL_MAIL_UI:-browser}}" # browser | desktop
 OPEN_BROWSER=1
 FORCE_INSTALL=0
 
@@ -19,7 +19,7 @@ for arg in "$@"; do
     --reinstall) FORCE_INSTALL=1 ;;
     --help|-h)
       cat <<'EOF'
-Local Mail — one-shot install + run
+Docket — one-shot install + run
 
   ./up.sh                 Install (if needed) + core + browser UI
   ./up.sh --desktop       Same, but Tauri Dock window
@@ -28,7 +28,7 @@ Local Mail — one-shot install + run
 
 Optional env before running:
   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... ./up.sh
-  LOCAL_MAIL_TOKEN_STORE=keychain ./up.sh
+  DOCKET_TOKEN_STORE=keychain ./up.sh
 
 After start: open Connect Gmail in the app (or add OAuth keys to apps/core/.env).
 EOF
@@ -59,7 +59,7 @@ NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]" 2>/dev/null || echo 
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║     Local Mail — one-command install & run       ║"
+echo "║     Docket — one-command install & run       ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo "Node $(node -v) · mode=$MODE"
 echo ""
@@ -115,10 +115,10 @@ if [[ ! -f "$CORE_ENV" ]]; then
     cp apps/core/.env.example "$CORE_ENV"
   else
     cat >"$CORE_ENV" <<'EOF'
-LOCAL_MAIL_CORE_HOST=127.0.0.1
-LOCAL_MAIL_CORE_PORT=8787
-LOCAL_MAIL_WEB_ORIGIN=http://127.0.0.1:4300
-LOCAL_MAIL_TOKEN_STORE=sqlite
+DOCKET_CORE_HOST=127.0.0.1
+DOCKET_CORE_PORT=8787
+DOCKET_WEB_ORIGIN=http://127.0.0.1:4300
+DOCKET_TOKEN_STORE=sqlite
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REDIRECT_URI=http://127.0.0.1:8787/auth/gmail/callback
@@ -132,7 +132,8 @@ fi
 # Env vars override file (CI / power users)
 [[ -n "${GOOGLE_CLIENT_ID:-}" ]] && env_set GOOGLE_CLIENT_ID "$GOOGLE_CLIENT_ID" "$CORE_ENV"
 [[ -n "${GOOGLE_CLIENT_SECRET:-}" ]] && env_set GOOGLE_CLIENT_SECRET "$GOOGLE_CLIENT_SECRET" "$CORE_ENV"
-[[ -n "${LOCAL_MAIL_TOKEN_STORE:-}" ]] && env_set LOCAL_MAIL_TOKEN_STORE "$LOCAL_MAIL_TOKEN_STORE" "$CORE_ENV"
+TOKEN_STORE_IN="${DOCKET_TOKEN_STORE:-${LOCAL_MAIL_TOKEN_STORE:-}}"
+[[ -n "$TOKEN_STORE_IN" ]] && env_set DOCKET_TOKEN_STORE "$TOKEN_STORE_IN" "$CORE_ENV"
 
 # Ensure redirect URI is set
 if [[ -z "$(env_get GOOGLE_REDIRECT_URI "$CORE_ENV")" ]]; then
@@ -182,18 +183,19 @@ else
 fi
 
 # Optional token store prompt on first interactive run if still default empty store preference
-if [[ -t 0 ]] && [[ -z "${LOCAL_MAIL_TOKEN_STORE:-}" ]]; then
-  STORE="$(env_get LOCAL_MAIL_TOKEN_STORE "$CORE_ENV")"
+if [[ -t 0 ]] && [[ -z "${DOCKET_TOKEN_STORE:-}" && -z "${LOCAL_MAIL_TOKEN_STORE:-}" ]]; then
+  STORE="$(env_get DOCKET_TOKEN_STORE "$CORE_ENV")"
+  [[ -z "$STORE" ]] && STORE="$(env_get LOCAL_MAIL_TOKEN_STORE "$CORE_ENV")"
   if [[ -z "$STORE" || "$STORE" == "sqlite" ]]; then
     # Only ask once-ish: if sqlite and interactive, offer keychain on Mac
     if [[ "$(uname -s)" == "Darwin" ]]; then
       read -r -p "Store OAuth tokens in macOS Keychain? [y/N]: " want_kc || true
       if [[ "${want_kc:-n}" =~ ^[Yy]$ ]]; then
-        env_set LOCAL_MAIL_TOKEN_STORE keychain "$CORE_ENV"
+        env_set DOCKET_TOKEN_STORE keychain "$CORE_ENV"
         echo "🔐 Installing keytar…"
         npm --prefix apps/core install keytar 2>/dev/null || {
           echo "⚠️  keytar failed — keeping sqlite"
-          env_set LOCAL_MAIL_TOKEN_STORE sqlite "$CORE_ENV"
+          env_set DOCKET_TOKEN_STORE sqlite "$CORE_ENV"
         }
       fi
     fi
@@ -201,11 +203,11 @@ if [[ -t 0 ]] && [[ -z "${LOCAL_MAIL_TOKEN_STORE:-}" ]]; then
 fi
 
 # Install keytar if .env already says keychain
-if grep -q '^LOCAL_MAIL_TOKEN_STORE=keychain' "$CORE_ENV" 2>/dev/null; then
+if grep -qE '^(DOCKET|LOCAL_MAIL)_TOKEN_STORE=keychain' "$CORE_ENV" 2>/dev/null; then
   if [[ ! -d apps/core/node_modules/keytar ]]; then
     echo "🔐 Installing keytar for Keychain token store…"
     npm --prefix apps/core install keytar 2>/dev/null || {
-      echo "⚠️  keytar failed — set LOCAL_MAIL_TOKEN_STORE=sqlite if Connect fails"
+      echo "⚠️  keytar failed — set DOCKET_TOKEN_STORE=sqlite if Connect fails"
     }
   fi
 fi
@@ -228,5 +230,5 @@ else
 fi
 [[ "$OPEN_BROWSER" -eq 0 ]] && ARGS+=(--no-open)
 
-echo "▶ Starting Local Mail…"
+echo "▶ Starting Docket…"
 exec bash "$ROOT/start.sh" "${ARGS[@]}"

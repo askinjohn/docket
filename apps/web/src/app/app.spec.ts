@@ -7,7 +7,7 @@ import { UiShellService } from './core/ui-shell.service';
 
 function mockShell() {
   return {
-    phaseLabel: () => 'Local Mail',
+    phaseLabel: () => 'Docket',
     coreStatus: () => 'online-disconnected' as const,
     accountEmail: () => null,
     accounts: () => [],
@@ -262,11 +262,11 @@ describe('App', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should render Local Mail shell', async () => {
+  it('should render Docket shell', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('Local Mail');
+    expect(compiled.textContent).toContain('Docket');
     expect(compiled.textContent).toContain('Inbox');
   });
 });

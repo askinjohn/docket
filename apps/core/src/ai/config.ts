@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { appConfig } from '../config.js';
+import { appConfig, env } from '../config.js';
 
 export type AiBackendType = 'ollama' | 'openai_compatible' | 'template';
 
@@ -98,8 +98,7 @@ export function defaultAiConfig(): AiConfigFile {
 
 export function aiConfigPath(): string {
   return (
-    process.env.LOCAL_MAIL_AI_CONFIG ??
-    join(appConfig.dataDir, 'ai-config.json')
+    env('AI_CONFIG') ?? join(appConfig.dataDir, 'ai-config.json')
   );
 }
 
@@ -112,7 +111,7 @@ function mergeMissingDefaults(file: AiConfigFile): AiConfigFile {
 
 function migrateFromEnv(): AiConfigFile {
   const file = defaultAiConfig();
-  const forced = (process.env.LOCAL_MAIL_AI_PROVIDER ?? '').trim().toLowerCase();
+  const forced = (env('AI_PROVIDER') ?? '').trim().toLowerCase();
   if (forced === 'openai') {
     const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
     for (const id of Object.keys(file.roles)) {

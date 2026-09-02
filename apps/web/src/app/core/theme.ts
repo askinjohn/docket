@@ -1,3 +1,5 @@
+import { readPref, writePref } from './pref-storage';
+
 export type ThemeMode = 'dark' | 'light' | 'system';
 export type ThemeDensity = 'compact' | 'comfortable';
 /** @deprecated Reply is always bottom; AI is always right. Kept for old prefs. */
@@ -126,7 +128,7 @@ export const REMOTE_IMAGES_OPTIONS: {
   },
 ];
 
-const STORAGE_KEY = 'local-mail.theme';
+const STORAGE_KEY = 'theme';
 
 export const DEFAULT_THEME: ThemePrefs = {
   mode: 'dark',
@@ -177,7 +179,7 @@ function parseRemoteImagesMode(
 
 export function loadThemePrefs(): ThemePrefs {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readPref(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_THEME };
     const parsed = JSON.parse(raw) as Partial<ThemePrefs>;
     const remoteImagesMode = parseRemoteImagesMode(parsed);
@@ -203,7 +205,7 @@ export function saveThemePrefs(prefs: ThemePrefs): void {
     ...prefs,
     blockRemoteImages: prefs.remoteImagesMode !== 'always',
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  writePref(STORAGE_KEY, JSON.stringify(normalized));
 }
 
 function resolveMode(mode: ThemeMode): 'dark' | 'light' {

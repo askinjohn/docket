@@ -1,8 +1,8 @@
 {
-  "name": "@local-mail/core",
+  "name": "@docket/core",
   "version": "0.1.0",
   "private": true,
-  "description": "Local Mail core — Gmail sync, SQLite, API on 127.0.0.1",
+  "description": "Docket core — Gmail sync, SQLite, API on 127.0.0.1",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",

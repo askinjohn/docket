@@ -27,7 +27,7 @@
 
 - Workflows: English → local model suggest → approve; harness run (function calls); Stop; question-style **Answer** pane. Filing JSON is the contract (git-emails will not turn into a briefing).
 - Reply all, thread participants (From/To/Cc/Bcc), per-message reply. `⌘C` copies instead of compose.
-- Workflows live in `~/.local-mail/workflows.json`. Core still `127.0.0.1:8787`.
+- Workflows live in `~/.docket/workflows.json`. Core still `127.0.0.1:8787`.
 
 ## In progress
 
@@ -52,7 +52,7 @@ npm run core:dev   # terminal 1
 npm run web:start  # terminal 2
 ```
 
-- Dock: **Local Mail** window  
+- Dock: **Docket** window  
 - Browser UI: http://127.0.0.1:4300  
 - Health: http://127.0.0.1:8787/health
 

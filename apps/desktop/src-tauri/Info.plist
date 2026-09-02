@@ -6,10 +6,10 @@
 	<key>NSUserNotificationAlertStyle</key>
 	<string>alert</string>
 	<key>NSUserNotificationsUsageDescription</key>
-	<string>Local Mail notifies you when new mail arrives.</string>
+	<string>Docket notifies you when new mail arrives.</string>
 	<key>CFBundleDisplayName</key>
-	<string>Local Mail</string>
+	<string>Docket</string>
 	<key>CFBundleName</key>
-	<string>Local Mail</string>
+	<string>Docket</string>
 </dict>
 </plist>

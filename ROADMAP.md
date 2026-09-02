@@ -1,4 +1,4 @@
-# Roadmap — Local Mail
+# Roadmap — Docket
 
 Phased delivery. **Do not start Phase N+1 features until Phase N exit criteria pass** (unless explicitly parallelized below).
 
@@ -10,7 +10,7 @@ Phased delivery. **Do not start Phase N+1 features until Phase N exit criteria p
 
 | Work | Owner | Status |
 |------|--------|--------|
-| Monorepo `local-mail/` + git | PM/eng | Done |
+| Monorepo `docket/` + git | PM/eng | Done |
 | Angular 22 app `apps/web` + Tailwind | Eng | Done |
 | Product / roadmap / TODO / decisions | PM | Done |
 | Agent rules (`AGENTS.md`, `CLAUDE.md`, Cursor) | PM | Done |

@@ -113,7 +113,7 @@ api.get('/health', (c) => {
   const accounts = listAccounts().map(publicAccount);
   return c.json({
     ok: true,
-    service: 'local-mail-core',
+    service: 'docket-core',
     host: appConfig.host,
     port: appConfig.port,
     googleConfigured: googleConfigured(),
@@ -200,7 +200,7 @@ api.get('/auth/gmail/start', (c) => {
       503,
     );
   }
-  return c.redirect(getAuthUrl('local-mail'));
+  return c.redirect(getAuthUrl('docket'));
 });
 
 api.get('/auth/gmail/callback', async (c) => {
@@ -236,7 +236,7 @@ api.get('/auth/gmail/callback', async (c) => {
       authResultPage({
         ok: true,
         title: 'Connected',
-        body: `Signed in as <strong>${escapeHtml(account.email)}</strong>. Close this tab and return to <strong>Local Mail</strong>.`,
+        body: `Signed in as <strong>${escapeHtml(account.email)}</strong>. Close this tab and return to <strong>Docket</strong>.`,
       }),
     );
   } catch (e) {
@@ -860,7 +860,7 @@ function authResultPage(opts: {
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
-<title>Local Mail — ${opts.title}</title>
+<title>Docket — ${opts.title}</title>
 <style>
   body{font-family:system-ui,sans-serif;background:#0b0d12;color:#e8ecf4;
   display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
@@ -879,10 +879,10 @@ function authResultPage(opts: {
 <body><div class="card">
   <h1>${opts.title}</h1>
   <p>${opts.body}</p>
-  <p class="hint">Local Mail stays in the Dock app — you only need to leave this browser tab.</p>
+  <p class="hint">Docket stays in the Dock app — you only need to leave this browser tab.</p>
   <div class="actions">
     <button type="button" id="closeBtn">Close tab</button>
-    <button type="button" class="secondary" id="doneBtn" hidden>Done — return to Local Mail</button>
+    <button type="button" class="secondary" id="doneBtn" hidden>Done — return to Docket</button>
   </div>
   <div class="fallback" id="fallback" role="status">
     Browsers block scripts from closing this tab. Press <kbd id="shortcut">⌘W</kbd> (or click the tab’s ×).
@@ -934,7 +934,7 @@ function authResultPage(opts: {
       '<h1 style="color:${accent}">Signed in</h1>' +
       '<p style="color:#8b95a8">Close this tab with <kbd style="padding:.15rem .45rem;border-radius:4px;border:1px solid #3a4558;background:#1a2030;font:600 .85rem ui-monospace,Menlo,monospace;color:#fff">' +
       shortcut +
-      '</kbd> and return to Local Mail.</p></div>';
+      '</kbd> and return to Docket.</p></div>';
   });
 
   // Auto-attempt once on success (no-op when browser blocks it)

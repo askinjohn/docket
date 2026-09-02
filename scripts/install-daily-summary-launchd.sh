@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Install a user LaunchAgent that runs Local Mail daily summary each morning.
+# Install a user LaunchAgent that runs Docket daily summary each morning.
 # Requires: core dependencies installed; Gmail already connected at least once.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CORE="$ROOT/apps/core"
-LABEL="dev.localmail.daily-summary"
+LABEL="dev.docket.daily-summary"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-LOG_DIR="$HOME/.local-mail/logs"
+LOG_DIR="$HOME/.docket/logs"
 mkdir -p "$LOG_DIR" "$HOME/Library/LaunchAgents"
 
 NODE="$(command -v node)"

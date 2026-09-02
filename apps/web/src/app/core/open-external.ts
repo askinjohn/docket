@@ -14,7 +14,7 @@ export async function openExternalUrl(url: string): Promise<void> {
     }
   }
 
-  // Browser / fallback: new tab keeps Local Mail UI alive
+  // Browser / fallback: new tab keeps Docket UI alive
   const opened = window.open(url, '_blank', 'noopener,noreferrer');
   if (!opened) {
     // Popup blocked — last resort (user can still complete flow)

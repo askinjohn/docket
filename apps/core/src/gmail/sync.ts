@@ -618,7 +618,7 @@ export function buildMimeMessage(opts: {
     ].join('\r\n');
   }
 
-  const boundary = `local_mail_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const boundary = `docket_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
   const parts: string[] = [
     ...headers,
     'MIME-Version: 1.0',
