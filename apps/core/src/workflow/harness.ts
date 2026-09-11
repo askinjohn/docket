@@ -113,6 +113,14 @@ export function parseRunMode(text: string, compiled: RunMode): RunMode {
   return { report: true, act: false };
 }
 
+/** Skip an extra model call when the approved JSON already says filing vs answer. */
+export function resolvedRunMode(wf: Workflow): RunMode | null {
+  const compiled = compiledMode(wf);
+  if (compiled.act && !compiled.report) return { report: false, act: true };
+  if (compiled.report && !compiled.act) return { report: true, act: false };
+  return null;
+}
+
 export async function decideRunMode(
   wf: Workflow,
   signal?: AbortSignal,
@@ -237,10 +245,10 @@ export function buildHarnessPrompt(
   hints: string[],
 ): { system: string; prompt: string } {
   const system = [
-    'You route local mail to tools. Mail stays on this computer.',
-    'Reply with a single JSON object. No markdown.',
-    'Never send, forward, or permanently delete. archive = leave the inbox (All Mail keeps it).',
-    'If an email is not about the workflow, calls must be [].',
+    'You decide per email whether it matches the user request.',
+    'Mail stays on this computer. Reply with one JSON object. No markdown.',
+    'If this email is not what they asked about, calls must be []. Do not archive unrelated mail.',
+    'Never send, forward, or permanently delete. archive = leave the inbox (still in All Mail).',
   ].join(' ');
 
   const bundles = toolBundles(wf);
@@ -269,11 +277,10 @@ export function buildHarnessPrompt(
     'Workflow intent:',
     wf.english.trim() || wf.description || wf.name,
     '',
-    'Preferred tools when it matches (pick the fitting bundle, subset ok): ' +
-      (toolHint || 'archive'),
-    hints.length ? 'Look especially for: ' + hints.join(', ') : '',
+    'When it matches, use these tools (subset ok): ' + (toolHint || 'archive'),
+    hints.length ? 'Names/phrases from the request: ' + hints.join(', ') : '',
     '',
-    'Allowed fn: addLabel, archive, star, notify, report. skip = [].',
+    'Allowed fn: addLabel, archive, star, notify, report. Unrelated → {"calls":[]}.',
     '',
     'Emails:',
   ];
@@ -306,7 +313,7 @@ export function emailCard(target: MailTarget, alias: string): {
   const snippet = (target.snippet || target.bodyPreview || '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 280);
+    .slice(0, 420);
   return {
     id: alias,
     from: `${target.fromName} <${target.fromEmail}>`.trim(),

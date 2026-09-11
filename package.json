@@ -20,6 +20,7 @@
     "core:install": "npm --prefix apps/core install",
     "desktop:dev": "npm --prefix apps/desktop run dev",
     "desktop:build": "npm --prefix apps/desktop run build",
+    "app": "bash ./app.sh",
     "desktop:install": "npm --prefix apps/desktop install",
     "install:all": "npm --prefix apps/web install && npm --prefix apps/core install && npm --prefix apps/desktop install",
     "e2e": "npx playwright test",

@@ -53,8 +53,7 @@ describe('sanitizeRules', () => {
         },
       ],
     );
-    assert.equal(out[0]!.matchers?.query?.includes('team'), true);
-    assert.equal(out[0]!.matchers?.query?.includes('offsite'), true);
+    assert.match(out[0]!.matchers?.query ?? '', /team-offsite/i);
     assert.equal(out[0]!.then.some((a) => a.type === 'notify'), false);
     assert.equal(out[0]!.then.some((a) => a.type === 'star'), false);
     assert.equal(out[0]!.then.some((a) => a.type === 'archive'), true);

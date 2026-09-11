@@ -1,3 +1,4 @@
+use std::fs::{self, File, OpenOptions};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -8,8 +9,116 @@ use tauri::Manager;
 
 struct CoreProcess(Mutex<Option<Child>>);
 
-fn core_dir() -> PathBuf {
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+fn repo_core_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core")
+}
+
+fn bundled_core_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let path = app.path();
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Ok(p) = path.resolve("core", tauri::path::BaseDirectory::Resource) {
+        cands.push(p);
+    }
+    if let Ok(res) = path.resource_dir() {
+        cands.push(res.join("core"));
+        cands.push(res.join("resources").join("core"));
+        cands.push(res.join("_up_").join("core"));
+    }
+    cands.into_iter().find(|p| p.join("package.json").exists())
+}
+
+fn resolve_core_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let repo = repo_core_dir();
+    if repo.join("package.json").exists() {
+        return Some(repo);
+    }
+    bundled_core_dir(app)
+}
+
+fn find_node() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("DOCKET_NODE") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    let mut bins: Vec<PathBuf> = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+    if let Some(home) = home_dir() {
+        let nvm = home.join(".nvm/versions/node");
+        if let Ok(rd) = fs::read_dir(&nvm) {
+            let mut vers: Vec<PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+            vers.sort();
+            vers.reverse();
+            for v in vers {
+                bins.push(v.join("bin"));
+            }
+        }
+        bins.push(home.join(".local/share/fnm/aliases/default/bin"));
+    }
+    let extra: Vec<String> = bins
+        .iter()
+        .filter(|p| p.is_dir())
+        .map(|p| p.display().to_string())
+        .collect();
+    let path = format!(
+        "{}:{}",
+        extra.join(":"),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let out = Command::new("/usr/bin/which")
+        .arg("node")
+        .env("PATH", &path)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(s))
+    }
+}
+
+fn dotenv_file() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("DOCKET_ENV_FILE") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    let repo_env = repo_core_dir().join(".env");
+    if repo_env.is_file() {
+        return Some(repo_env);
+    }
+    if let Some(home) = home_dir() {
+        for rel in [".docket/.env", ".local-mail/.env"] {
+            let p = home.join(rel);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn core_log_file() -> Option<File> {
+    let home = home_dir()?;
+    let dir = home.join(".docket");
+    let _ = fs::create_dir_all(&dir);
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("core.log"))
+        .ok()
 }
 
 fn core_port_open() -> bool {
@@ -20,42 +129,83 @@ fn core_port_open() -> bool {
     .is_ok()
 }
 
-fn start_core_if_needed() -> Option<Child> {
+fn start_core_if_needed(app: &tauri::AppHandle) -> Option<Child> {
     if core_port_open() {
         eprintln!("[docket] core already listening on 127.0.0.1:8787 — reusing");
         return None;
     }
 
-    let dir = core_dir();
-    if !dir.exists() {
+    let dir = match resolve_core_dir(app) {
+        Some(d) => d,
+        None => {
+            eprintln!("[docket] core directory missing — start core manually (cd apps/core && npm run start)");
+            return None;
+        }
+    };
+
+    let node = match find_node() {
+        Some(n) => n,
+        None => {
+            eprintln!("[docket] Node.js not found (nvm / Homebrew). Install Node 22+ or set DOCKET_NODE.");
+            return None;
+        }
+    };
+
+    let tsx = dir.join("node_modules/tsx/dist/cli.mjs");
+    if !tsx.exists() {
         eprintln!(
-            "[docket] core directory missing at {} — start core manually",
+            "[docket] tsx missing in {} — run npm install in apps/core",
             dir.display()
         );
         return None;
     }
 
-    eprintln!("[docket] starting core from {}", dir.display());
+    let web_origin = if cfg!(debug_assertions) {
+        "http://127.0.0.1:4300"
+    } else {
+        "https://tauri.localhost"
+    };
 
-    // Prefer npm so local tsx/node resolution matches apps/core package.json
-    let mut cmd = Command::new("npm");
-    cmd.args(["run", "start"])
+    eprintln!(
+        "[docket] starting core from {} with {}",
+        dir.display(),
+        node.display()
+    );
+
+    let mut cmd = Command::new(&node);
+    cmd.args([tsx.to_str()?, "src/index.ts"])
         .current_dir(&dir)
         .env("DOCKET_CORE_HOST", "127.0.0.1")
         .env("DOCKET_CORE_PORT", "8787")
-        .env("DOCKET_WEB_ORIGIN", "http://127.0.0.1:4300")
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .env("DOCKET_WEB_ORIGIN", web_origin);
+    if let Some(envf) = dotenv_file() {
+        cmd.env("DOCKET_ENV_FILE", envf);
+    }
+    if let Some(bin) = node.parent() {
+        let path = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        cmd.env("PATH", path);
+    }
+    if let Some(log) = core_log_file() {
+        if let Ok(err) = log.try_clone() {
+            cmd.stdout(Stdio::from(log));
+            cmd.stderr(Stdio::from(err));
+        }
+    } else {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    }
 
     match cmd.spawn() {
         Ok(child) => {
-            // Brief wait so /health can come up
-            for _ in 0..40 {
+            for _ in 0..80 {
                 if core_port_open() {
                     eprintln!("[docket] core is up");
                     break;
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(150));
             }
             if !core_port_open() {
                 eprintln!("[docket] warning: core did not open :8787 yet (UI may show offline briefly)");
@@ -64,7 +214,6 @@ fn start_core_if_needed() -> Option<Child> {
         }
         Err(e) => {
             eprintln!("[docket] failed to spawn core: {e}");
-            eprintln!("[docket] run manually: cd apps/core && npm run dev");
             None
         }
     }
@@ -151,7 +300,7 @@ pub fn run() {
             show_mail_notification
         ])
         .setup(|app| {
-            let child = start_core_if_needed();
+            let child = start_core_if_needed(&app.handle().clone());
             if let Some(c) = child {
                 if let Some(state) = app.try_state::<CoreProcess>() {
                     if let Ok(mut guard) = state.0.lock() {

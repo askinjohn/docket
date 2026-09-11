@@ -7,17 +7,30 @@ Docket’s primary desktop shell is **Tauri 2** (`apps/desktop`).
 ```bash
 # from repo root
 npm run install:all
-npm run desktop:dev          # live reload
+npm run desktop:dev          # live reload (starts core if :8787 is free)
 
-# production-ish local .app (unsigned)
-cd apps/desktop
-npm run build                # or: npx tauri build
+# production-ish local .app / .dmg (unsigned) and open it
+./app.sh
+# or: npm run app
 ```
+
+`./app.sh --open-only` opens a previous build. `./app.sh --reinstall` runs npm install first.
+
+```bash
+# production-ish local .app / .dmg (unsigned) without opening
+cd apps/desktop
+npm run build                # stages apps/core into the bundle, then tauri build
+```
+
+The `.app` starts **core** on `127.0.0.1:8787` if it is not already running. It finds Node via nvm or Homebrew (Finder apps do not get your shell PATH). OAuth keys come from `apps/core/.env` on this machine, or `~/.docket/.env`. Logs: `~/.docket/core.log`.
 
 Output typically under:
 
 - `apps/desktop/src-tauri/target/release/bundle/macos/Docket.app`
-- `apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg`
+
+Local builds only package the **`.app`**. A `.dmg` is optional (create-dmg often fails if a previous image is still mounted). To try a disk image: set `"bundle": { "targets": ["app", "dmg"] }` in `tauri.conf.json` and unmount leftover `/Volumes/dmg.*` first.
+
+Gatekeeper may block an unsigned `.app`. `./app.sh` clears quarantine; otherwise right-click → Open.
 
 ## Notarization (requires your Apple Developer account)
 

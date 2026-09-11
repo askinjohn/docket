@@ -53,7 +53,8 @@ nvm use
 | Command | What it does |
 | --- | --- |
 | `./up.sh` | Core + Angular on `:4300` |
-| `./up.sh --desktop` | Core + Tauri Dock |
+| `./up.sh --desktop` | Core + Tauri Dock (dev / live reload) |
+| `./app.sh` | Build `Docket.app`, start core, open it |
 | `./up.sh --reinstall` | Reinstall deps, then start |
 | `./setup.sh` | OAuth / env wizard |
 | `./start.sh` | Start without install checks |

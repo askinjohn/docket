@@ -5,9 +5,17 @@ import { fileURLToPath } from 'node:url';
 
 import { config as loadEnv } from 'dotenv';
 
-// Always load apps/core/.env even when process cwd is the monorepo root or Tauri
+// Packaged .app may run from Resources/core (no secrets there). Prefer:
+// DOCKET_ENV_FILE → ~/.docket/.env → ~/.local-mail/.env → apps/core/.env
 const coreRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-loadEnv({ path: join(coreRoot, '.env') });
+for (const p of [
+  process.env.DOCKET_ENV_FILE,
+  join(homedir(), '.docket', '.env'),
+  join(homedir(), '.local-mail', '.env'),
+  join(coreRoot, '.env'),
+]) {
+  if (p && existsSync(p)) loadEnv({ path: p, override: false });
+}
 loadEnv(); // optional cwd .env as override
 
 /** Prefer DOCKET_*; accept LOCAL_MAIL_* from existing .env files. */
@@ -86,11 +94,11 @@ export const appConfig = {
   /** Where the browser UI lives (for CORS + post-auth redirect) */
   webOrigin: env('WEB_ORIGIN') ?? 'http://127.0.0.1:4300',
   /**
-   * Core-owned inbox poll so new-mail OS notifications work with no UI.
+   * Core-owned inbox poll (cache + mail.new for the UI).
    * Set DOCKET_BG_SYNC_MS=0 to disable.
    */
   bgSyncIntervalMs: Number(env('BG_SYNC_MS') ?? 30_000),
-  /** macOS Notification Center via osascript (independent of the Dock window). */
+  /** macOS banners from core (workflows). New-mail banners are UI-only. */
   osNotify: env('OS_NOTIFY') !== '0',
   ai: {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
