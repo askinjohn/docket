@@ -27,9 +27,10 @@ The `.app` starts **core** on `127.0.0.1:8787` if it is not already running. It 
 Output typically under:
 
 - `apps/desktop/src-tauri/target/release/bundle/macos/Docket.app`
-- `apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg`
 
-Gatekeeper may block an unsigned `.app`. Right-click → Open, or `xattr -dr com.apple.quarantine "Docket.app"`.
+Local builds only package the **`.app`**. A `.dmg` is optional (create-dmg often fails if a previous image is still mounted). To try a disk image: set `"bundle": { "targets": ["app", "dmg"] }` in `tauri.conf.json` and unmount leftover `/Volumes/dmg.*` first.
+
+Gatekeeper may block an unsigned `.app`. `./app.sh` clears quarantine; otherwise right-click → Open.
 
 ## Notarization (requires your Apple Developer account)
 

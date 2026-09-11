@@ -85,8 +85,13 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
 
   echo "▶ Building Docket.app (web + staged core + Tauri)…"
   echo "   This can take several minutes the first time."
-  npm --prefix apps/desktop run build
-  echo "✅ Build finished"
+  if npm --prefix apps/desktop run build; then
+    echo "✅ Build finished"
+  elif [[ -d "$APP" ]]; then
+    echo "⚠️  Bundler reported an error, but Docket.app is present — opening that."
+  else
+    die "Build failed and no Docket.app was produced"
+  fi
 else
   [[ -d "$APP" ]] || die "No app at $APP — run ./app.sh without --open-only"
 fi

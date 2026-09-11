@@ -15,3 +15,4 @@
 
 - Unsigned Gatekeeper
 - Embed Node so a foreign Mac does not need nvm
+- Optional `.dmg` (`targets: ["app", "dmg"]`); create-dmg is flaky with a 200MB core stage if a temp volume is still mounted
