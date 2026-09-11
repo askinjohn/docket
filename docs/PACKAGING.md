@@ -7,17 +7,21 @@ Docket’s primary desktop shell is **Tauri 2** (`apps/desktop`).
 ```bash
 # from repo root
 npm run install:all
-npm run desktop:dev          # live reload
+npm run desktop:dev          # live reload (starts core if :8787 is free)
 
-# production-ish local .app (unsigned)
+# production-ish local .app / .dmg (unsigned)
 cd apps/desktop
-npm run build                # or: npx tauri build
+npm run build                # stages apps/core into the bundle, then tauri build
 ```
+
+The `.app` starts **core** on `127.0.0.1:8787` if it is not already running. It finds Node via nvm or Homebrew (Finder apps do not get your shell PATH). OAuth keys come from `apps/core/.env` on this machine, or `~/.docket/.env`. Logs: `~/.docket/core.log`.
 
 Output typically under:
 
 - `apps/desktop/src-tauri/target/release/bundle/macos/Docket.app`
 - `apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg`
+
+Gatekeeper may block an unsigned `.app`. Right-click → Open, or `xattr -dr com.apple.quarantine "Docket.app"`.
 
 ## Notarization (requires your Apple Developer account)
 

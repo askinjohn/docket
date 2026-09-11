@@ -33,12 +33,14 @@ This will:
 
 **Tip:** If something already uses port 4300 or 8787, stop the old process first, or leave core running — Tauri reuses an existing core.
 
-## Production build (`.app`)
+## Production build (`.app` / `.dmg`)
 
 ```bash
 npm run desktop:build
 # artifact under apps/desktop/src-tauri/target/release/bundle/
 ```
+
+Opening **Docket.app** starts core on `:8787` when needed (Node from nvm/Homebrew). Dev still reuses an already-running core.
 
 ## Architecture
 

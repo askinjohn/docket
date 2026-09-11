@@ -5,6 +5,8 @@ node_modules/
 
 # Builds
 dist/
+apps/desktop/src-tauri/resources/core/**
+!apps/desktop/src-tauri/resources/core/.gitkeep
 tmp/
 out-tsc/
 .angular/
