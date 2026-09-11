@@ -12,6 +12,15 @@ import {
 
 import { htmlHasRemoteImages } from '../core/email-body';
 import {
+  countForwardedItems,
+  splitForwardedMail,
+  type ForwardedView,
+} from '../core/forwarded-mail';
+import {
+  splitQuotedMail,
+  type QuotedView,
+} from '../core/quoted-mail';
+import {
   chatBodyMode,
   iconForAttachment,
   isMine,
@@ -292,74 +301,204 @@ import { ReplyPanel } from './reply-panel';
                         </div>
                       }
                     </div>
-                    @switch (bodyMode(msg)) {
-                      @case ('plain') {
+                    @if (forwardedView(msg); as fwd) {
+                      @if (fwd.intro) {
                         <div
                           class="chat-plain whitespace-pre-wrap text-[0.9375rem] leading-relaxed break-words text-lm-text"
                         >
-                          {{ plainText(msg, false) }}
+                          {{ fwd.intro }}
                         </div>
                       }
-                      @case ('rich') {
-                        <div
-                          class="chat-rich text-[0.9375rem] leading-relaxed text-lm-text"
-                          [innerHTML]="
-                            msg.bodyHtml
-                              | safeChatHtml
-                                : shell.blockRemoteImagesNow()
-                                : msg.attachments
-                                : true
-                          "
-                        ></div>
-                      }
-                      @default {
-                        <div
-                          class="message-html-wrap w-full min-w-0"
-                          [class.is-expanded]="isHtmlExpanded(msg.id)"
-                          [attr.data-msg-id]="msg.id"
+                      <div class="mt-2 border-t border-white/10 pt-2">
+                        <button
+                          type="button"
+                          class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border-0 bg-black/10 px-2 py-1.5 text-left text-[0.78rem] font-medium text-lm-text hover:bg-lm-hover"
+                          [attr.aria-expanded]="isForwardedOpen(msg.id)"
+                          (click)="toggleForwarded(msg.id)"
                         >
-                          <iframe
-                            class="message-html-frame"
-                            title="Message body"
-                            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                            [srcdoc]="
+                          <span
+                            >Forwarded messages ·
+                            {{ countForwarded(fwd) }}</span
+                          >
+                          <span class="text-lm-muted" aria-hidden="true">{{
+                            isForwardedOpen(msg.id) ? '▾' : '▸'
+                          }}</span>
+                        </button>
+                        @if (isForwardedOpen(msg.id)) {
+                          <div class="mt-2 flex flex-col gap-2" role="region">
+                            @for (block of fwd.blocks; track $index) {
+                              <div
+                                class="rounded-md border border-white/10 bg-black/10 px-2.5 py-2"
+                              >
+                                @if (block.from) {
+                                  <div class="truncate text-[0.72rem] text-lm-text">
+                                    <span class="text-lm-muted">From</span>
+                                    {{ block.from }}
+                                  </div>
+                                }
+                                @if (block.to) {
+                                  <div class="truncate text-[0.72rem] text-lm-muted">
+                                    To {{ block.to }}
+                                  </div>
+                                }
+                                @if (block.subject) {
+                                  <div
+                                    class="mt-0.5 text-[0.82rem] font-medium text-lm-text"
+                                  >
+                                    {{ block.subject }}
+                                  </div>
+                                }
+                                @if (block.body) {
+                                  <div
+                                    class="mt-1 whitespace-pre-wrap text-[0.82rem] leading-snug text-lm-muted"
+                                  >
+                                    {{ block.body }}
+                                  </div>
+                                }
+                              </div>
+                            }
+                            @if (fwd.images.length) {
+                              <div class="flex flex-wrap gap-1">
+                                @for (img of fwd.images; track img.id) {
+                                  <button
+                                    type="button"
+                                    class="inline-flex max-w-44 cursor-pointer items-center gap-1 rounded-md bg-black/15 px-1.5 py-0.5 text-left text-[0.7rem] text-lm-text hover:bg-lm-hover"
+                                    (click)="openForwardedImage(msg, img.id)"
+                                    [title]="img.name"
+                                  >
+                                    <span aria-hidden="true">🖼️</span>
+                                    <span class="min-w-0 truncate">{{
+                                      img.name
+                                    }}</span>
+                                  </button>
+                                }
+                              </div>
+                            }
+                          </div>
+                        }
+                      </div>
+                    } @else if (quotedView(msg); as quoted) {
+                      @if (quoted.intro) {
+                        <div
+                          class="chat-plain whitespace-pre-wrap text-[0.9375rem] leading-relaxed break-words text-lm-text"
+                        >
+                          {{ quoted.intro }}
+                        </div>
+                      }
+                      <div class="mt-2 border-t border-white/10 pt-2">
+                        <button
+                          type="button"
+                          class="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border-0 bg-black/10 px-2 py-1.5 text-left text-[0.78rem] font-medium text-lm-text hover:bg-lm-hover"
+                          [attr.aria-expanded]="isForwardedOpen(msg.id)"
+                          (click)="toggleForwarded(msg.id)"
+                        >
+                          <span
+                            >Earlier messages ·
+                            {{ quoted.blocks.length }}</span
+                          >
+                          <span class="text-lm-muted" aria-hidden="true">{{
+                            isForwardedOpen(msg.id) ? '▾' : '▸'
+                          }}</span>
+                        </button>
+                        @if (isForwardedOpen(msg.id)) {
+                          <div class="mt-2 flex flex-col gap-2" role="region">
+                            @for (block of quoted.blocks; track $index) {
+                              <div
+                                class="rounded-md border border-white/10 bg-black/10 px-2.5 py-2"
+                              >
+                                @if (block.from) {
+                                  <div class="truncate text-[0.72rem] text-lm-text">
+                                    <span class="text-lm-muted">From</span>
+                                    {{ block.from }}
+                                  </div>
+                                }
+                                @if (block.date) {
+                                  <div class="truncate text-[0.72rem] text-lm-muted">
+                                    {{ block.date }}
+                                  </div>
+                                }
+                                @if (block.body) {
+                                  <div
+                                    class="mt-1 whitespace-pre-wrap text-[0.82rem] leading-snug text-lm-muted"
+                                  >
+                                    {{ block.body }}
+                                  </div>
+                                }
+                              </div>
+                            }
+                          </div>
+                        }
+                      </div>
+                    } @else {
+                      @switch (bodyMode(msg)) {
+                        @case ('plain') {
+                          <div
+                            class="chat-plain whitespace-pre-wrap text-[0.9375rem] leading-relaxed break-words text-lm-text"
+                          >
+                            {{ plainText(msg, false) }}
+                          </div>
+                        }
+                        @case ('rich') {
+                          <div
+                            class="chat-rich text-[0.9375rem] leading-relaxed text-lm-text"
+                            [innerHTML]="
                               msg.bodyHtml
-                                | safeSrcdoc
+                                | safeChatHtml
                                   : shell.blockRemoteImagesNow()
                                   : msg.attachments
                                   : true
-                                  : true
                             "
-                            (load)="onHtmlFrameLoad($event, msg.id)"
-                          ></iframe>
-                        </div>
-                        @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
-                          <button
-                            type="button"
-                            class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted opacity-0 transition group-hover:opacity-100 hover:text-lm-accent"
-                            (click)="expandHtml(msg.id)"
-                          >
-                            Show more
-                          </button>
+                          ></div>
                         }
-                        @if (isHtmlExpanded(msg.id)) {
-                          <button
-                            type="button"
-                            class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted hover:text-lm-text"
-                            (click)="collapseHtml(msg.id)"
+                        @default {
+                          <div
+                            class="message-html-wrap w-full min-w-0"
+                            [class.is-expanded]="isHtmlExpanded(msg.id)"
+                            [attr.data-msg-id]="msg.id"
                           >
-                            Show less
-                          </button>
+                            <iframe
+                              class="message-html-frame"
+                              title="Message body"
+                              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                              [srcdoc]="
+                                msg.bodyHtml
+                                  | safeSrcdoc
+                                    : shell.blockRemoteImagesNow()
+                                    : msg.attachments
+                                    : true
+                                    : true
+                              "
+                              (load)="onHtmlFrameLoad($event, msg.id)"
+                            ></iframe>
+                          </div>
+                          @if (htmlNeedsExpand(msg.id) && !isHtmlExpanded(msg.id)) {
+                            <button
+                              type="button"
+                              class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted opacity-0 transition group-hover:opacity-100 hover:text-lm-accent"
+                              (click)="expandHtml(msg.id)"
+                            >
+                              Show more
+                            </button>
+                          }
+                          @if (isHtmlExpanded(msg.id)) {
+                            <button
+                              type="button"
+                              class="mt-1 cursor-pointer border-0 bg-transparent p-0 text-[0.7rem] text-lm-muted hover:text-lm-text"
+                              (click)="collapseHtml(msg.id)"
+                            >
+                              Show less
+                            </button>
+                          }
                         }
                       }
                     }
 
-                    @if (msg.attachments.length) {
+                    @if (leftoverAttachments(msg).length) {
                       <div
                         class="mt-2 flex flex-wrap gap-1 border-t border-white/10 pt-2"
                         aria-label="Attachments"
                       >
-                        @for (file of msg.attachments; track file.id) {
+                        @for (file of leftoverAttachments(msg); track file.id) {
                           <button
                             type="button"
                             class="inline-flex max-w-44 cursor-pointer items-center gap-1 rounded-md bg-black/15 px-1.5 py-0.5 text-left text-[0.7rem] text-lm-text hover:bg-lm-hover"
@@ -666,6 +805,7 @@ export class ReadingPane {
   private readonly threadViewModes = signal<ReadonlyMap<string, 'plain' | 'html'>>(
     new Map(),
   );
+  private readonly forwardedOpenIds = signal<ReadonlySet<string>>(new Set());
 
   /** Banner only in “ask” mode when this thread still blocks remote images. */
   protected readonly showRemoteImagesBanner = computed(() => {
@@ -692,6 +832,7 @@ export class ReadingPane {
         this.stickReadingToBottom = true;
         this.htmlExpandedIds.set(new Set());
         this.htmlTallIds.set(new Set());
+        this.forwardedOpenIds.set(new Set());
       }
 
       // Re-render srcdoc when remote-image unlock toggles
@@ -825,6 +966,56 @@ export class ReadingPane {
 
   protected iconFor(kind: string): string {
     return iconForAttachment(kind);
+  }
+
+  protected forwardedView(msg: ShellMessage): ForwardedView | null {
+    return splitForwardedMail({
+      subject: this.shell.selectedThread()?.subject ?? '',
+      text: msg.body,
+      html: msg.bodyHtml,
+      attachments: msg.attachments,
+    });
+  }
+
+  protected quotedView(msg: ShellMessage): QuotedView | null {
+    if (this.forwardedView(msg)) return null;
+    return splitQuotedMail({
+      text: msg.body,
+      html: msg.bodyHtml,
+    });
+  }
+
+  protected countForwarded(view: ForwardedView): number {
+    return countForwardedItems(view);
+  }
+
+  protected leftoverAttachments(msg: ShellMessage) {
+    const fwd = this.forwardedView(msg);
+    if (!fwd?.images.length) return msg.attachments;
+    const hide = new Set(fwd.images.map((i) => i.id));
+    return msg.attachments.filter((a) => !hide.has(a.id));
+  }
+
+  protected isForwardedOpen(msgId: string): boolean {
+    return this.forwardedOpenIds().has(msgId);
+  }
+
+  protected toggleForwarded(msgId: string): void {
+    const next = new Set(this.forwardedOpenIds());
+    if (next.has(msgId)) next.delete(msgId);
+    else next.add(msgId);
+    this.forwardedOpenIds.set(next);
+  }
+
+  protected openForwardedImage(msg: ShellMessage, id: string): void {
+    const file = msg.attachments.find((a) => a.id === id);
+    if (!file) return;
+    this.shell.openAttachment(file.id, {
+      kind: file.kind,
+      name: file.name,
+      mimeType: file.mimeType,
+      sizeLabel: file.sizeLabel,
+    });
   }
 
   onReadingScroll(): void {

@@ -8,6 +8,7 @@ import {
   defaultActions,
   intentHints,
   planBatch,
+  resolvedRunMode,
   synthesizeReport,
 } from './harness.js';
 import { sanitizeRules } from './suggest.js';
@@ -138,19 +139,24 @@ export async function runWorkflow(
     threadCount: run.threadCount,
     scanned: 0,
     actions: [],
-    current: { from: wf.name, subject: 'Deciding how to run…' },
+    current: { from: wf.name, subject: 'Reading inbox…' },
   });
 
   let mode: { report: boolean; act: boolean };
-  try {
-    mode = await decideRunMode(wf, opts.signal);
-  } catch (e) {
-    if (isStop(e, opts.signal)) {
-      run.error = 'Stopped';
-      recordRun(run);
-      return run;
+  const locked = resolvedRunMode(wf);
+  if (locked) {
+    mode = locked;
+  } else {
+    try {
+      mode = await decideRunMode(wf, opts.signal);
+    } catch (e) {
+      if (isStop(e, opts.signal)) {
+        run.error = 'Stopped';
+        recordRun(run);
+        return run;
+      }
+      throw e;
     }
-    throw e;
   }
   const reportOnly = mode.report && !mode.act;
   const needReport = mode.report;

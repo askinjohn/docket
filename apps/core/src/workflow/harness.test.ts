@@ -8,6 +8,7 @@ import {
   intentHints,
   parseHarnessResponse,
   parseRunMode,
+  resolvedRunMode,
 } from './harness.js';
 
 function wf(partial: Partial<Workflow> = {}): Workflow {
@@ -91,6 +92,22 @@ describe('harness', () => {
     const defaults = defaultActions(wf());
     const map = parseHarnessResponse('YES', defaults, ['e1']);
     assert.equal(map.get('e1')?.length, defaults.length);
+  });
+
+  it('locks filing vs answer from approved tools without a second model call', () => {
+    assert.deepEqual(resolvedRunMode(wf()), { report: false, act: true });
+    assert.deepEqual(
+      resolvedRunMode(
+        wf({
+          rules: [{ id: 'r1', then: [{ type: 'report' }] }],
+        }),
+      ),
+      { report: true, act: false },
+    );
+    assert.equal(
+      resolvedRunMode(wf({ rules: [{ id: 'r1', then: [] }] })),
+      null,
+    );
   });
 
   it('lets the model choose report vs act only when compile is empty', () => {

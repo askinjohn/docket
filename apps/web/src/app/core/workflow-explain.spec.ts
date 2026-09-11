@@ -59,8 +59,8 @@ describe('workflow-explain', () => {
       }),
     );
     expect(preview.whenTitle).toBe('Each new mail');
-    expect(preview.modelNote).toMatch(/approved tools/i);
-    expect(preview.rules[0].matchLines[0]).toMatch(/every word/);
+    expect(preview.modelNote).toMatch(/approved list/i);
+    expect(preview.rules[0].matchLines[0]).toMatch(/hint/i);
     expect(preview.rules[0].matchLines[0]).toMatch(/team/);
     expect(preview.rules[0].actionLines[0]).toMatch(/inbox/);
   });

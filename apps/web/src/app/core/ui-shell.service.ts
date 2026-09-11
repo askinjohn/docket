@@ -352,6 +352,7 @@ export class UiShellService {
     subject: string;
   }[] = [];
   private newMailFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private visibilityHooked = false;
 
   readonly selectedThread = computed(() => {
     const id = this.selectedId();
@@ -489,6 +490,7 @@ export class UiShellService {
         void this.refreshNavMeta();
         this.connectLiveEvents();
         this.startBackgroundSync();
+        this.hookVisibilityForNotify();
         this.requestNotifyPermission();
       } else {
         this.coreStatus.set('online-disconnected');
@@ -712,7 +714,26 @@ export class UiShellService {
     }, 400);
   }
 
+  private appIsForeground(): boolean {
+    return (
+      typeof document === 'undefined' ||
+      document.visibilityState === 'visible'
+    );
+  }
+
+  /** In-app toasts only while the window is in front. */
+  private hookVisibilityForNotify(): void {
+    if (this.visibilityHooked || typeof document === 'undefined') return;
+    this.visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (this.appIsForeground() && this.pendingNewMail.length) {
+        void this.flushNewMailNotifications();
+      }
+    });
+  }
+
   private async flushNewMailNotifications(): Promise<void> {
+    if (!this.appIsForeground()) return;
     const raw = this.pendingNewMail.splice(0, this.pendingNewMail.length);
     if (!raw.length) return;
     // One notice per thread

@@ -86,11 +86,11 @@ export const appConfig = {
   /** Where the browser UI lives (for CORS + post-auth redirect) */
   webOrigin: env('WEB_ORIGIN') ?? 'http://127.0.0.1:4300',
   /**
-   * Core-owned inbox poll so new-mail OS notifications work with no UI.
+   * Core-owned inbox poll (cache + mail.new for the UI).
    * Set DOCKET_BG_SYNC_MS=0 to disable.
    */
   bgSyncIntervalMs: Number(env('BG_SYNC_MS') ?? 30_000),
-  /** macOS Notification Center via osascript (independent of the Dock window). */
+  /** macOS banners from core (workflows). New-mail banners are UI-only. */
   osNotify: env('OS_NOTIFY') !== '0',
   ai: {
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',

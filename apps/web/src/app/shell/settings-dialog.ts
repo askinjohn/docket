@@ -212,8 +212,9 @@ import { UiShellService } from '../core/ui-shell.service';
               Notifications
             </h3>
             <p class="mb-3 m-0 text-[0.78rem] leading-relaxed text-lm-muted">
-              New mail: core watches Gmail every 30s and notifies macOS even if the
-              window is closed (red button hides to Dock; ⌘Q quits and stops watching).
+              New mail: core watches Gmail every 30s. You get an in-app toast only
+              while Docket is in front. No Mac banners when the window is hidden
+              or quit (⌘Q). Test still sends a system banner.
             </p>
             <p class="mb-3 m-0 rounded-lg border border-lm-border/70 bg-lm-bg/40 px-3 py-2 text-[0.8rem] text-lm-text">
               {{ shell.notifyStatus()?.label ?? 'Checking permission…' }}
@@ -235,10 +236,9 @@ import { UiShellService } from '../core/ui-shell.service';
               </button>
             </div>
             <p class="mt-2 m-0 text-[0.72rem] leading-relaxed text-lm-muted">
-              If Test says sent but nothing appears: System Settings → Notifications → Docket
-              (or “docket”) → allow Banners/Alerts, and turn off Focus/Do Not Disturb. macOS often
-              hides banners while the app is frontmost — check Notification Center (swipe from
-              right). Browser-only runs show under Chrome/Safari, not as “Docket”.
+              Live new-mail alerts are the toast in the corner, not Notification Center.
+              Test still uses a system banner: System Settings → Notifications → Docket
+              (or Script Editor in tauri dev) → Banners on.
             </p>
           </section>
 

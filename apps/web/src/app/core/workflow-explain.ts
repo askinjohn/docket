@@ -54,7 +54,7 @@ export const CONFIG_FIELD_HELP: { key: string; meaning: string }[] = [
   {
     key: 'rules[].matchers',
     meaning:
-      'Cheap filters. Every listed field must match (AND). Omit a field to ignore it.',
+      'Optional hints (a sender or one phrase). They do not gate the run — the model still reads each mail.',
   },
   {
     key: 'fromIncludes[]',
@@ -67,7 +67,7 @@ export const CONFIG_FIELD_HELP: { key: string; meaning: string }[] = [
   {
     key: 'query',
     meaning:
-      'Words in subject or body. Every word is required (AND). Use this for one phrase, not alternatives.',
+      'One phrase to look for. Prefer a single token (Team-Offsite), not a bag of words.',
   },
   {
     key: 'unread / hasAttachment / maxAgeDays / labelIncludes',
@@ -77,7 +77,7 @@ export const CONFIG_FIELD_HELP: { key: string; meaning: string }[] = [
   {
     key: 'rules[].judge',
     meaning:
-      'Optional AI class after matchers: urgent | needs_reply | noise | can_archive. Skip if a keyword is enough.',
+      'Optional hint (urgent | needs_reply | noise | can_archive). The model still decides per email.',
   },
   {
     key: 'rules[].then[]',
@@ -154,10 +154,10 @@ export function explainWorkflow(wf: Workflow): WorkflowExplain {
       ? `${wf.model.backend || 'local'} / ${wf.model.model}`
       : 'No model set',
     modelNote:
-      'Approved tools in the JSON are what this run will do. Filing (label/archive/star) is never replaced by a briefing. A written answer opens on the right only when the workflow includes report, or when there are no filing tools and the model chooses an answer. Mail stays on this computer when the backend is local.',
+      'On run, this model reads from/subject/snippet of each inbox thread and returns tools from the approved list. Filing (label/archive/star) is never turned into a briefing. Mail stays on this computer when the backend is local.',
     logicNote:
-      'Keyword JSON is a hint (label names, preferred tools), not a filter. delete/trash from the model is mapped to archive.',
-    rules: (wf.rules ?? []).map((rule, i) => explainRule(rule, i + 1, wf)),
+      'The model is the matcher. JSON then[] is the allowlist (label names, archive vs star). Hints only sort likely mail first. delete/trash maps to archive.',
+    rules: (wf.rules ?? []).map((rule, i) => explainRule(rule, i + 1)),
     warnings,
   };
 }
@@ -182,11 +182,7 @@ function whenBody(wf: Workflow): string {
   return 'Does not run on new mail. Use Dry run or Run now from this page.';
 }
 
-function explainRule(
-  rule: WorkflowRule,
-  n: number,
-  wf: Workflow,
-): RuleExplain {
+function explainRule(rule: WorkflowRule, n: number): RuleExplain {
   const m = rule.matchers;
   const matchLines: string[] = [];
   const warnings: string[] = [];
@@ -202,18 +198,9 @@ function explainRule(
     );
   }
   if (m?.query?.trim()) {
-    const words = m.query.trim().split(/\s+/);
-    if (words.length === 1) {
-      matchLines.push(
-        'Subject or body contains ' + quoteList(words) + '.',
-      );
-    } else {
-      matchLines.push(
-        'Subject or body contains every word ' +
-          quoteList(words) +
-          ' (AND — all must appear). If you meant alternatives, split into two rules or use subjectIncludes.',
-      );
-    }
+    matchLines.push(
+      'Look for the phrase ' + quoteList([m.query.trim()]) + ' (hint, not a hard filter).',
+    );
   }
   if (m?.labelIncludes?.length) {
     matchLines.push(
@@ -256,20 +243,9 @@ function explainRule(
   let judgeLine: string | null = null;
   let judgeHelp: string | null = null;
   if (judge) {
-    judgeLine = 'Then the model must classify it as “' + judge.replace('_', ' ') + '”.';
+    judgeLine =
+      'Hint: treat matching mail as “' + judge.replace('_', ' ') + '”.';
     judgeHelp = JUDGE_HELP[judge] ?? null;
-  }
-
-  if (!matchLines.length && !judge) {
-    warnings.push(
-      'No filters and no judge — this rule matches every thread the run looks at.',
-    );
-  } else if (!matchLines.length && judge && wf.trigger.type === 'mail.received') {
-    warnings.push(
-      'No cheap filters — every new thread will be sent to the model as “' +
-        judge.replace('_', ' ') +
-        '”. Add fromIncludes, subjectIncludes, or query if that is too broad.',
-    );
   }
 
   const actions = rule.then ?? [];
@@ -288,8 +264,7 @@ function explainRule(
     heading: 'Rule ' + n,
     matchLines,
     matchEmpty:
-      'No cheap filters — every thread in this run is a candidate' +
-      (judge ? ' before the judge.' : '.'),
+      'None. The model reads each mail and decides. That is expected.',
     judgeLine,
     judgeHelp,
     actionLines,

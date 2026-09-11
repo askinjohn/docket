@@ -26,12 +26,12 @@ export async function suggestWorkflow(
   english: string,
   model: WorkflowModel,
 ): Promise<Workflow> {
-  const prompt = `Compile this request into ONE JSON object. Omit unused matcher fields. Do not invent extra filters. Copy names, senders, and phrases from the request — do not substitute examples of your own.
+  const prompt = `Compile this request into ONE JSON object. The JSON is a tool allowlist + schedule. At run time the same model reads each inbox thread and decides. Do not invent keyword AND filters.
 
 Request:
 ${english.trim()}
 
-Schema (all matcher keys optional; omit any you do not need):
+Schema:
 {
   "name": "short name",
   "description": "one sentence",
@@ -39,10 +39,9 @@ Schema (all matcher keys optional; omit any you do not need):
   "rules": [
     {
       "matchers": {},
-      "judge": "urgent | needs_reply | noise | can_archive",
       "then": [
         { "type": "notify", "title": "optional" },
-        { "type": "addLabel", "name": "Label from the request or a short derived name" },
+        { "type": "addLabel", "name": "Label from the request" },
         { "type": "archive" },
         { "type": "star" },
         { "type": "report" }
@@ -52,20 +51,15 @@ Schema (all matcher keys optional; omit any you do not need):
 }
 
 Mechanics:
-- Fields on one rule are AND. Values in one array are OR.
-- If the request says "A or B", emit two rules, not one rule that ANDs A and B.
-- Incoming / "when mail arrives" → mail.received. Going through existing mail / last week / latest → manual. A named clock time → cron.
-- Distinctive names from the request (calendars, products, teams, bots) often appear in the body or snippet → put them in query. Sender names/domains → fromIncludes. Subject wording → subjectIncludes.
-- Do not set unread, hasAttachment, or maxAgeDays unless the request said so. Many automated mails include attachments; requiring none will miss them.
-- Use a judge only when the request is about meaning (urgent, needs a reply, noise, safe to archive) with no reliable sender/subject/query. If matchers already name the mail, omit judge.
-- Filing away: addLabel (if they want a group) plus archive. archive and removeFromInbox are the same — use one.
-- You decide the tools from the request. Want a written answer (list, priorities, summary, who to reply) → include { "type": "report" }. Want mail changed → those actions. Both is allowed. Do not guess from examples we did not mention.
-- Never send, delete, forward, or trash.`;
+- Incoming / when mail arrives → mail.received. Existing mail / last week / latest / run now → manual. A clock time → cron.
+- then[] is the allowlist the runner may call. Filing: addLabel (if they want a group) plus archive. Written answer / priorities / list → report. Both is allowed.
+- matchers are optional HINTS only (a sender they named, one phrase). Omit matchers if unsure. Never bag-of-words AND. Never unread/hasAttachment/maxAgeDays unless they said so.
+- Omit judge unless they asked for meaning-only (urgent / needs reply) with no names.
+- Never send, delete, forward, or trash. archive = leave inbox (mail stays in All Mail).`;
 
   const system = [
-    'You compile mail workflows. Output a single JSON object.',
+    'You compile mail workflow JSON. Matching is done later by the model per email.',
     'Triggers: ' + TRIGGER_CATALOG.map((t) => t.id).join(', '),
-    'Judges: ' + JUDGE_CATALOG.map((j) => j.id).join(', '),
     'Actions: ' + ACTION_CATALOG.map((a) => a.id).join(', '),
   ].join('\n');
 
@@ -119,25 +113,14 @@ function realStrings(values: string[] | undefined): string[] | undefined {
   return out.length ? out : undefined;
 }
 
-function extractQuery(english: string): string | undefined {
-  const quoted = [...english.matchAll(/["“']([^"”']{2,})["”']/g)].map((m) => m[1]!.trim());
-  if (quoted.length) return quoted.join(' ');
-  const stop = new Set(
-    `a an the and or to of in on for from with without any all when then that this those these they them their need needs be been is are was were moved move remove removed out inbox folder folders archive archived separate email emails mail mails containing contains contain go going through latest week days properly`.split(
-      /\s+/,
-    ),
+/** One phrase the user named — not a bag of leftover English words. */
+function extractHintPhrase(english: string): string | undefined {
+  const quoted = [...english.matchAll(/["“']([^"”']{2,})["”']/g)].map((m) =>
+    m[1]!.trim(),
   );
-  const tokens = english.match(/[A-Za-z][\w.-]{1,}/g) ?? [];
-  const keep = tokens.filter((t) => {
-    const low = t.toLowerCase();
-    if (stop.has(low)) return false;
-    return t.includes('-') || t.length >= 5;
-  });
-  const unique = [...new Set(keep.map((t) => t.toLowerCase()))];
-  const expanded = unique.flatMap((t) =>
-    t.includes('-') ? [t.replace(/-/g, ' ')] : [t],
-  );
-  return expanded.length ? expanded.slice(0, 8).join(' ') : undefined;
+  if (quoted[0]) return quoted[0];
+  const hyphen = english.match(/[A-Za-z][\w]*-[\w-]+/);
+  return hyphen?.[0];
 }
 
 function hasCheap(m: NonNullable<WorkflowRule['matchers']> | undefined): boolean {
@@ -164,7 +147,7 @@ export function sanitizeRules(
     );
   const allowNotify = /\bnotif|\balert\b|\bping\b|\bbanner\b/.test(text);
   const allowStar = /\bstar\b/.test(text);
-  const fallbackQuery = extractQuery(english);
+  const hint = extractHintPhrase(english);
 
   return rules.map((rule, i) => {
     const m = { ...(rule.matchers ?? {}) };
@@ -174,8 +157,10 @@ export function sanitizeRules(
     m.fromIncludes = realStrings(m.fromIncludes);
     m.subjectIncludes = realStrings(m.subjectIncludes);
     m.labelIncludes = realStrings(m.labelIncludes);
-    if (m.query && PLACEHOLDER.test(m.query)) delete m.query;
-    if (!hasCheap(m) && fallbackQuery) m.query = fallbackQuery;
+    if (m.query && PLACEHOLDER.test(m.query)) {
+      if (hint) m.query = hint;
+      else delete m.query;
+    }
     const cheap = hasCheap(m);
     const judge = cheap ? undefined : rule.judge;
     let then = dedupeArchive(rule.then);

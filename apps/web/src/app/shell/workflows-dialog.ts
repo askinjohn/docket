@@ -56,7 +56,7 @@ import { UiShellService } from '../core/ui-shell.service';
               {{ rule.heading }}
             </div>
             <div class="mt-1.5 text-[0.7rem] font-medium text-lm-muted">
-              Match (cheap filters)
+              Hints for the model
             </div>
             @if (rule.matchLines.length) {
               <ul class="m-0 mt-0.5 list-disc pl-4 text-[0.78rem] leading-relaxed text-lm-text">
@@ -69,7 +69,9 @@ import { UiShellService } from '../core/ui-shell.service';
                 {{ rule.matchEmpty }}
               </p>
             }
-            <div class="mt-1.5 text-[0.7rem] font-medium text-lm-muted">Judge (AI)</div>
+            <div class="mt-1.5 text-[0.7rem] font-medium text-lm-muted">
+              Extra meaning (optional)
+            </div>
             @if (rule.judgeLine) {
               <p class="m-0 text-[0.78rem] leading-relaxed text-lm-text">
                 {{ rule.judgeLine }}
@@ -173,7 +175,8 @@ export class WorkflowBlueprint {
               Workflows
             </h2>
             <p class="mt-0.5 m-0 text-[0.78rem] text-lm-muted">
-              Describe it in English. On run, the local model picks tools (label, archive, star, notify); core executes them. Mail stays on this machine. You can leave this screen.
+              Describe it in English. Suggest compiles the tools. On run, the model
+              reads each mail and chooses those tools — keywords are hints, not a filter.
             </p>
           </div>
           <div class="flex items-center gap-1">
