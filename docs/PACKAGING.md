@@ -9,7 +9,15 @@ Docket’s primary desktop shell is **Tauri 2** (`apps/desktop`).
 npm run install:all
 npm run desktop:dev          # live reload (starts core if :8787 is free)
 
-# production-ish local .app / .dmg (unsigned)
+# production-ish local .app / .dmg (unsigned) and open it
+./app.sh
+# or: npm run app
+```
+
+`./app.sh --open-only` opens a previous build. `./app.sh --reinstall` runs npm install first.
+
+```bash
+# production-ish local .app / .dmg (unsigned) without opening
 cd apps/desktop
 npm run build                # stages apps/core into the bundle, then tauri build
 ```
