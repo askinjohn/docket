@@ -7,7 +7,7 @@
 ## Key files
 
 - `src-tauri/src/lib.rs`
-- `src-tauri/stage-core.sh`
+- `src-tauri/stage-core.sh` (invoked as `./src-tauri/stage-core.sh` from `apps/desktop`)
 - `src-tauri/tauri.conf.json`
 - `apps/core/src/config.ts`
 

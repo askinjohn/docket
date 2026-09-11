@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm --prefix ../web start -- --host 127.0.0.1 --port 4300",
     "devUrl": "http://127.0.0.1:4300",
-    "beforeBuildCommand": "npm --prefix ../web run build && bash ./stage-core.sh",
+    "beforeBuildCommand": "npm --prefix ../web run build && bash ./src-tauri/stage-core.sh",
     "frontendDist": "../../web/dist/web/browser"
   },
   "app": {
